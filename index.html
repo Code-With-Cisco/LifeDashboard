@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="theme-color" content="#0A0A08">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cisco">
+<title>Cisco — Life Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#09090A;--s1:#111113;--s2:#18181B;--s3:#222226;--s4:#2C2C31;
+  --b1:#2A2A2F;--b2:#3A3A40;--b3:#505058;
+  --t1:#F2F0EC;--t2:#A8A5A0;--t3:#686570;
+  --red:#E84040;--red-d:#B83030;--red-l:rgba(232,64,64,0.14);--red-ll:rgba(232,64,64,0.07);
+  --grn:#22C97A;--grn-d:#17A362;--grn-l:rgba(34,201,122,0.14);--grn-ll:rgba(34,201,122,0.07);
+  --amb:#F5A623;--amb-l:rgba(245,166,35,0.14);
+  --blu:#4D9FEC;--blu-l:rgba(77,159,236,0.14);
+  --pur:#9B72F2;--pur-l:rgba(155,114,242,0.14);
+  --nav:220px;--top:0px;
+  --r:10px;--r2:14px;--r3:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans",sans-serif;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+
+/* ── LAYOUT ─────────────────────────────────────── */
+#app{display:flex;height:100vh;height:100dvh}
+
+/* SIDEBAR */
+#nav{
+  width:var(--nav);flex-shrink:0;background:var(--s1);
+  border-right:1px solid var(--b1);display:flex;flex-direction:column;
+  padding:0;overflow:hidden;z-index:100;
+  position:relative;
+}
+#nav::before{
+  content:'';position:absolute;top:0;left:0;width:3px;height:100%;
+  background:linear-gradient(180deg,var(--red) 0%,var(--red-d) 100%);
+}
+.nav-logo{
+  padding:28px 20px 20px 24px;
+  font-family:"Bebas Neue",sans-serif;
+  font-size:28px;letter-spacing:3px;color:var(--t1);
+  border-bottom:1px solid var(--b1);
+}
+.nav-logo span{color:var(--red);font-size:11px;letter-spacing:4px;display:block;margin-top:-2px;font-family:"DM Sans",sans-serif;font-weight:500;text-transform:uppercase}
+.nav-items{padding:16px 0;flex:1;overflow-y:auto}
+.nav-item{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 20px 11px 24px;cursor:pointer;
+  font-size:13px;font-weight:500;color:var(--t3);
+  transition:all .15s;position:relative;white-space:nowrap;
+  border-left:3px solid transparent;margin-left:-3px;
+}
+.nav-item:hover{color:var(--t2);background:var(--s2)}
+.nav-item.active{color:var(--t1);background:var(--red-ll);border-left-color:var(--red)}
+.nav-item .ni{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.nav-item .nl{flex:1}
+.nav-cat{font-size:10px;font-weight:600;letter-spacing:2px;color:var(--t3);text-transform:uppercase;padding:14px 24px 6px;opacity:.7}
+.nav-footer{padding:16px 20px;border-top:1px solid var(--b1);font-size:11px;color:var(--t3)}
+.nav-badge{background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:2px 5px;border-radius:10px;font-family:"DM Mono",monospace}
+
+/* MAIN CONTENT */
+#main{flex:1;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+#topbar{
+  height:52px;background:var(--s1);border-bottom:1px solid var(--b1);
+  display:flex;align-items:center;padding:0 24px;gap:16px;flex-shrink:0;
+}
+.tb-title{font-family:"Bebas Neue",sans-serif;font-size:20px;letter-spacing:2px;flex:1}
+.tb-date{font-size:12px;color:var(--t3);font-family:"DM Mono",monospace}
+.tb-menu{display:none;background:none;border:none;color:var(--t2);font-size:20px;cursor:pointer;padding:4px}
+#content{flex:1;overflow-y:auto;overflow-x:hidden}
+.page{display:none;padding:24px;max-width:1100px;margin:0 auto;min-height:100%}
+.page.active{display:block;animation:pagein .2s ease}
+@keyframes pagein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* BOTTOM NAV (mobile) */
+#bnav{
+  display:none;height:60px;background:var(--s1);
+  border-top:1px solid var(--b1);
+  flex-shrink:0;overflow-x:auto;
+}
+.bnav-items{display:flex;height:100%;min-width:max-content;padding:0 4px}
+.bnav-item{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:0 14px;cursor:pointer;flex:1;min-width:56px;
+  font-size:10px;color:var(--t3);font-weight:500;transition:color .15s;
+}
+.bnav-item .bi{font-size:20px}
+.bnav-item.active{color:var(--red)}
+.bnav-item.active .bi{filter:drop-shadow(0 0 4px var(--red))}
+
+/* ── COMPONENTS ─────────────────────────────────── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r2);padding:18px}
+.card-sm{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:14px}
+.card-red{background:var(--red-ll);border:1px solid rgba(232,64,64,0.25)}
+.card-grn{background:var(--grn-ll);border:1px solid rgba(34,201,122,0.2)}
+.card-amb{background:var(--amb-l);border:1px solid rgba(245,166,35,0.2);background:rgba(245,166,35,0.06)}
+.card-blu{background:var(--blu-l);border:1px solid rgba(77,159,236,0.2);background:rgba(77,159,236,0.06)}
+
+.sh{font-family:"Bebas Neue",sans-serif;letter-spacing:2px;font-size:15px;color:var(--t2);margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.sh::after{content:'';flex:1;height:1px;background:var(--b1)}
+.hero-num{font-family:"Bebas Neue",sans-serif;letter-spacing:1px}
+.mono{font-family:"DM Mono",monospace}
+
+.badge{display:inline-flex;align-items:center;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.5px}
+.badge-red{background:var(--red-l);color:var(--red)}
+.badge-grn{background:var(--grn-l);color:var(--grn)}
+.badge-amb{background:var(--amb-l);color:var(--amb)}
+.badge-blu{background:var(--blu-l);color:var(--blu)}
+.badge-pur{background:var(--pur-l);color:var(--pur)}
+.badge-dim{background:var(--s3);color:var(--t3)}
+
+.prog-bar{height:6px;background:var(--s3);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+.pill{display:inline-flex;align-items:center;font-size:11px;padding:4px 10px;border-radius:6px;background:var(--s3);color:var(--t2);margin:2px;font-weight:500}
+.pill-key{background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,0.2)}
+
+.tab-bar{display:flex;gap:4px;background:var(--s2);padding:4px;border-radius:var(--r);margin-bottom:20px;flex-wrap:wrap}
+.tab-btn{
+  flex:1;padding:7px 12px;border-radius:7px;border:none;
+  background:none;color:var(--t3);font-size:12px;font-weight:500;
+  cursor:pointer;transition:all .15s;white-space:nowrap;font-family:"DM Sans",sans-serif;
+}
+.tab-btn.on{background:var(--s4);color:var(--t1);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+
+.input-field{
+  width:100%;background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);
+  color:var(--t1);font-family:"DM Sans",sans-serif;font-size:14px;padding:10px 14px;
+  outline:none;transition:border .15s;
+}
+.input-field:focus{border-color:var(--red)}
+.input-field::placeholder{color:var(--t3)}
+
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:9px 18px;
+  border-radius:var(--r);border:none;font-family:"DM Sans",sans-serif;
+  font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:var(--red-d)}
+.btn-outline{background:none;border:1px solid var(--b2);color:var(--t2)}
+.btn-outline:hover{border-color:var(--b3);color:var(--t1)}
+.btn-sm{padding:6px 12px;font-size:12px}
+
+/* Habit checkbox */
+.hcheck{
+  display:flex;align-items:center;gap:14px;padding:11px 14px;
+  border-radius:var(--r);cursor:pointer;transition:background .1s;
+  border:1px solid transparent;
+}
+.hcheck:hover{background:var(--s2)}
+.hcheck.done{background:var(--grn-ll);border-color:rgba(34,201,122,.15)}
+.hcheck.done .hl{text-decoration:line-through;color:var(--t3)}
+.hbox{
+  width:20px;height:20px;border-radius:5px;border:2px solid var(--b2);
+  flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  transition:all .15s;background:none;
+}
+.hcheck.done .hbox{background:var(--grn);border-color:var(--grn)}
+.hcheck.done .hbox::after{content:'✓';color:#fff;font-size:12px;font-weight:700}
+.hl{font-size:13px;font-weight:500;color:var(--t1);transition:all .15s}
+.hcat-lbl{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--t3);text-transform:uppercase;margin-left:auto;flex-shrink:0}
+
+/* Stat card */
+.stat{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:16px 18px}
+.stat-lbl{font-size:11px;color:var(--t3);font-weight:500;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.stat-val{font-family:"Bebas Neue",sans-serif;font-size:32px;letter-spacing:1px;line-height:1}
+.stat-sub{font-size:11px;color:var(--t3);margin-top:4px;font-family:"DM Mono",monospace}
+
+/* Timeline */
+.tl-item{display:flex;gap:14px;margin-bottom:0}
+.tl-time{font-size:11px;color:var(--t3);min-width:56px;text-align:right;padding-top:3px;font-family:"DM Mono",monospace;flex-shrink:0}
+.tl-mid{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.tl-dot{width:8px;height:8px;border-radius:50%;background:var(--red);margin-top:4px;flex-shrink:0}
+.tl-dot.g{background:var(--grn)}
+.tl-dot.a{background:var(--amb)}
+.tl-dot.d{background:var(--b2)}
+.tl-dot.lg{width:10px;height:10px;margin-top:3px;box-shadow:0 0 8px currentColor}
+.tl-line{width:1px;flex:1;min-height:20px;background:var(--b1)}
+.tl-body{padding-bottom:16px;flex:1;min-width:0}
+.tl-title{font-size:13px;font-weight:600;color:var(--t1);margin-bottom:2px}
+.tl-desc{font-size:12px;color:var(--t2);line-height:1.5}
+
+/* Ex card */
+.ex-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;margin-bottom:6px}
+.ex-name{font-size:13px;font-weight:600;color:var(--t1)}
+.ex-detail{font-size:12px;color:var(--t3);margin-top:3px;font-family:"DM Mono",monospace}
+.hiit-card{background:var(--red-ll);border:1px solid rgba(232,64,64,.2);border-radius:var(--r);padding:12px 14px;margin-bottom:6px}
+.hiit-card .ex-name{color:var(--red)}
+
+/* Book card */
+.book-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:16px;display:flex;gap:14px;margin-bottom:10px;transition:border-color .15s}
+.book-card:hover{border-color:var(--b2)}
+.book-num{font-family:"Bebas Neue",sans-serif;font-size:32px;color:var(--b2);flex-shrink:0;width:40px;text-align:right;line-height:1;margin-top:2px}
+.book-num.cur{color:var(--red)}
+.book-info{flex:1;min-width:0}
+.book-title{font-size:14px;font-weight:600;color:var(--t1);margin-bottom:2px}
+.book-author{font-size:12px;color:var(--t3);margin-bottom:8px}
+.book-why{font-size:12px;color:var(--t2);line-height:1.5;margin-top:6px}
+
+/* Recipe */
+.recipe{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:16px;margin-bottom:10px}
+.recipe-title{font-size:14px;font-weight:600;color:var(--t1);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.spice-row{margin-bottom:8px}
+.spice-lbl{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:5px}
+.pills{display:flex;flex-wrap:wrap;gap:4px}
+.method{font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)}
+
+/* Fin */
+.fin-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--b1);gap:12px}
+.fin-row:last-child{border-bottom:none}
+.fin-name{font-size:13px;color:var(--t1)}
+.fin-amt{font-size:13px;font-family:"DM Mono",monospace;font-weight:500;flex-shrink:0}
+.fin-note{font-size:11px;color:var(--t3)}
+
+/* Modal */
+.modal-bg{
+  position:fixed;inset:0;background:rgba(0,0,0,.8);
+  z-index:1000;display:none;align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);
+}
+.modal-bg.open{display:flex}
+.modal{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r3);padding:24px;width:90%;max-width:400px}
+.modal-title{font-family:"Bebas Neue",sans-serif;font-size:22px;letter-spacing:2px;margin-bottom:16px}
+
+/* Toast */
+#toast{
+  position:fixed;bottom:80px;right:20px;z-index:2000;
+  background:var(--s3);border:1px solid var(--b2);border-radius:var(--r);
+  padding:10px 16px;font-size:13px;color:var(--t1);
+  opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;
+}
+#toast.show{opacity:1;transform:none}
+
+/* ── RESPONSIVE ─────────────────────────────────── */
+@media(max-width:768px){
+  #nav{display:none}
+  #bnav{display:flex}
+  #main{height:calc(100dvh - 60px)}
+  #topbar{height:48px;padding:0 16px}
+  .tb-menu{display:flex}
+  #content{height:calc(100% - 48px);overflow-y:auto}
+  .page{padding:16px}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr 1fr}
+  .grid-4{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:480px){
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<nav id="nav">
+<div class="nav-logo">CISCO<span>Life Dashboard</span></div>
+<div class="nav-items">
+<div class="nav-item active" onclick="goto('dash')" id="ni-dash"><span class="ni">📊</span><span class="nl">Dashboard</span></div>
+<div class="nav-item" onclick="goto('habits')" id="ni-habits"><span class="ni">✅</span><span class="nl">Habits</span></div>
+<div class="nav-item" onclick="goto('workout')" id="ni-workout"><span class="ni">💪</span><span class="nl">Workout</span></div>
+<div class="nav-item" onclick="goto('nutrition')" id="ni-nutrition"><span class="ni">🥗</span><span class="nl">Nutrition</span></div>
+<div class="nav-item" onclick="goto('schedule')" id="ni-schedule"><span class="ni">📅</span><span class="nl">Schedule</span></div>
+<div class="nav-item" onclick="goto('spice')" id="ni-spice"><span class="ni">🌶️</span><span class="nl">Spice Guide</span></div>
+<div class="nav-item" onclick="goto('reading')" id="ni-reading"><span class="ni">📚</span><span class="nl">Reading</span></div>
+<div class="nav-item" onclick="goto('financial')" id="ni-financial"><span class="ni">💰</span><span class="nl">Financial</span></div>
+<div class="nav-item" onclick="goto('goals')" id="ni-goals"><span class="ni">🎯</span><span class="nl">Goals</span></div>
+</div>
+<div class="nav-footer">Shred Protocol · Week <span id="wk-num" class="mono">1</span></div>
+</nav>
+<div id="main">
+<div id="topbar"><button class="tb-menu" onclick="toggleMobileNav()">☰</button><span class="tb-title" id="tb-title">DASHBOARD</span><span class="tb-date" id="tb-date"></span></div>
+<div id="content">
+<div class="page active" id="page-dash">
+<div class="grid-4" style="margin-bottom:20px">
+<div class="stat"><div class="stat-lbl">CURRENT WEIGHT</div><div class="stat-val" style="color:var(--red)">220.4</div><div class="stat-sub">lbs</div></div>
+<div class="stat"><div class="stat-lbl">TARGET WEIGHT</div><div class="stat-val" style="color:var(--grn)">165.0</div><div class="stat-sub">lbs</div></div>
+<div class="stat"><div class="stat-lbl">DAILY CALORIES</div><div class="stat-val" style="color:var(--amb)">1,900</div><div class="stat-sub">cal target</div></div>
+<div class="stat"><div class="stat-lbl">PROTEIN GOAL</div><div class="stat-val" style="color:var(--blu)">185</div><div class="stat-sub">g / day</div></div>
+</div>
+<div class="grid-2" style="margin-bottom:20px">
+<div class="card">
+  <div class="sh">WEIGHT LOG</div>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <input class="input-field" id="weight-in" type="number" step="0.1" placeholder="e.g. 218.5" style="flex:1">
+    <button class="btn btn-red btn-sm" onclick="logWeight()">Log</button>
+  </div>
+  <div id="weight-log" style="font-size:12px;color:var(--t3)"></div>
+  <div style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:6px">
+      <span>Progress to goal</span><span id="wt-pct" class="mono">0%</span>
+    </div>
+    <div class="prog-bar"><div class="prog-fill" id="wt-bar" style="width:0%;background:var(--grn)"></div></div>
+  </div>
+</div>
+<div class="card">
+  <div class="sh">TODAY'S PLAN</div>
+  <div id="today-workout" style="font-size:13px;color:var(--t2);line-height:1.8"></div>
+</div>
+</div>
+<div class="card" style="margin-bottom:20px">
+  <div class="sh">THIS WEEK'S HABITS</div>
+  <div id="week-summary"></div>
+</div>
+<div class="sh">MONTHLY MILESTONES</div>
+<div class="grid-2" style="margin-bottom:20px">
+<div class="card card-red">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px">Month 1</div>
+    <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:var(--red)">~210 lbs</div>
+  </div>
+  <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:10px">Lock in routine. 4–5× gym/week. Form over weight. First 10 lbs.</div>
+  <select class="input-field" style="font-size:12px;padding:6px 10px" onchange="saveMilestone(this,'Month 1')">
+    <option>Not Started</option><option>In Progress</option><option>Complete</option>
+  </select>
+</div>
+<div class="card card-amb">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px">Month 2</div>
+    <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:var(--amb)">~200 lbs</div>
+  </div>
+  <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:10px">Break 200. Add weight weekly. Nutrition dialed. Knee stronger.</div>
+  <select class="input-field" style="font-size:12px;padding:6px 10px" onchange="saveMilestone(this,'Month 2')">
+    <option>Not Started</option><option>In Progress</option><option>Complete</option>
+  </select>
+</div>
+<div class="card card-amb">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px">Month 3</div>
+    <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:var(--amb)">~190 lbs</div>
+  </div>
+  <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:10px">Routine automatic. HIIT intensity up. Visible muscle definition.</div>
+  <select class="input-field" style="font-size:12px;padding:6px 10px" onchange="saveMilestone(this,'Month 3')">
+    <option>Not Started</option><option>In Progress</option><option>Complete</option>
+  </select>
+</div>
+<div class="card card-grn">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px">Month 4–6</div>
+    <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:var(--grn)">~165 lbs</div>
+  </div>
+  <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:10px">Final shred. Lean, dense, functional. Baki/Toji physique.</div>
+  <select class="input-field" style="font-size:12px;padding:6px 10px" onchange="saveMilestone(this,'Month 4–6')">
+    <option>Not Started</option><option>In Progress</option><option>Complete</option>
+  </select>
+</div>
+</div>
+</div>
+<div class="page" id="page-habits">
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+  <button class="btn btn-outline btn-sm" onclick="changeDate(-1)">← Prev</button>
+  <div style="flex:1;text-align:center">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:2px" id="h-date"></div>
+    <div style="font-size:11px;color:var(--t3)" id="h-daterel"></div>
+  </div>
+  <button class="btn btn-outline btn-sm" onclick="changeDate(1)">Next →</button>
+</div>
+<div class="grid-4" style="margin-bottom:20px" id="cat-prog"></div>
+<div style="margin-bottom:16px">
+<div class="sh">🌅 Morning</div>
+<div class="hcheck" id="hc-wake" onclick="toggleHabit('wake')"><div class="hbox"></div><div class="hl">Wake up by 6 AM</div><div class="hcat-lbl badge badge-amb">morning</div></div>
+<div class="hcheck" id="hc-hydrate" onclick="toggleHabit('hydrate')"><div class="hbox"></div><div class="hl">16 oz water first thing</div><div class="hcat-lbl badge badge-amb">morning</div></div>
+<div class="hcheck" id="hc-mobility" onclick="toggleHabit('mobility')"><div class="hbox"></div><div class="hl">Morning mobility (15 min)</div><div class="hcat-lbl badge badge-amb">morning</div></div>
+</div>
+<div style="margin-bottom:16px">
+<div class="sh">💪 Fitness</div>
+<div class="hcheck" id="hc-workout" onclick="toggleHabit('workout')"><div class="hbox"></div><div class="hl">Workout complete</div><div class="hcat-lbl badge badge-red">fitness</div></div>
+<div class="hcheck" id="hc-hiit" onclick="toggleHabit('hiit')"><div class="hbox"></div><div class="hl">HIIT / Conditioning done</div><div class="hcat-lbl badge badge-red">fitness</div></div>
+<div class="hcheck" id="hc-kneerehab" onclick="toggleHabit('kneerehab')"><div class="hbox"></div><div class="hl">Knee rehab done</div><div class="hcat-lbl badge badge-red">fitness</div></div>
+<div class="hcheck" id="hc-walk" onclick="toggleHabit('walk')"><div class="hbox"></div><div class="hl">Evening walk (30 min)</div><div class="hcat-lbl badge badge-red">fitness</div></div>
+</div>
+<div style="margin-bottom:16px">
+<div class="sh">🥗 Nutrition</div>
+<div class="hcheck" id="hc-logged" onclick="toggleHabit('logged')"><div class="hbox"></div><div class="hl">Logged all meals (MFP)</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+<div class="hcheck" id="hc-protein" onclick="toggleHabit('protein')"><div class="hbox"></div><div class="hl">Hit 185g protein</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+<div class="hcheck" id="hc-calories" onclick="toggleHabit('calories')"><div class="hbox"></div><div class="hl">Within 1,900 calories</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+<div class="hcheck" id="hc-noprocessed" onclick="toggleHabit('noprocessed')"><div class="hbox"></div><div class="hl">No processed food</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+<div class="hcheck" id="hc-water" onclick="toggleHabit('water')"><div class="hbox"></div><div class="hl">120+ oz water</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+<div class="hcheck" id="hc-nolateeat" onclick="toggleHabit('nolateeat')"><div class="hbox"></div><div class="hl">No eating after 9 PM</div><div class="hcat-lbl badge badge-grn">nutrition</div></div>
+</div>
+<div style="margin-bottom:16px">
+<div class="sh">🧠 Mindset</div>
+<div class="hcheck" id="hc-read" onclick="toggleHabit('read')"><div class="hbox"></div><div class="hl">Read 30 min (physical book)</div><div class="hcat-lbl badge badge-blu">mindset</div></div>
+<div class="hcheck" id="hc-prep" onclick="toggleHabit('prep')"><div class="hbox"></div><div class="hl">Prepped for tomorrow</div><div class="hcat-lbl badge badge-blu">mindset</div></div>
+<div class="hcheck" id="hc-screens" onclick="toggleHabit('screens')"><div class="hbox"></div><div class="hl">Screens off by 10 PM</div><div class="hcat-lbl badge badge-blu">mindset</div></div>
+<div class="hcheck" id="hc-sleep" onclick="toggleHabit('sleep')"><div class="hbox"></div><div class="hl">In bed by 11:30 PM</div><div class="hcat-lbl badge badge-blu">mindset</div></div>
+</div>
+<div class="card" style="margin-top:20px">
+  <div class="sh">7-DAY STREAK</div>
+  <div id="streak-bar" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+</div>
+</div>
+<div class="page" id="page-workout">
+<div class="tab-bar" id="day-tabs">
+<button class="tab-btn on" onclick="setDay(0)">MON</button>
+<button class="tab-btn" onclick="setDay(1)">TUE</button>
+<button class="tab-btn" onclick="setDay(2)">WED</button>
+<button class="tab-btn" onclick="setDay(3)">THU</button>
+<button class="tab-btn" onclick="setDay(4)">FRI</button>
+<button class="tab-btn" onclick="setDay(5)">SAT</button>
+<button class="tab-btn" onclick="setDay(6)">SUN</button>
+</div>
+<div id="day-0" style="display:block">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--red)">MON — Upper Push</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Chest · Shoulders · Triceps</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(0)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">Incline DB Press</div><div class="ex-detail">4×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Control the negative, feel the stretch</div></div>
+<div class="ex-card"><div class="ex-name">Cable Chest Fly</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Squeeze at peak contraction</div></div>
+<div class="ex-card"><div class="ex-name">DB Shoulder Press</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Neutral grip throughout</div></div>
+<div class="ex-card"><div class="ex-name">Lateral Raises</div><div class="ex-detail">3×15</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Slight bend in elbow, lead with elbows</div></div>
+<div class="ex-card"><div class="ex-name">Tricep Pushdown</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Elbows pinned to sides</div></div>
+<div class="ex-card"><div class="ex-name">Overhead Tricep Ext</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Full stretch at bottom</div></div>
+</div>
+<div>
+<div class="sh">🔥 HIIT FINISHER</div>
+<div class="hiit-card"><div class="ex-name">Rower Sprints</div><div class="ex-detail" style="color:var(--t2)">4×45s on / 30s off</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Max effort every round</div></div>
+<div class="hiit-card"><div class="ex-name">Mountain Climbers</div><div class="ex-detail" style="color:var(--t2)">3×30s</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Drive knees to chest</div></div>
+<div class="hiit-card"><div class="ex-name">Push-up to Shoulder Tap</div><div class="ex-detail" style="color:var(--t2)">3×20</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Controlled — don't let hips rotate</div></div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-1" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--blu)">TUE — Lower Body</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Glutes · Hamstrings · Hips (Knee-Friendly)</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(1)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">Leg Press (partial ROM)</div><div class="ex-detail">4×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Never lock the knee at top</div></div>
+<div class="ex-card"><div class="ex-name">Romanian Deadlift</div><div class="ex-detail">4×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Hinge at hips — not a squat</div></div>
+<div class="ex-card"><div class="ex-name">Hip Thrust / Glute Bridge</div><div class="ex-detail">4×15</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Drive through heels, full extension</div></div>
+<div class="ex-card"><div class="ex-name">Lying Leg Curl</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Full range of motion, controlled</div></div>
+<div class="ex-card"><div class="ex-name">Step-Ups (low platform)</div><div class="ex-detail">3×12 each</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Slow and controlled, no momentum</div></div>
+<div class="ex-card"><div class="ex-name">Standing Calf Raises</div><div class="ex-detail">3×20</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Full range, pause at top</div></div>
+<div class="ex-card"><div class="ex-name">Bike Zone 2 Cool-down</div><div class="ex-detail">20 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">115–134 bpm conversational pace</div></div>
+</div>
+<div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-2" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--amb)">WED — Upper Pull</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Back · Biceps · Rear Delts</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(2)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">Lat Pulldown</div><div class="ex-detail">4×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Pull to upper chest, elbows down</div></div>
+<div class="ex-card"><div class="ex-name">Seated Cable Row</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Squeeze shoulder blades together</div></div>
+<div class="ex-card"><div class="ex-name">Single-Arm DB Row</div><div class="ex-detail">3×12 each</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Support on bench, full stretch</div></div>
+<div class="ex-card"><div class="ex-name">Face Pulls</div><div class="ex-detail">3×15</div><div style="font-size:11px;color:var(--t3);margin-top:4px">External rotation focus</div></div>
+<div class="ex-card"><div class="ex-name">Hammer Curls</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Neutral grip throughout</div></div>
+<div class="ex-card"><div class="ex-name">Reverse Curls</div><div class="ex-detail">3×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Forearm strength and definition</div></div>
+</div>
+<div>
+<div class="sh">🔥 HIIT FINISHER</div>
+<div class="hiit-card"><div class="ex-name">Battle Rope Slams</div><div class="ex-detail" style="color:var(--t2)">4×30s / 20s off</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Full body — stay explosive</div></div>
+<div class="hiit-card"><div class="ex-name">Cable Crunch</div><div class="ex-detail" style="color:var(--t2)">3×15</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Crunch down, don't pull neck</div></div>
+<div class="hiit-card"><div class="ex-name">Hanging Knee Raises</div><div class="ex-detail" style="color:var(--t2)">3×15</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Control on the way down</div></div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-3" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--red)">THU — Conditioning + Core</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Fighter's Day — No Weights</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(3)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">Bike Warm-up</div><div class="ex-detail">5 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Get heart rate up before rounds</div></div>
+<div class="ex-card"><div class="ex-name">4 Rounds: Rower 45s → Climbers 30s → Push-ups 15 → Rest 30s</div><div class="ex-detail">4 circuits</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Your hardest day of the week</div></div>
+<div class="ex-card"><div class="ex-name">Dead Bug</div><div class="ex-detail">3×12 each</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Lower back pressed to floor always</div></div>
+<div class="ex-card"><div class="ex-name">Plank</div><div class="ex-detail">3×60s</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Brace hard — don't let hips drop</div></div>
+<div class="ex-card"><div class="ex-name">Bicycle Crunches</div><div class="ex-detail">3×25</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Slow and controlled</div></div>
+<div class="ex-card"><div class="ex-name">Russian Twists</div><div class="ex-detail">3×20</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Feet up for more challenge</div></div>
+<div class="ex-card"><div class="ex-name">Extended Knee Rehab</div><div class="ex-detail">15 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Longer session on conditioning day</div></div>
+<div class="ex-card"><div class="ex-name">Foam Roll: Quads, IT Band, Glutes</div><div class="ex-detail">10 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Hold each spot 30–60 sec</div></div>
+</div>
+<div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-4" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--grn)">FRI — Full Body Compound</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Fat Burn Focus</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(4)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">DB Romanian Deadlift</div><div class="ex-detail">4×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Hip drive, bar close to legs</div></div>
+<div class="ex-card"><div class="ex-name">Incline DB Press</div><div class="ex-detail">3×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Compound push</div></div>
+<div class="ex-card"><div class="ex-name">Lat Pulldown</div><div class="ex-detail">3×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Compound pull</div></div>
+<div class="ex-card"><div class="ex-name">DB Shoulder Press</div><div class="ex-detail">3×10</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Overhead push</div></div>
+<div class="ex-card"><div class="ex-name">Goblet Squat (shallow)</div><div class="ex-detail">3×12</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Watch the knee — controlled depth</div></div>
+<div class="ex-card"><div class="ex-name">Single-Arm DB Row</div><div class="ex-detail">3×10 each</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Superset with goblet squat</div></div>
+</div>
+<div>
+<div class="sh">🔥 HIIT FINISHER</div>
+<div class="hiit-card"><div class="ex-name">Rower Sprints</div><div class="ex-detail" style="color:var(--t2)">4×45s / 30s off</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Max effort</div></div>
+<div class="hiit-card"><div class="ex-name">Push-up Variations</div><div class="ex-detail" style="color:var(--t2)">3×15</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Wide, close, or diamond</div></div>
+<div class="hiit-card"><div class="ex-name">Ab Wheel / Cable Crunch</div><div class="ex-detail" style="color:var(--t2)">3×15</div><div style="font-size:11px;color:rgba(232,64,64,.7);margin-top:4px">Full extension on wheel</div></div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-5" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--blu)">SAT — Long Cardio + Bodyweight</div><div style="font-size:13px;color:var(--t3);margin-top:2px">Endurance Focus</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(5)">📝 Log session</button></div>
+<div class="grid-2" style="gap:16px">
+<div>
+<div class="sh">EXERCISES</div>
+<div class="ex-card"><div class="ex-name">Elliptical or Bike Zone 2</div><div class="ex-detail">30 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">115–134 bpm — you can hold a conversation</div></div>
+<div class="ex-card"><div class="ex-name">Push-ups</div><div class="ex-detail">4×20</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Full range of motion</div></div>
+<div class="ex-card"><div class="ex-name">DB Rows</div><div class="ex-detail">3×15 each</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Light weight, higher reps</div></div>
+<div class="ex-card"><div class="ex-name">Goblet Squat (shallow)</div><div class="ex-detail">3×15</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Watch the knee — controlled</div></div>
+<div class="ex-card"><div class="ex-name">Plank</div><div class="ex-detail">3×60s</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Core stability</div></div>
+<div class="ex-card"><div class="ex-name">Bike Cool-down</div><div class="ex-detail">15 min</div><div style="font-size:11px;color:var(--t3);margin-top:4px">Bring heart rate down gradually</div></div>
+</div>
+<div>
+<div class="sh">🦵 KNEE REHAB</div>
+<div class="card card-grn" style="padding:14px">
+<div style="font-size:11px;color:var(--grn);font-weight:600;margin-bottom:10px;letter-spacing:1px">MANDATORY — END OF EVERY SESSION</div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Straight Leg Raises</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Terminal Knee Extensions (band)</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Clamshells</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×15 each side</span></div>
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px"><span style="color:var(--t1)">Glute Bridges</span><span style="color:var(--grn);font-family:'DM Mono',monospace">3×20</span></div>
+</div>
+</div>
+</div>
+</div>
+<div id="day-6" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:10px"><div><div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;color:var(--dim)">SUN — Rest & Meal Prep</div><div style="font-size:13px;color:var(--t3);margin-top:2px">No Gym</div></div><button class="btn btn-outline btn-sm" onclick="logWorkout(6)">📝 Log session</button></div>
+<div class="card-sm" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;color:var(--t1)">No gym today</div><div style="font-size:12px;color:var(--t2);margin-top:3px">Recovery is part of the plan</div></div>
+<div class="card-sm" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Sunday Meal Prep</div><div style="font-size:12px;color:var(--t3);font-family:'DM Mono',monospace;margin-top:2px">2 hrs</div><div style="font-size:12px;color:var(--t2);margin-top:3px">5 lunch containers, rice batch, batch sauce</div></div>
+<div class="card-sm" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Light Walk (optional)</div><div style="font-size:12px;color:var(--t3);font-family:'DM Mono',monospace;margin-top:2px">20–30 min</div><div style="font-size:12px;color:var(--t2);margin-top:3px">If you genuinely feel like it</div></div>
+<div class="card-sm" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;margin-bottom:8px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Weekly Check-in</div><div style="font-size:12px;color:var(--t3);font-family:'DM Mono',monospace;margin-top:2px">15 min</div><div style="font-size:12px;color:var(--t2);margin-top:3px">Answer the 5 check-in questions</div></div>
+</div>
+</div>
+<div class="page" id="page-nutrition">
+<div class="grid-4" style="margin-bottom:20px">
+  <div class="stat card-red"><div class="stat-lbl">CALORIES</div><div class="stat-val" style="color:var(--red)">1,900</div><div class="stat-sub">750 cal deficit</div></div>
+  <div class="stat card-grn"><div class="stat-lbl">PROTEIN</div><div class="stat-val" style="color:var(--grn)">185g</div><div class="stat-sub">muscle priority</div></div>
+  <div class="stat card-amb"><div class="stat-lbl">CARBS</div><div class="stat-val" style="color:var(--amb)">175g</div><div class="stat-sub">workout fuel</div></div>
+  <div class="stat card-blu"><div class="stat-lbl">FAT</div><div class="stat-val" style="color:var(--blu)">55g</div><div class="stat-sub">hormones + joints</div></div>
+</div>
+<div class="card" style="margin-bottom:20px">
+<div class="sh">MACRO SPLIT</div>
+<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:5px"><span>Protein (185g)</span><span>740 cal · 39%</span></div><div class="prog-bar"><div class="prog-fill" style="width:39%;background:var(--grn)"></div></div></div>
+<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:5px"><span>Carbs (175g)</span><span>700 cal · 37%</span></div><div class="prog-bar"><div class="prog-fill" style="width:37%;background:var(--amb)"></div></div></div>
+<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:5px"><span>Fat (55g)</span><span>495 cal · 26%</span></div><div class="prog-bar"><div class="prog-fill" style="width:26%;background:var(--blu)"></div></div></div>
+<div style="font-size:11px;color:var(--red);margin-top:8px;padding:8px;background:var(--red-ll);border-radius:var(--r);border:1px solid rgba(232,64,64,.2)">⚠️ Floor rule: NEVER go below 1,800 cal. Below that you lose muscle, not just fat — and that kills the physique goal.</div>
+</div>
+<div style="margin-bottom:20px">
+<div class="sh">🌙 Pre-Workout <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);font-weight:400">6:00 AM</span></div>
+<div class="card card-red"><div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--t1)">Train Fasted</div><div style="font-size:12px;color:var(--t2);margin-bottom:6px">0 cal · 0g protein</div><div style="font-size:12px;color:var(--t2);line-height:1.5">Water only. Your body uses stored fat for fuel. If energy crashes badly after Week 1, add a banana (90 cal) and adjust.</div></div>
+</div>
+<div style="margin-bottom:20px">
+<div class="sh">🍳 Breakfast <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);font-weight:400">7:40 AM</span></div>
+<div class="tab-bar"><button class="tab-btn on" onclick="setMealTab(this,'mt-🍳Breakfast',0)">Option A</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍳Breakfast',1)">Option B</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍳Breakfast',2)">Option C</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍳Breakfast',3)">Option D</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍳Breakfast',4)">Option E</button></div>
+<div class="card card-grn mt-🍳Breakfast meal-opt" style="display:block"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Egg & Turkey Scramble Rice Bowl</div><div class="badge badge-grn" style="font-family:'DM Mono',monospace">505 cal · 52g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">4oz ground turkey + 2 eggs + 2 egg whites · ½ cup basmati rice · olive oil · hot sauce. Highest protein breakfast.</div></div>
+<div class="card card-blu mt-🍳Breakfast meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Japanese BBQ Chicken & Egg Bowl</div><div class="badge badge-blu" style="font-family:'DM Mono',monospace">490 cal · 48g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz chicken breast (leftover Sunday) + 2 eggs + ½ cup rice + 1 tbsp Japanese BBQ sauce. Fast morning option.</div></div>
+<div class="card card-amb mt-🍳Breakfast meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Kewpie Egg Salad Toast</div><div class="badge badge-amb" style="font-family:'DM Mono',monospace">510 cal · 28g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">Your Japanese egg salad on 2 slices 5-grain or sourdough. Add chicken on top if protein is low.</div></div>
+<div class="card card-grn mt-🍳Breakfast meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Overnight Oats + Scrambled Eggs</div><div class="badge badge-grn" style="font-family:'DM Mono',monospace">505 cal · 42g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">Costco oats (prepped night before) + 3 eggs + 2 egg whites. Zero morning effort.</div></div>
+<div class="card card-blu mt-🍳Breakfast meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Thin Bagel + Egg Scramble</div><div class="badge badge-blu" style="font-family:'DM Mono',monospace">480 cal · 40g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">1 thin bagel + 3 eggs + 2 egg whites + ½ tsp Kerrygold. Quickest option.</div></div>
+</div>
+<div style="margin-bottom:20px">
+<div class="sh">📦 Lunch <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);font-weight:400">12:30 PM</span></div>
+<div class="tab-bar"><button class="tab-btn on" onclick="setMealTab(this,'mt-📦Lunch',0)">Option A</button><button class="tab-btn" onclick="setMealTab(this,'mt-📦Lunch',1)">Option B</button><button class="tab-btn" onclick="setMealTab(this,'mt-📦Lunch',2)">Option C</button><button class="tab-btn" onclick="setMealTab(this,'mt-📦Lunch',3)">Option D</button></div>
+<div class="card card-red mt-📦Lunch meal-opt" style="display:block"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Chipotle Chicken Rice Bowl</div><div class="badge badge-red" style="font-family:'DM Mono',monospace">455 cal · 46g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz Costco Chipotle Chicken + ¾ cup basmati + frozen broccoli (microwaved). Sunday prepped.</div></div>
+<div class="card card-grn mt-📦Lunch meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Pan-Seared Chicken + Rice</div><div class="badge badge-grn" style="font-family:'DM Mono',monospace">445 cal · 46g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">6oz chicken breast (seared Sunday, sliced) + ¾ cup rice + seasoning. Simple and reliable.</div></div>
+<div class="card card-amb mt-📦Lunch meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Ground Turkey Protein Pasta</div><div class="badge badge-amb" style="font-family:'DM Mono',monospace">490 cal · 50g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz 90/10 turkey + 1½ cups protein macaroni + olive oil + garlic. Reheats perfectly.</div></div>
+<div class="card card-blu mt-📦Lunch meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Kewpie Egg Salad Sandwich</div><div class="badge badge-blu" style="font-family:'DM Mono',monospace">470 cal · 28g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">Egg salad on 5-grain bread. Add hard-boiled egg on side. Lower protein — push dinner.</div></div>
+</div>
+<div style="margin-bottom:20px">
+<div class="sh">🥤 Snack <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);font-weight:400">3:30 PM</span></div>
+<div class="tab-bar"><button class="tab-btn on" onclick="setMealTab(this,'mt-🥤Snack',0)">Option A</button><button class="tab-btn" onclick="setMealTab(this,'mt-🥤Snack',1)">Option B</button></div>
+<div class="card card-grn mt-🥤Snack meal-opt" style="display:block"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">ON Gold Standard Whey — Strawberry Banana</div><div class="badge badge-grn" style="font-family:'DM Mono',monospace">120 cal · 24g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">1 scoop + 10–12oz cold water in shaker. Keep tub at desk. REPLACES White Monster.</div></div>
+<div class="card card-blu mt-🥤Snack meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Chobani Protein Yogurt Drink</div><div class="badge badge-blu" style="font-family:'DM Mono',monospace">~160 cal · ~20g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">Grab from work fridge. Zero prep. Check label: aim under 170 cal, under 10g sugar.</div></div>
+</div>
+<div style="margin-bottom:20px">
+<div class="sh">🍽️ Dinner <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);font-weight:400">6:45 PM</span></div>
+<div class="tab-bar"><button class="tab-btn on" onclick="setMealTab(this,'mt-🍽️Dinner',0)">Option A</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍽️Dinner',1)">Option B</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍽️Dinner',2)">Option C</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍽️Dinner',3)">Option D</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍽️Dinner',4)">Option E</button><button class="tab-btn" onclick="setMealTab(this,'mt-🍽️Dinner',5)">Option F</button></div>
+<div class="card card-red mt-🍽️Dinner meal-opt" style="display:block"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Ribeye + Protein Pasta Aglio e Olio</div><div class="badge badge-red" style="font-family:'DM Mono',monospace">585 cal · 52g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz ribeye + 1.5 cups protein spaghetti + garlic + olive oil ½ tsp + Kerrygold ½ tsp. The reward meal.</div></div>
+<div class="card card-amb mt-🍽️Dinner meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Ground Beef Bolognese</div><div class="badge badge-amb" style="font-family:'DM Mono',monospace">570 cal · 53g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz 90/10 beef + crushed tomatoes + Italian seasoning + 1.5 cups protein spaghetti. Batch Sunday.</div></div>
+<div class="card card-grn mt-🍽️Dinner meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Japanese BBQ Chicken Thighs + Rice</div><div class="badge badge-grn" style="font-family:'DM Mono',monospace">575 cal · 50g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">7oz thighs + 1.5 tbsp Japanese BBQ + 1 cup basmati. Easiest weeknight. Baste last 2 min.</div></div>
+<div class="card card-blu mt-🍽️Dinner meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Chipotle Chicken + Protein Fettuccine</div><div class="badge badge-blu" style="font-family:'DM Mono',monospace">560 cal · 54g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz Costco chicken + fettuccine + olive oil + garlic + parmesan. Done in 12 min.</div></div>
+<div class="card card-amb mt-🍽️Dinner meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Ground Turkey Taco Bowl</div><div class="badge badge-amb" style="font-family:'DM Mono',monospace">555 cal · 52g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">6oz 90/10 turkey + homemade taco seasoning + bell peppers + ½ cup rice + hot sauce.</div></div>
+<div class="card card-red mt-🍽️Dinner meal-opt" style="display:none"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-size:14px;font-weight:600;color:var(--t1)">Steak & Egg Rice Bowl (Saturday)</div><div class="badge badge-red" style="font-family:'DM Mono',monospace">580 cal · 55g protein</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5">5oz ribeye/sirloin + 2 fried eggs + ½ cup rice + Japanese BBQ. Saturday reward — earn it.</div></div>
+</div>
+</div>
+<div class="page" id="page-schedule">
+<div class="tab-bar" id="sched-tabs" style="margin-bottom:20px"><button class="tab-btn on" onclick="setSchedTab(0)">Mon–Fri</button><button class="tab-btn" onclick="setSchedTab(1)">Sat–Sun</button></div>
+<div id="sched-wd" style="display:block">
+<div class="tl-item"><span class="tl-time">5:30 AM</span><div class="tl-mid"><div class="tl-dot red lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Wake up & hydrate</div><div class="tl-desc">16 oz water immediately. No phone for 5 min. Take vitamins.</div></div></div>
+<div class="tl-item"><span class="tl-time">5:35</span><div class="tl-mid"><div class="tl-dot amb"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Morning mobility (15 min)</div><div class="tl-desc">Hip circles, leg swings, ankle rotations, shoulder rolls.</div></div></div>
+<div class="tl-item"><span class="tl-time">5:50</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Drive to gym — fasted</div><div class="tl-desc">Train fasted on shred protocol. No pre-workout snack.</div></div></div>
+<div class="tl-item"><span class="tl-time">6:00</span><div class="tl-mid"><div class="tl-dot red lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🔴 WORKOUT (55–70 min)</div><div class="tl-desc">Follow weekly split. End with knee rehab every session.</div></div></div>
+<div class="tl-item"><span class="tl-time">7:10</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Shower & get ready</div><div class="tl-desc">30 min max. You already won the morning.</div></div></div>
+<div class="tl-item"><span class="tl-time">7:40</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🥗 Breakfast + pack lunch</div><div class="tl-desc">Log in MFP before eating. Grab prepped container.</div></div></div>
+<div class="tl-item"><span class="tl-time">8:05</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Commute to Lake Mary (~40 min)</div><div class="tl-desc">Audiobook the entire drive. 80 min reading per day.</div></div></div>
+<div class="tl-item"><span class="tl-time">9:00 AM</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Work (LPT Realty)</div><div class="tl-desc">Lunch at 12:30 PM. 8 oz water every 2 hours.</div></div></div>
+<div class="tl-item"><span class="tl-time">12:30</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🥗 Lunch (packed prep)</div><div class="tl-desc">Pre-portioned container from Sunday. Shake or Chobani at desk.</div></div></div>
+<div class="tl-item"><span class="tl-time">3:30</span><div class="tl-mid"><div class="tl-dot grn lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🥤 Protein shake / Chobani</div><div class="tl-desc">Replaces White Monster. Zero excuses.</div></div></div>
+<div class="tl-item"><span class="tl-time">6:00 PM</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Commute home</div><div class="tl-desc">Continue audiobook. Mentally transition from work mode.</div></div></div>
+<div class="tl-item"><span class="tl-time">6:45</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🥗 Cook & eat dinner</div><div class="tl-desc">Lean protein + veggies + small carbs. Log before plating.</div></div></div>
+<div class="tl-item"><span class="tl-time">7:30</span><div class="tl-mid"><div class="tl-dot red lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🚶 Evening walk (30 min)</div><div class="tl-desc">Zone 1 pace. Burns ~150 cal. Kills nighttime cravings.</div></div></div>
+<div class="tl-item"><span class="tl-time">8:00</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Personal time / decompress</div><div class="tl-desc">No agenda. Watch something, relax, recharge.</div></div></div>
+<div class="tl-item"><span class="tl-time">9:00</span><div class="tl-mid"><div class="tl-dot amb lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">📚 Reading (30 min — physical book)</div><div class="tl-desc">Non-negotiable. No phone.</div></div></div>
+<div class="tl-item"><span class="tl-time">9:30</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Prep for tomorrow (15 min)</div><div class="tl-desc">Gym bag, clothes, lunch packed. Remove all friction.</div></div></div>
+<div class="tl-item"><span class="tl-time">10:00</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Screens off — wind down</div><div class="tl-desc">Dim lights. No scrolling. This makes 5:30 AM possible.</div></div></div>
+<div class="tl-item"><span class="tl-time">11:30</span><div class="tl-mid"><div class="tl-dot  d"></div></div><div class="tl-body"><div class="tl-title">😴 Lights out</div><div class="tl-desc">Protect every hour. Poor sleep = stalled fat loss.</div></div></div>
+</div>
+<div id="sched-we" style="display:none">
+<div class="tl-item"><span class="tl-time">7:00 AM</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Wake naturally — hydrate</div><div class="tl-desc">No alarm. Let the body recover. Water first.</div></div></div>
+<div class="tl-item"><span class="tl-time">7:30</span><div class="tl-mid"><div class="tl-dot amb"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Extended mobility + stretch</div><div class="tl-desc">20 min. Slower pace. Honour the recovery.</div></div></div>
+<div class="tl-item"><span class="tl-time">SAT 8:30</span><div class="tl-mid"><div class="tl-dot red lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">🔴 Saturday: Full body circuit</div><div class="tl-desc">Cardio + bodyweight focus. See workout tab.</div></div></div>
+<div class="tl-item"><span class="tl-time">SUN 8:30</span><div class="tl-mid"><div class="tl-dot  d"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Sunday: Full rest (no gym)</div><div class="tl-desc">Walk only if you genuinely want to.</div></div></div>
+<div class="tl-item"><span class="tl-time">10:00</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Breakfast — take your time</div><div class="tl-desc">Cook something real. Same macro targets.</div></div></div>
+<div class="tl-item"><span class="tl-time">11:00 AM</span><div class="tl-mid"><div class="tl-dot grn lg"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">SUN: Meal prep (2 hrs)</div><div class="tl-desc">Proteins bulk. Rice. 5 lunch containers. Batch sauce.</div></div></div>
+<div class="tl-item"><span class="tl-time">1:00 PM</span><div class="tl-mid"><div class="tl-dot"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Free time / errands / social</div><div class="tl-desc">Groceries, personal time. Recharge.</div></div></div>
+<div class="tl-item"><span class="tl-time">6:00</span><div class="tl-mid"><div class="tl-dot grn"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">Dinner — stay on plan</div><div class="tl-desc">Weekends kill most diets. Stay consistent.</div></div></div>
+<div class="tl-item"><span class="tl-time">7:30</span><div class="tl-mid"><div class="tl-dot amb"></div><div class='tl-line'></div></div><div class="tl-body"><div class="tl-title">📚 Extended reading (45–60 min)</div><div class="tl-desc">More time than weekdays — use it.</div></div></div>
+<div class="tl-item"><span class="tl-time">11:30</span><div class="tl-mid"><div class="tl-dot  d"></div></div><div class="tl-body"><div class="tl-title">Lights out — keep consistent</div><div class="tl-desc">Sleeping in past 8 AM Sunday makes Monday brutal.</div></div></div>
+</div>
+</div>
+<div class="page" id="page-spice">
+<div class="tab-bar" id="spice-tabs">
+<button class="tab-btn on" onclick="setSpiceTab(0)">🇯🇵 Japanese</button>
+<button class="tab-btn" onclick="setSpiceTab(1)">🌮 Mexican</button>
+<button class="tab-btn" onclick="setSpiceTab(2)">🇮🇹 Italian</button>
+<button class="tab-btn" onclick="setSpiceTab(3)">🔥 BBQ</button>
+<button class="tab-btn" onclick="setSpiceTab(4)">🫒 Mediterranean</button>
+<button class="tab-btn" onclick="setSpiceTab(5)">⚡ Basics</button>
+</div>
+<div id="spice-0" style="display:block">
+<div class="recipe">
+<div class="recipe-title"><span>Teriyaki Chicken (breast/thighs)</span><span class="badge badge-grn">GRN</span></div>
+<div class="spice-row"><div class="spice-lbl">Dry rub</div><div class="pills"><span class="pill-key">Garlic powder 1 tsp</span><span class="pill-key">Ginger powder ½ tsp</span><span class="pill">White pepper</span><span class="pill">Salt</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Sauce (last 2 min)</div><div class="pills"><span class="pill-key">Japanese BBQ sauce 1.5 tbsp</span><span class="pill-key">Coconut aminos 1 tsp</span><span class="pill-key">Sesame oil ½ tsp</span></div></div>
+<div class="method">Add sauce last 2 min. Baste and caramelize. Don't add early — it burns. This is your go-to weeknight.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Garlic Ginger Ground Turkey Bowl</span><span class="badge badge-amb">AMB</span></div>
+<div class="spice-row"><div class="spice-lbl">Spices</div><div class="pills"><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Ginger powder ½ tsp</span><span class="pill">White pepper</span><span class="pill-key">Onion powder ¼ tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Sauce</div><div class="pills"><span class="pill-key">Coconut aminos 2 tsp</span><span class="pill-key">Japanese BBQ 1 tbsp</span><span class="pill-key">Sesame oil ½ tsp</span></div></div>
+<div class="method">Brown turkey, add garlic, then ginger. Deglaze with coconut aminos. Soft fried egg on top = soboro bowl.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Japanese Steakhouse Ribeye</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Season only</div><div class="pills"><span class="pill">Salt (generous)</span><span class="pill">White pepper</span><span class="pill">Garlic powder (light dusting)</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill">Japanese BBQ sauce on side</span><span class="pill-key">Kerrygold baste ½ tsp</span><span class="pill">Lemon squeeze optional</span></div></div>
+<div class="method">Ripping hot pan. Salt 30 min before. 2–3 min/side for medium rare. Rest 5 min — non-negotiable.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Tamago-style Scrambled Eggs</span><span class="badge badge-amb">AMB</span></div>
+<div class="spice-row"><div class="spice-lbl">In the egg mix</div><div class="pills"><span class="pill">White pepper</span><span class="pill">Pinch salt</span><span class="pill-key">½ tsp coconut aminos</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill-key">Kewpie drizzle ½ tsp</span><span class="pill">Hot sauce</span></div></div>
+<div class="method">Low heat. Constant gentle folding. Soft curds only. Serve over rice.</div>
+</div>
+</div>
+<div id="spice-1" style="display:none">
+<div class="recipe">
+<div class="recipe-title"><span>Fajita Chicken</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Dry rub</div><div class="pills"><span class="pill-key">Cumin 1 tsp</span><span class="pill-key">Smoked paprika 1 tsp</span><span class="pill-key">Chili powder ½ tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill-key">Oregano ¼ tsp</span><span class="pill">Salt + pepper</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill">Lime juice squeezed right after pulling off heat</span></div></div>
+<div class="method">Sit 10–15 min before cooking. Deglaze pan fond with 2 tbsp water over rice — that's free flavor.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Homemade Taco Seasoning (ground beef/turkey)</span><span class="badge badge-amb">AMB</span></div>
+<div class="spice-row"><div class="spice-lbl">Per pound of meat</div><div class="pills"><span class="pill-key">Cumin 1.5 tsp</span><span class="pill-key">Chili powder 1 tsp</span><span class="pill-key">Smoked paprika 1 tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill">Cayenne pinch</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Add after browning</div><div class="pills"><span class="pill-key">¼ cup water</span><span class="pill-key">Simmer 2 min until absorbed</span></div></div>
+<div class="method">Better than any packet — no fillers. Brown meat first, add seasoning, add water, simmer.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Carne Asada (flank/skirt steak)</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Marinade/rub</div><div class="pills"><span class="pill-key">Cumin 1 tsp</span><span class="pill-key">Chili powder ½ tsp</span><span class="pill-key">Smoked paprika ½ tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Oregano ¼ tsp</span><span class="pill-key">Lime 1 tbsp</span><span class="pill-key">Olive oil ½ tsp</span><span class="pill">Salt + pepper</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill-key">Min 30 min marinade. Overnight is ideal. Ripping hot pan.</span></div></div>
+<div class="method">⚠️ ALWAYS slice against the grain on flank/skirt — mandatory or it's chewy.</div>
+</div>
+</div>
+<div id="spice-2" style="display:none">
+<div class="recipe">
+<div class="recipe-title"><span>Italian Herb Pan Chicken</span><span class="badge badge-amb">AMB</span></div>
+<div class="spice-row"><div class="spice-lbl">Season</div><div class="pills"><span class="pill-key">Italian seasoning 1.5 tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Onion powder ¼ tsp</span><span class="pill-key">Smoked paprika ¼ tsp</span><span class="pill">Chili flakes optional</span><span class="pill">Salt + pepper</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Deglaze</div><div class="pills"><span class="pill-key">3 tbsp water + garlic in last minute, spoon over chicken</span></div></div>
+<div class="method">Finish with 1 tbsp parmesan over protein pasta. Pairs with any pasta shape.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Bolognese (Sunday batch sauce)</span><span class="badge badge-grn">GRN</span></div>
+<div class="spice-row"><div class="spice-lbl">Per pound of meat</div><div class="pills"><span class="pill-key">Italian seasoning 2 tsp</span><span class="pill-key">Garlic 3 cloves</span><span class="pill-key">Chili flakes ¼ tsp</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill">Salt + pepper</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Sauce</div><div class="pills"><span class="pill-key">1 can crushed tomatoes</span><span class="pill">Pinch of sugar (balances acid)</span><span class="pill-key">Simmer 15–20 min</span></div></div>
+<div class="method">Make double batch. Freeze half. Mid-week dinner in 10 min. Your most time-efficient meal.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Aglio e Olio (pasta base — pairs with any protein)</span><span class="badge badge-blu">BLU</span></div>
+<div class="spice-row"><div class="spice-lbl">The entire sauce</div><div class="pills"><span class="pill-key">Garlic 3 cloves (sliced thin)</span><span class="pill-key">Chili flakes ½ tsp</span><span class="pill-key">Olive oil 1 tsp</span><span class="pill-key">Pasta water 3 tbsp</span><span class="pill-key">Parmesan 1 tbsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill">Sauté garlic on medium-LOW until golden — not brown. Emulsify with pasta water.</span></div></div>
+<div class="method">This is the base that makes the steak + pasta dinner feel restaurant-level.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Bistecca-Style Ribeye</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Season</div><div class="pills"><span class="pill-key">Salt (generous, 30 min before)</span><span class="pill">Coarse black pepper</span><span class="pill">Rosemary sprig (bruised)</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Baste finish</div><div class="pills"><span class="pill-key">Kerrygold + rosemary + garlic in last minute</span><span class="pill">Lemon + cracked pepper off heat</span></div></div>
+<div class="method">Simplest and most impressive steak cook. Fewer seasonings = better result.</div>
+</div>
+</div>
+<div id="spice-3" style="display:none">
+<div class="recipe">
+<div class="recipe-title"><span>Southern Dry Rub Chicken</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Dry rub</div><div class="pills"><span class="pill-key">Smoked paprika 1.5 tsp</span><span class="pill-key">Garlic powder 1 tsp</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill-key">Black pepper ½ tsp</span><span class="pill-key">Cayenne ¼ tsp</span><span class="pill-key">Cumin ¼ tsp</span><span class="pill-key">Salt 1 tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill">Japanese BBQ sauce on side or hot sauce</span></div></div>
+<div class="method">Press rub in. Sit 10–20 min. Cover pan last 4 min to keep juicy.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Smash Burger-Style Beef Rice Bowl</span><span class="badge badge-amb">AMB</span></div>
+<div class="spice-row"><div class="spice-lbl">Per pound</div><div class="pills"><span class="pill-key">Smoked paprika 1 tsp</span><span class="pill-key">Garlic powder ¾ tsp</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill-key">Black pepper ½ tsp</span><span class="pill-key">Salt 1 tsp</span><span class="pill">Cayenne pinch</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill">Mix into raw beef before browning. High heat. Thin layer. Don't stir — let it crust.</span></div></div>
+<div class="method">Deconstructed burger bowl. Ketchup + hot sauce over rice. Easy weeknight win.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Classic Steakhouse Crust</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Rub</div><div class="pills"><span class="pill-key">Salt (heavy, 30 min before)</span><span class="pill">Coarse black pepper</span><span class="pill-key">Smoked paprika ½ tsp</span><span class="pill-key">Garlic powder ¼ tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Baste</div><div class="pills"><span class="pill">Kerrygold butter</span><span class="pill">No other sauce needed</span></div></div>
+<div class="method">⚠️ Screaming hot pan. Don't move it while searing. The crust needs contact time.</div>
+</div>
+</div>
+<div id="spice-4" style="display:none">
+<div class="recipe">
+<div class="recipe-title"><span>Shawarma Chicken (thighs or breast)</span><span class="badge badge-grn">GRN</span></div>
+<div class="spice-row"><div class="spice-lbl">Marinade/rub</div><div class="pills"><span class="pill-key">Cumin 1 tsp</span><span class="pill-key">Smoked paprika 1 tsp</span><span class="pill-key">Garlic powder ¾ tsp</span><span class="pill-key">Oregano ½ tsp</span><span class="pill-key">CINNAMON ⅛ tsp (trust it)</span><span class="pill-key">Onion powder ½ tsp</span><span class="pill-key">Salt + pepper + Olive oil ½ tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill">Hot sauce + lemon squeeze after cooking</span></div></div>
+<div class="method">Marinate 20+ min (overnight ideal). The cinnamon is the signature — don't skip or double it. Restaurant-level.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Kofta-Spiced Ground Beef Bowl</span><span class="badge badge-grn">GRN</span></div>
+<div class="spice-row"><div class="spice-lbl">Per pound</div><div class="pills"><span class="pill-key">Cumin 1.5 tsp</span><span class="pill-key">Coriander 1 tsp</span><span class="pill-key">Cinnamon ¼ tsp</span><span class="pill-key">Garlic powder ¾ tsp</span><span class="pill-key">Allspice ¼ tsp</span><span class="pill-key">Chili flakes ¼ tsp</span><span class="pill-key">Onion powder ½ tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill">Mix into raw meat before browning. Small crumbles. Over rice.</span></div></div>
+<div class="method">Completely different flavor profile from everything else. Keeps the week from getting boring.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Mediterranean Herb Steak (sirloin)</span><span class="badge badge-blu">BLU</span></div>
+<div class="spice-row"><div class="spice-lbl">Rub</div><div class="pills"><span class="pill-key">Oregano 1 tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Rosemary ½ tsp crushed</span><span class="pill-key">Smoked paprika ¼ tsp</span><span class="pill">Salt + pepper</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Finish</div><div class="pills"><span class="pill">Olive oil (not Kerrygold here)</span><span class="pill">Lemon zest + squeeze off heat</span></div></div>
+<div class="method">Olive oil works better for Mediterranean than butter — different flavor profile.</div>
+</div>
+</div>
+<div id="spice-5" style="display:none">
+<div class="recipe">
+<div class="recipe-title"><span>The Default — Any Protein</span><span class="badge badge-dim">DIM</span></div>
+<div class="spice-row"><div class="spice-lbl">5 spices on anything</div><div class="pills"><span class="pill">Salt</span><span class="pill">Black pepper</span><span class="pill">Garlic powder</span><span class="pill">Onion powder</span><span class="pill">Smoked paprika</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Change it up</div><div class="pills"><span class="pill">Add hot sauce or Japanese BBQ on top to vary the flavor</span></div></div>
+<div class="method">When tired, these 5 on anything = good. Reliable, fast, done.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Garlic Rice (any meal)</span><span class="badge badge-grn">GRN</span></div>
+<div class="spice-row"><div class="spice-lbl">Per cup cooked</div><div class="pills"><span class="pill-key">Garlic powder ½ tsp</span><span class="pill">Pinch salt</span><span class="pill-key">Olive oil ¼ tsp</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill-key">Toss hot rice. Takes 20 seconds.</span></div></div>
+<div class="method">Never eat plain basmati. 20 seconds transforms the whole meal.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Asian-Style Rice</span><span class="badge badge-blu">BLU</span></div>
+<div class="spice-row"><div class="spice-lbl">Per cup cooked</div><div class="pills"><span class="pill-key">Coconut aminos 1 tsp</span><span class="pill-key">Sesame oil ¼ tsp</span><span class="pill">White pepper pinch</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Method</div><div class="pills"><span class="pill">Toss into hot rice. Done.</span></div></div>
+<div class="method">Pairs with every Japanese or Asian-inspired protein.</div>
+</div>
+<div class="recipe">
+<div class="recipe-title"><span>Mexican Rice</span><span class="badge badge-red">RED</span></div>
+<div class="spice-row"><div class="spice-lbl">Toast these first</div><div class="pills"><span class="pill-key">Cumin ½ tsp</span><span class="pill-key">Garlic powder ½ tsp</span><span class="pill-key">Smoked paprika ¼ tsp</span><span class="pill-key">Toast in pan 30 sec</span></div></div>
+<div class="spice-row"><div class="spice-lbl">Optional</div><div class="pills"><span class="pill-key">1 tbsp tomato paste turns water pink — adds depth</span></div></div>
+<div class="method">Toast spices in pan before adding rice + water. Makes the whole taco bowl cohesive.</div>
+</div>
+</div>
+</div>
+<div class="page" id="page-reading">
+<div class="card card-red" style="margin-bottom:24px">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:var(--red);margin-bottom:6px">CURRENTLY READING — MONTH 1</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px">Atomic Habits</div>
+      <div style="font-size:13px;color:var(--t3);margin-bottom:12px">James Clear · ~320 pages</div>
+      <div style="font-size:13px;color:var(--t2);line-height:1.6">30 min/night = done in 3–4 weeks. Commute audiobook counts. Annotate as you read.</div>
+    </div>
+    <div style="text-align:center;min-width:80px">
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:48px;color:var(--red);line-height:1" id="read-pct">0%</div>
+      <div style="font-size:11px;color:var(--t3)">complete</div>
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="updateReadPct(-10)">−</button>
+        <button class="btn btn-red btn-sm" onclick="updateReadPct(10)">+10%</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="sh">12-MONTH READING PLAN</div>
+<div class="book-card" id="book-atomichabits">
+<div class="book-num  cur">1</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Atomic Habits</div><div class="book-author">James Clear · ~320 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-grn">Self-improvement</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('atomichabits',this.value)"><option>Not Started</option><option selected>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">You're living this book in real time. Science of habit building — directly explains everything in your plan.</div>
+</div>
+</div>
+<div class="book-card" id="book-ego">
+<div class="book-num">2</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Ego is the Enemy</div><div class="book-author">Ryan Holiday · ~240 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-blu">Philosophy</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('ego',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Fights the motivation killer. Confronts the mental patterns that kill momentum before it starts.</div>
+</div>
+</div>
+<div class="book-card" id="book-fouragree">
+<div class="book-num">3</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">The Four Agreements</div><div class="book-author">Don Miguel Ruiz · ~160 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-blu">Mindset</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('fouragree',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Short enough to finish in 2 weeks. Quiet reset before fiction begins.</div>
+</div>
+</div>
+<div class="book-card" id="book-redrising">
+<div class="book-num">4</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Red Rising</div><div class="book-author">Pierce Brown · ~400 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-red">Sci-fi</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('redrising',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Placed here to reinforce the habit when it could stall. Addictive pacing — you won't want to stop.</div>
+<div style="font-size:11px;color:var(--amb);margin-top:6px;padding:6px 10px;background:var(--amb-l);border-radius:6px">⚠️ Series warning: Books 2 and 3 (Golden Son, Morning Star) are just as good. Budget for the trilogy.</div>
+</div>
+</div>
+<div class="book-card" id="book-12rules">
+<div class="book-num">5</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">12 Rules for Life</div><div class="book-author">Jordan Peterson · ~400 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-blu">Philosophy</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('12rules',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Hits differently once you've been doing the work for 4 months. The rules feel earned.</div>
+</div>
+</div>
+<div class="book-card" id="book-nolongerhuman">
+<div class="book-num">6</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">No Longer Human</div><div class="book-author">Osamu Dazai · ~180 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-amb">Fiction</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('nolongerhuman',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Perfect palate cleanser after Peterson. Short, dark, beautifully written.</div>
+</div>
+</div>
+<div class="book-card" id="book-richestman">
+<div class="book-num">6</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">The Richest Man in Babylon</div><div class="book-author">George S. Clason · ~145 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-amb">Finance</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('richestman',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Very short. Financial mindset. Real estate career. Read same month as Dazai.</div>
+</div>
+</div>
+<div class="book-card" id="book-48laws">
+<div class="book-num">7</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">48 Laws of Power</div><div class="book-author">Robert Greene · ~480 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-red">Strategy</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('48laws',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Changes how you read every room. One law per sitting — don't rush it.</div>
+</div>
+</div>
+<div class="book-card" id="book-outliers">
+<div class="book-num">8</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Outliers</div><div class="book-author">Malcolm Gladwell · ~310 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-blu">Psychology</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('outliers',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Fast, gripping read. Reframes what getting good actually requires.</div>
+</div>
+</div>
+<div class="book-card" id="book-mistborn">
+<div class="book-num">9</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Mistborn</div><div class="book-author">Brandon Sanderson · ~650 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-grn">Fantasy</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('mistborn',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Month 9 your volume is strong. Meticulous plotting, brilliant magic system.</div>
+<div style="font-size:11px;color:var(--amb);margin-top:6px;padding:6px 10px;background:var(--amb-l);border-radius:6px">⚠️ Also a trilogy. Books 2 and 3 complete the original arc brilliantly.</div>
+</div>
+</div>
+<div class="book-card" id="book-mastery">
+<div class="book-num">10</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Mastery</div><div class="book-author">Robert Greene · ~320 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-red">Strategy</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('mastery',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Read this when real discipline is built. You'll recognize yourself in the early-stage learner.</div>
+</div>
+</div>
+<div class="book-card" id="book-breathbecomesair">
+<div class="book-num">11</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">When Breath Becomes Air</div><div class="book-author">Paul Kalanithi · ~230 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-dim">Memoir</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('breathbecomesair',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Most profound book on the shelf. About meaning, time, what makes a life.</div>
+</div>
+</div>
+<div class="book-card" id="book-thinkingfast">
+<div class="book-num">12</div>
+<div class="book-info">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+<div><div class="book-title">Thinking Fast and Slow</div><div class="book-author">Daniel Kahneman · ~500 pages</div></div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="badge badge-blu">Psychology</span><select class="input-field" style="font-size:11px;padding:4px 8px;width:130px" onchange="saveBookStatus('thinkingfast',this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option><option>Paused</option></select></div>
+</div>
+<div class="book-why">Hardest book here. Save for last — by Month 12 your focus handles it.</div>
+</div>
+</div>
+<div style="margin:20px 0 10px">
+  <div class="sh">YEAR 2 FLAGSHIP</div>
+  <div class="book-card" style="border-color:var(--amb);background:rgba(245,166,35,0.04)">
+    <div class="book-num" style="color:var(--amb)">Y2</div>
+    <div class="book-info">
+      <div class="book-title">The Way of Kings</div>
+      <div class="book-author">Brandon Sanderson · 1,007 pages</div>
+      <div class="book-why">One of the greatest fantasy novels ever written. Earns its length slowly and punishes impatience. This is your reward for completing Year 1. Do not start before Year 2.</div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="page" id="page-financial">
+<div class="grid-4" style="margin-bottom:20px">
+  <div class="stat"><div class="stat-lbl">MONTHLY TAKE-HOME</div><div class="stat-val" style="color:var(--grn)">$3,370</div><div class="stat-sub">$23/hr · semi-monthly</div></div>
+  <div class="stat"><div class="stat-lbl">TOTAL EXPENSES</div><div class="stat-val" style="color:var(--red)">$2,163</div><div class="stat-sub">64% of take-home</div></div>
+  <div class="stat"><div class="stat-lbl">FREE CASH FLOW</div><div class="stat-val" style="color:var(--amb)">$1,207</div><div class="stat-sub">36% to allocate</div></div>
+  <div class="stat"><div class="stat-lbl">CC DEBT (COSTCO)</div><div class="stat-val" style="color:var(--red)" id="cc-balance">$800</div><div class="stat-sub">pay $305+/month</div></div>
+</div>
+<div class="card card-red" style="margin-bottom:20px">
+  <div style="font-weight:700;color:var(--red);margin-bottom:6px;font-size:13px">⚠️ PRIORITY ALERT — Costco CC Debt Trap</div>
+  <div style="font-size:12px;color:var(--t2);line-height:1.6">You charge ~$275/month in groceries to the Costco card but only pay a $30 minimum. Balance grows ~$245 every month. PAY $305+ MINIMUM every month — this stops the bleeding. This is the single most urgent financial action you have.</div>
+</div>
+<div class="grid-2" style="margin-bottom:20px">
+<div class="card">
+<div class="sh">MONTHLY BILLS (YOUR SHARE)</div>
+<div class="fin-row"><div><div class="fin-name">Rent</div><div class="fin-note">⚠️ Keep $500 float always</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--red)">$1,100</div><div class="fin-note">Due 1st–3rd</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Car Insurance (your half)</div><div class="fin-note">Mother covers other $170</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--t1)">$170</div><div class="fin-note">Monthly</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Phone</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--t1)">$80</div><div class="fin-note">Due 12th</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Groceries (Costco CC)</div><div class="fin-note">Use CC → pay $305+ back monthly</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--amb)">~$275</div><div class="fin-note">Weekly</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Gas / Transportation</div><div class="fin-note">Lake Mary commute</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--t1)">~$150</div><div class="fin-note">Weekly</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Car Payment (your share)</div><div class="fin-note">Grandma covers $450</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--grn)">$20</div><div class="fin-note">Due 27th</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Chase Bank Fee</div><div class="fin-note">WAIVABLE — set up direct deposit from LPT</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--red)">$15</div><div class="fin-note">Monthly</div></div></div>
+<div class="fin-row"><div><div class="fin-name">Subscriptions (total)</div><div class="fin-note">$58/month cuttable — see audit below</div></div><div style="text-align:right"><div class="fin-amt" style="color:var(--amb)">~$178</div><div class="fin-note">Various</div></div></div>
+</div>
+<div>
+<div class="card" style="margin-bottom:16px">
+<div class="sh">FREE CASH FLOW ALLOCATION</div>
+<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="font-size:13px;color:var(--t1)">Emergency Fund (priority 1)</div><div style="font-family:'DM Mono',monospace;font-size:13px;color:var(--grn)">$362/mo</div></div><div class="prog-bar"><div class="prog-fill" style="width:30%;background:var(--grn)"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px">Build to $5,000 first</div></div>
+<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="font-size:13px;color:var(--t1)">Roth IRA / Investments</div><div style="font-family:'DM Mono',monospace;font-size:13px;color:var(--blu)">$241/mo</div></div><div class="prog-bar"><div class="prog-fill" style="width:20%;background:var(--blu)"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px">Open Fidelity. After $1K emergency fund.</div></div>
+<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="font-size:13px;color:var(--t1)">Personal Money</div><div style="font-family:'DM Mono',monospace;font-size:13px;color:var(--amb)">$604/mo</div></div><div class="prog-bar"><div class="prog-fill" style="width:50%;background:var(--amb)"></div></div><div style="font-size:11px;color:var(--t3);margin-top:3px">Guilt-free. Clothes, food out, entertainment.</div></div>
+</div>
+<div class="card card-red">
+<div class="sh">CC DEBT TRACKER</div>
+<div style="display:flex;gap:10px;margin-bottom:12px">
+  <input class="input-field" id="cc-in" type="number" step="1" placeholder="Current balance" style="flex:1">
+  <button class="btn btn-red btn-sm" onclick="updateCC()">Update</button>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t3);margin-bottom:6px">
+  <span>Progress to $0</span><span id="cc-pct" class="mono">0%</span>
+</div>
+<div class="prog-bar"><div class="prog-fill" id="cc-bar" style="width:0%;background:var(--grn)"></div></div>
+<div style="font-size:11px;color:var(--t2);margin-top:10px;line-height:1.5">Target: Pay $305+ every month. At that rate, balance hits $0 in under 3 months if you stop adding to it.</div>
+</div>
+</div>
+</div>
+<div class="sh">SUBSCRIPTION AUDIT</div>
+<div class="card" style="margin-bottom:20px">
+<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:8px 14px;background:var(--red-ll);border-radius:var(--r);border:1px solid rgba(232,64,64,.2)"><span style="font-size:13px;color:var(--t1);font-weight:600">Potential monthly savings</span><span style="font-family:'DM Mono',monospace;font-size:16px;font-weight:700;color:var(--grn)">$57.73/mo = $692/yr</span></div>
+<div class="fin-row"><div><div class="fin-name">Discord Nitro</div><div class="fin-note">Purely cosmetic — free Discord works fine</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">$9.99</div><span class="badge badge-red">Cancel</span></div></div>
+<div class="fin-row"><div><div class="fin-name">NordVPN</div><div class="fin-note">Background waste unless you use it daily</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">$12.99</div><span class="badge badge-red">Cancel</span></div></div>
+<div class="fin-row"><div><div class="fin-name">HP Instant Ink</div><div class="fin-note">Buying ink as-needed is usually cheaper</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">$6.00</div><span class="badge badge-red">Cancel</span></div></div>
+<div class="fin-row"><div><div class="fin-name">Walmart+</div><div class="fin-note">You have Costco — heavy overlap</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">$12.95</div><span class="badge badge-red">Cancel</span></div></div>
+<div class="fin-row"><div><div class="fin-name">Paramount+</div><div class="fin-note">Rotate in when a show you want drops</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">$15.80</div><span class="badge badge-amb">Pause</span></div></div>
+<div class="fin-row"><div><div class="fin-name">Netflix</div><div class="fin-note">Core entertainment</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">~$</div><span class="badge badge-grn">Keep</span></div></div>
+<div class="fin-row"><div><div class="fin-name">Spotify</div><div class="fin-note">Commute + workout music</div></div><div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px"><div class="fin-amt">~$</div><span class="badge badge-grn">Keep</span></div></div>
+</div>
+<div class="sh">FINANCIAL FREEDOM ROADMAP</div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--red)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--red);line-height:1;flex-shrink:0">1</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Set up direct deposit from LPT → Chase</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">This Week</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(1,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Eliminates $15/month fee. One phone call. 10 minutes.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--red)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--red);line-height:1;flex-shrink:0">2</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Cancel Discord Nitro, NordVPN, HP Instant Ink, Walmart+</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">This Month</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(2,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Frees $57.73/month. Do it today.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--red)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--red);line-height:1;flex-shrink:0">3</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Pay $305+ on Costco CC</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Every Month</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(3,this.value)"><option>Not Started</option><option selected>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Stops the debt cycle. Balance must decrease every single month.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--amb)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--amb);line-height:1;flex-shrink:0">4</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Open Ally Bank HYSA (4%+ APY)</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Month 1</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(4,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Emergency fund needs a separate account — out of sight, out of mind.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--amb)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--amb);line-height:1;flex-shrink:0">5</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Start DoorDash / Uber Eats on weekends</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Month 1</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(5,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Target $150–300/month extra. Goes directly to emergency fund.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--amb)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--amb);line-height:1;flex-shrink:0">6</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Emergency fund hits $1,000</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Month 3</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(6,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">First buffer. Stops you using credit for emergencies.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--blu)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--blu);line-height:1;flex-shrink:0">7</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Open Fidelity — start Roth IRA ($50/month)</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">After $1K</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(7,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Tax-free growth. Start small, start now.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--grn)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--grn);line-height:1;flex-shrink:0">8</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Costco CC balance at $0</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Month 6</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(8,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Zero interest. You own the card, it doesn't own you.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--grn)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--grn);line-height:1;flex-shrink:0">9</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Emergency fund hits $5,000</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Month 12</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(9,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Full 3-month buffer on your expenses.</div></div></div></div>
+<div class="card" style="margin-bottom:8px;border-left:3px solid var(--grn)"><div style="display:flex;gap:14px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--grn);line-height:1;flex-shrink:0">10</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:6px"><div style="font-size:13px;font-weight:600;color:var(--t1)">Increase Roth IRA to $100–200/month</div><div style="display:flex;gap:6px;align-items:center"><span class="badge badge-dim">Year 2</span><select class="input-field" style="font-size:11px;padding:3px 8px;width:120px" onchange="saveRoadmap(10,this.value)"><option selected>Not Started</option><option>In Progress</option><option>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">Compounding works over time — earlier is always better.</div></div></div></div>
+</div>
+<div class="page" id="page-goals">
+<div class="tab-bar" style="margin-bottom:20px">
+<button class="tab-btn on" onclick="filterGoals('All')">All</button>
+<button class="tab-btn" onclick="filterGoals('Daily')">Daily</button>
+<button class="tab-btn" onclick="filterGoals('Weekly')">Weekly</button>
+<button class="tab-btn" onclick="filterGoals('Monthly')">Monthly</button>
+</div>
+<div class="sh">💪 FITNESS</div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Wake up by 6 AM every day</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Complete assigned workout</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every training day</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Finish HIIT finisher (Mon/Wed/Fri)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Mon, Wed, Fri</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">10 min knee rehab — end of every session</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every session</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">30 min evening walk after dinner</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Mon–Fri</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Morning mobility 15 min</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">5–6 workouts completed</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Weekly</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Monday weigh-in (same conditions)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Monday</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Lose 6–8 lbs</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Progressive overload — increase main lifts</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Progress photos (same pose, lighting)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-dim">Medium</span></div>
+<div style="height:12px"></div>
+<div class="sh">🥗 NUTRITION</div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Hit 185g protein — priority #1</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Stay within 1,900 calories</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Log all meals in MyFitnessPal</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Before or during eating</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">120+ oz water (8 oz every 2 hrs)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">No processed food on weekdays</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Mon–Fri</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">No eating after 9 PM</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Sunday meal prep complete</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Grocery run done before prep</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Zero White Monster months</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Ongoing</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Waist measurement check</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-dim">Medium</span></div>
+<div style="height:12px"></div>
+<div class="sh">📚 READING</div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">30 min reading (physical book, 9 PM)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every night</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Audiobook during commute (both ways)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every commute day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Track pages read</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Weekly</span><span class="badge badge-dim">Medium</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Complete 1 book</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Write 3 key takeaways after each book</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">End of each book</span><span class="badge badge-amb">High</span></div>
+<div style="height:12px"></div>
+<div class="sh">💰 FINANCIAL</div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">No impulse spending</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every day</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Log all transactions</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Check Costco CC balance</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Pay $305+ on Costco CC</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">No Chase bank fee (confirm direct deposit)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Add surplus to emergency fund</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Review subscriptions — worth keeping?</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-dim">Medium</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">DoorDash/side income weekend shift</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Weekends</span><span class="badge badge-dim">Medium</span></div>
+<div style="height:12px"></div>
+<div class="sh">🧠 MINDSET & LIFESTYLE</div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Screens off by 10 PM</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every night</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">In bed by 11:30 PM</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every night</span><span class="badge badge-red">Critical</span></div>
+<div class="card-sm goal-row" data-freq="Daily" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-grn" style="flex-shrink:0;width:58px;justify-content:center">Daily</span><span style="flex:1;font-size:13px;color:var(--t1)">Prep for tomorrow (gym bag, clothes, lunch)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every night</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Sunday weekly check-in (5 questions)</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Weekly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-amb" style="flex-shrink:0;width:58px;justify-content:center">Weekly</span><span style="flex:1;font-size:13px;color:var(--t1)">Identify 1 thing to lock in next week</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Every Sunday</span><span class="badge badge-amb">High</span></div>
+<div class="card-sm goal-row" data-freq="Monthly" style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center"><span class="badge badge-red" style="flex-shrink:0;width:58px;justify-content:center">Monthly</span><span style="flex:1;font-size:13px;color:var(--t1)">Full plan reassess — weight, workouts, finances</span><span style="font-size:11px;color:var(--t3);white-space:nowrap">Monthly</span><span class="badge badge-amb">High</span></div>
+<div style="height:12px"></div>
+</div>
+</div>
+</div>
+<nav id="bnav"><div class="bnav-items">
+<div class="bnav-item active" onclick="goto('dash')" id="bn-dash"><span class="bi">📊</span><span>Dash</span></div>
+<div class="bnav-item" onclick="goto('habits')" id="bn-habits"><span class="bi">✅</span><span>Habits</span></div>
+<div class="bnav-item" onclick="goto('workout')" id="bn-workout"><span class="bi">💪</span><span>Workout</span></div>
+<div class="bnav-item" onclick="goto('nutrition')" id="bn-nutrition"><span class="bi">🥗</span><span>Food</span></div>
+<div class="bnav-item" onclick="goto('schedule')" id="bn-schedule"><span class="bi">📅</span><span>Schedule</span></div>
+<div class="bnav-item" onclick="goto('spice')" id="bn-spice"><span class="bi">🌶️</span><span>Spice</span></div>
+<div class="bnav-item" onclick="goto('reading')" id="bn-reading"><span class="bi">📚</span><span>Reading</span></div>
+<div class="bnav-item" onclick="goto('financial')" id="bn-financial"><span class="bi">💰</span><span>Finance</span></div>
+<div class="bnav-item" onclick="goto('goals')" id="bn-goals"><span class="bi">🎯</span><span>Goals</span></div>
+</div></nav>
+<div class="modal-bg" id="log-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-day-title">LOG SESSION</div>
+    <div style="font-size:12px;color:var(--t3);margin-bottom:16px">Record any notes, weights, or how you felt</div>
+    <textarea class="input-field" id="log-text" rows="4" placeholder="e.g. Incline press: 30lb DBs, felt strong. HIIT was brutal. Knee felt good after rehab." style="resize:vertical;min-height:100px"></textarea>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-red" style="flex:1" onclick="saveLog()">Save Session</button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+</div>
+<script>
+// ── STATE ────────────────────────────────────────
+const S = {
+  page: "dash",
+  habitDate: todayStr(),
+  currentDay: 0,
+  logDayIdx: 0,
+};
+
+function todayStr() {
+  return new Date().toISOString().split("T")[0];
+}
+function dateStr(d) {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return months[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+}
+function dayOfWeek(d) {
+  return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
+}
+
+// ── STORAGE ──────────────────────────────────────
+function load(key, def) {
+  try { return JSON.parse(localStorage.getItem("cisco_" + key)) || def; } catch { return def; }
+}
+function save(key, val) {
+  localStorage.setItem("cisco_" + key, JSON.stringify(val));
+}
+
+// ── NAVIGATION ───────────────────────────────────
+const PAGE_TITLES = {
+  dash: "DASHBOARD", habits: "HABITS", workout: "WORKOUT",
+  nutrition: "NUTRITION", schedule: "SCHEDULE", spice: "SPICE GUIDE",
+  reading: "READING PLAN", financial: "FINANCIAL PLAN", goals: "GOALS"
+};
+
+function goto(id) {
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  document.querySelectorAll(".bnav-item").forEach(n => n.classList.remove("active"));
+  const page = document.getElementById("page-" + id);
+  if (page) page.classList.add("active");
+  const ni = document.getElementById("ni-" + id);
+  if (ni) ni.classList.add("active");
+  const bn = document.getElementById("bn-" + id);
+  if (bn) bn.classList.add("active");
+  document.getElementById("tb-title").textContent = PAGE_TITLES[id] || id.toUpperCase();
+  S.page = id;
+  if (id === "habits") renderHabits();
+  if (id === "dash") renderDash();
+}
+
+function toggleMobileNav() {
+  // Simple mobile nav toggle - already using bottom nav
+}
+
+// ── DATE DISPLAY ─────────────────────────────────
+function initDate() {
+  const now = new Date();
+  document.getElementById("tb-date").textContent = dayOfWeek(now) + " · " + dateStr(now);
+  // Week number since plan start (use stored start date or default)
+  const start = load("startDate", todayStr());
+  const diffMs = new Date(todayStr()) - new Date(start);
+  const wk = Math.floor(diffMs / (7 * 86400000)) + 1;
+  const wkEl = document.getElementById("wk-num");
+  if (wkEl) wkEl.textContent = wk;
+}
+
+// ── WEIGHT LOG ────────────────────────────────────
+function logWeight() {
+  const val = parseFloat(document.getElementById("weight-in").value);
+  if (!val || val < 100 || val > 400) { showToast("Enter a valid weight (100–400 lbs)"); return; }
+  const logs = load("weights", []);
+  logs.unshift({ date: todayStr(), weight: val });
+  save("weights", logs.slice(0, 60));
+  document.getElementById("weight-in").value = "";
+  renderWeightLog();
+  showToast("Weight logged: " + val + " lbs");
+}
+
+function renderWeightLog() {
+  const logs = load("weights", []);
+  const el = document.getElementById("weight-log");
+  if (!el) return;
+  if (logs.length === 0) { el.innerHTML = "<div style='color:var(--t3);font-size:12px'>No entries yet — log your first weight above.</div>"; return; }
+  const recent = logs.slice(0, 5);
+  el.innerHTML = recent.map((l, i) => 
+    "<div style='display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px'>" +
+    "<span style='color:var(--t3)'>" + l.date + "</span>" +
+    "<span style='font-family:DM Mono,monospace;color:" + (i===0?"var(--grn)":"var(--t1)") + ";font-weight:" + (i===0?"600":"400") + "'>" + l.weight + " lbs</span>" +
+    "</div>"
+  ).join("");
+  // Progress bar
+  const cur = logs[0].weight;
+  const start = 220.4;
+  const target = 165;
+  const pct = Math.round(Math.max(0, Math.min(100, (start - cur) / (start - target) * 100)));
+  const pctEl = document.getElementById("wt-pct");
+  const barEl = document.getElementById("wt-bar");
+  if (pctEl) pctEl.textContent = pct + "%";
+  if (barEl) barEl.style.width = pct + "%";
+}
+
+// ── HABITS ────────────────────────────────────────
+const ALL_HABITS = [
+  {id:"wake",cat:"morning",label:"Wake up by 6 AM"},
+  {id:"hydrate",cat:"morning",label:"16 oz water first thing"},
+  {id:"mobility",cat:"morning",label:"Morning mobility (15 min)"},
+  {id:"workout",cat:"fitness",label:"Workout complete"},
+  {id:"hiit",cat:"fitness",label:"HIIT / Conditioning done"},
+  {id:"kneerehab",cat:"fitness",label:"Knee rehab done"},
+  {id:"walk",cat:"fitness",label:"Evening walk (30 min)"},
+  {id:"logged",cat:"nutrition",label:"Logged all meals (MFP)"},
+  {id:"protein",cat:"nutrition",label:"Hit 185g protein"},
+  {id:"calories",cat:"nutrition",label:"Within 1,900 calories"},
+  {id:"noprocessed",cat:"nutrition",label:"No processed food"},
+  {id:"water",cat:"nutrition",label:"120+ oz water"},
+  {id:"nolateeat",cat:"nutrition",label:"No eating after 9 PM"},
+  {id:"read",cat:"mindset",label:"Read 30 min (physical book)"},
+  {id:"prep",cat:"mindset",label:"Prepped for tomorrow"},
+  {id:"screens",cat:"mindset",label:"Screens off by 10 PM"},
+  {id:"sleep",cat:"mindset",label:"In bed by 11:30 PM"},
+];
+
+function toggleHabit(id) {
+  const data = load("habits", {});
+  const dateKey = S.habitDate;
+  if (!data[dateKey]) data[dateKey] = {};
+  data[dateKey][id] = !data[dateKey][id];
+  save("habits", data);
+  renderHabits();
+  if (S.page === "dash") renderDash();
+}
+
+function renderHabits() {
+  const data = load("habits", {});
+  const dateData = data[S.habitDate] || {};
+  const d = new Date(S.habitDate + "T12:00:00");
+  const el = document.getElementById("h-date");
+  const relEl = document.getElementById("h-daterel");
+  if (el) el.textContent = (dayOfWeek(d) + ", " + dateStr(d)).toUpperCase();
+  if (relEl) {
+    const diff = Math.round((new Date(todayStr()) - new Date(S.habitDate)) / 86400000);
+    relEl.textContent = diff === 0 ? "Today" : diff === 1 ? "Yesterday" : diff + " days ago";
+  }
+  // Render each habit
+  ALL_HABITS.forEach(h => {
+    const el = document.getElementById("hc-" + h.id);
+    if (!el) return;
+    const done = !!dateData[h.id];
+    el.classList.toggle("done", done);
+  });
+  // Category progress
+  renderCatProg(dateData);
+  renderStreakBar();
+}
+
+function renderCatProg(dateData) {
+  const cats = [
+    {id:"morning",label:"Morning",habits:["wake","hydrate","mobility"],col:"amb"},
+    {id:"fitness",label:"Fitness",habits:["workout","hiit","kneerehab","walk"],col:"red"},
+    {id:"nutrition",label:"Nutrition",habits:["logged","protein","calories","noprocessed","water","nolateeat"],col:"grn"},
+    {id:"mindset",label:"Mindset",habits:["read","prep","screens","sleep"],col:"blu"},
+  ];
+  const el = document.getElementById("cat-prog");
+  if (!el) return;
+  el.innerHTML = cats.map(cat => {
+    const done = cat.habits.filter(id => !!dateData[id]).length;
+    const total = cat.habits.length;
+    const pct = Math.round(done/total*100);
+    return "<div class='stat' style='padding:12px 14px'>" +
+      "<div class='stat-lbl'>" + cat.label + "</div>" +
+      "<div style='font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--" + cat.col + ");line-height:1;margin-bottom:6px'>" + done + "/" + total + "</div>" +
+      "<div class='prog-bar'><div class='prog-fill' style='width:" + pct + "%;background:var(--" + cat.col + ")'></div></div>" +
+      "</div>";
+  }).join("");
+}
+
+function renderStreakBar() {
+  const el = document.getElementById("streak-bar");
+  if (!el) return;
+  const data = load("habits", {});
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    const dateData = data[key] || {};
+    const done = ALL_HABITS.filter(h => !!dateData[h.id]).length;
+    const pct = Math.round(done/ALL_HABITS.length*100);
+    const daysShort = ["S","M","T","W","T","F","S"][d.getDay()];
+    days.push({key, done, pct, dayLabel: daysShort, isToday: key === todayStr()});
+  }
+  el.innerHTML = days.map(d => {
+    const col = d.pct >= 80 ? "var(--grn)" : d.pct >= 50 ? "var(--amb)" : d.pct > 0 ? "var(--red)" : "var(--s3)";
+    return "<div style='flex:1;text-align:center'>" +
+      "<div style='font-size:10px;color:var(--t3);margin-bottom:5px'>" + d.dayLabel + "</div>" +
+      "<div style='height:60px;background:var(--s3);border-radius:6px;position:relative;overflow:hidden" + (d.isToday ? ";border:1px solid var(--red)" : "") + "'>" +
+      "<div style='position:absolute;bottom:0;left:0;right:0;height:" + d.pct + "%;background:" + col + ";transition:height .3s;border-radius:4px'></div>" +
+      "</div>" +
+      "<div style='font-size:10px;color:var(--t3);margin-top:4px'>" + d.done + "</div>" +
+      "</div>";
+  }).join("");
+}
+
+function changeDate(dir) {
+  const d = new Date(S.habitDate + "T12:00:00");
+  d.setDate(d.getDate() + dir);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (d >= tomorrow) return;
+  S.habitDate = d.toISOString().split("T")[0];
+  renderHabits();
+}
+
+// ── DASHBOARD ────────────────────────────────────
+function renderDash() {
+  renderWeightLog();
+  // Today's workout
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const today = days[new Date().getDay()];
+  const plans = {
+    Monday: "Upper Push — Chest, Shoulders, Triceps<br>🔥 HIIT Finisher: Rower + Mountain Climbers + Push-up Taps<br>🦵 Knee Rehab (10 min)",
+    Tuesday: "Lower Body — Glutes, Hamstrings, Hips<br>🚴 Zone 2 Bike Cool-down (20 min)<br>🦵 Knee Rehab (10 min)",
+    Wednesday: "Upper Pull — Back, Biceps, Rear Delts<br>🔥 HIIT Finisher: Battle Ropes + Crunches + Knee Raises<br>🦵 Knee Rehab (10 min)",
+    Thursday: "⚡ Conditioning + Core — Fighter's Day<br>4 Rounds: Rower → Climbers → Push-ups → Rest<br>🦵 Extended Knee Rehab (15 min)",
+    Friday: "Full Body Compound — Fat Burn Focus<br>🔥 HIIT Finisher: Rower + Push-ups + Ab Wheel<br>🦵 Knee Rehab (10 min)",
+    Saturday: "Long Cardio + Bodyweight — Endurance<br>30 min Zone 2 + Push-ups + Rows + Squats<br>🦵 Knee Rehab (10 min)",
+    Sunday: "🟢 REST DAY + Meal Prep<br>No gym. Cook for the week. Recover fully.",
+  };
+  const twEl = document.getElementById("today-workout");
+  if (twEl) twEl.innerHTML = "<div style='font-size:12px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:8px'>" + today.toUpperCase() + "</div>" + (plans[today] || "");
+  // Week summary
+  const data = load("habits", {});
+  const wkEl = document.getElementById("week-summary");
+  if (!wkEl) return;
+  const weekDays = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    weekDays.push({key, date: d});
+  }
+  const rows = ALL_HABITS.map(h => {
+    const cells = weekDays.map(wd => {
+      const done = !!(data[wd.key] && data[wd.key][h.id]);
+      return "<div style='width:28px;height:28px;border-radius:5px;background:" + (done ? "var(--grn)" : "var(--s3)") + ";display:flex;align-items:center;justify-content:center;font-size:12px'>" + (done ? "✓" : "") + "</div>";
+    }).join("");
+    return "<div style='display:flex;align-items:center;gap:6px;padding:3px 0'>" +
+      "<div style='font-size:11px;color:var(--t2);width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" + h.label + "</div>" +
+      "<div style='display:flex;gap:4px'>" + cells + "</div>" +
+      "</div>";
+  }).join("");
+  const dHdrs = weekDays.map(wd => {
+    const dNames = ["Su","Mo","Tu","We","Th","Fr","Sa"][wd.date.getDay()];
+    const isToday = wd.key === todayStr();
+    return "<div style='width:28px;text-align:center;font-size:10px;font-weight:" + (isToday?"700":"400") + ";color:" + (isToday?"var(--red)":"var(--t3)") + "'>" + dNames + "</div>";
+  }).join("");
+  wkEl.innerHTML = "<div style='display:flex;align-items:center;gap:6px;margin-bottom:6px'><div style='width:160px'></div><div style='display:flex;gap:4px'>" + dHdrs + "</div></div>" + rows;
+}
+
+// ── WORKOUT ──────────────────────────────────────
+function setDay(i) {
+  document.querySelectorAll("[id^='day-']").forEach(el => el.style.display = "none");
+  document.getElementById("day-" + i).style.display = "block";
+  document.querySelectorAll("#day-tabs .tab-btn").forEach((b,j) => b.classList.toggle("on", i===j));
+  S.currentDay = i;
+}
+
+function logWorkout(dayIdx) {
+  S.logDayIdx = dayIdx;
+  const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  document.getElementById("modal-day-title").textContent = "LOG " + days[dayIdx].toUpperCase() + " SESSION";
+  const logs = load("workout_logs", {});
+  const key = todayStr() + "_" + dayIdx;
+  document.getElementById("log-text").value = logs[key] || "";
+  document.getElementById("log-modal").classList.add("open");
+}
+
+function saveLog() {
+  const text = document.getElementById("log-text").value.trim();
+  const logs = load("workout_logs", {});
+  const key = todayStr() + "_" + S.logDayIdx;
+  if (text) logs[key] = text;
+  else delete logs[key];
+  save("workout_logs", logs);
+  closeModal();
+  showToast("Session logged!");
+}
+
+function closeModal() {
+  document.getElementById("log-modal").classList.remove("open");
+}
+
+// ── NUTRITION ─────────────────────────────────────
+function setMealTab(btn, groupId, idx) {
+  const panels = document.querySelectorAll("." + groupId);
+  panels.forEach((p,i) => p.style.display = i===idx ? "block" : "none");
+  const tabs = btn.parentElement.querySelectorAll(".tab-btn");
+  tabs.forEach((t,i) => t.classList.toggle("on", i===idx));
+}
+
+// ── SCHEDULE ─────────────────────────────────────
+function setSchedTab(idx) {
+  ["wd","we"].forEach((id,i) => {
+    const el = document.getElementById("sched-" + id);
+    if (el) el.style.display = i===idx ? "block" : "none";
+  });
+  document.querySelectorAll("#sched-tabs .tab-btn").forEach((b,i) => b.classList.toggle("on", i===idx));
+}
+
+// ── SPICE GUIDE ──────────────────────────────────
+function setSpiceTab(idx) {
+  document.querySelectorAll("[id^='spice-']").forEach((el,i) => el.style.display = i===idx ? "block" : "none");
+  document.querySelectorAll("#spice-tabs .tab-btn").forEach((b,i) => b.classList.toggle("on", i===idx));
+}
+
+// ── READING ──────────────────────────────────────
+let readPct = 0;
+function updateReadPct(delta) {
+  readPct = Math.max(0, Math.min(100, readPct + delta));
+  save("readPct", readPct);
+  const el = document.getElementById("read-pct");
+  if (el) el.textContent = readPct + "%";
+}
+function saveBookStatus(id, status) {
+  const books = load("books", {});
+  books[id] = status;
+  save("books", books);
+  showToast("Status updated: " + status);
+}
+
+// ── FINANCIAL ────────────────────────────────────
+function updateCC() {
+  const val = parseFloat(document.getElementById("cc-in").value);
+  if (!val && val !== 0) { showToast("Enter current CC balance"); return; }
+  save("ccBalance", val);
+  const el = document.getElementById("cc-balance");
+  if (el) el.textContent = "$" + val.toFixed(0);
+  const pct = Math.round(Math.max(0, (800 - val) / 800 * 100));
+  const pctEl = document.getElementById("cc-pct");
+  const barEl = document.getElementById("cc-bar");
+  if (pctEl) pctEl.textContent = pct + "%";
+  if (barEl) barEl.style.width = pct + "%";
+  document.getElementById("cc-in").value = "";
+  showToast("CC balance updated: $" + val.toFixed(0));
+}
+function saveRoadmap(num, status) {
+  const rm = load("roadmap", {});
+  rm[num] = status;
+  save("roadmap", rm);
+  showToast("Step " + num + ": " + status);
+}
+function saveMilestone(sel, name) {
+  const ms = load("milestones", {});
+  ms[name] = sel.value;
+  save("milestones", ms);
+}
+
+// ── GOALS ─────────────────────────────────────────
+function filterGoals(freq) {
+  document.querySelectorAll(".goal-row").forEach(el => {
+    el.style.display = freq === "All" || el.dataset.freq === freq ? "flex" : "none";
+  });
+  document.querySelectorAll("#page-goals .tab-btn").forEach(b => {
+    b.classList.toggle("on", b.textContent === freq);
+  });
+}
+
+// ── TOAST ─────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+// ── RESTORE SAVED STATE ──────────────────────────
+function restoreState() {
+  // Book statuses
+  const books = load("books", {});
+  Object.entries(books).forEach(([id, status]) => {
+    const sel = document.querySelector("[onchange*=saveBookStatus('" + id + "']");
+    if (sel) sel.value = status;
+  });
+  // CC balance
+  const cc = load("ccBalance", 800);
+  const ccEl = document.getElementById("cc-balance");
+  if (ccEl) ccEl.textContent = "$" + cc;
+  const ccPct = Math.round(Math.max(0, (800 - cc) / 800 * 100));
+  const ccPctEl = document.getElementById("cc-pct");
+  const ccBarEl = document.getElementById("cc-bar");
+  if (ccPctEl) ccPctEl.textContent = ccPct + "%";
+  if (ccBarEl) ccBarEl.style.width = ccPct + "%";
+  // Read pct
+  readPct = load("readPct", 0);
+  const rpEl = document.getElementById("read-pct");
+  if (rpEl) rpEl.textContent = readPct + "%";
+  // Milestones
+  const ms = load("milestones", {});
+  document.querySelectorAll("#page-dash select").forEach(sel => {
+    const key = sel.getAttribute("onchange");
+    if (key && key.includes("saveMilestone")) {
+      const match = key.match(/'([^']+)'/);
+      if (match && ms[match[1]]) sel.value = ms[match[1]];
+    }
+  });
+  // Roadmap
+  const rm = load("roadmap", {});
+  Object.entries(rm).forEach(([num, status]) => {
+    const sel = document.querySelector("[onchange*=saveRoadmap(" + num + "]");
+    if (sel) sel.value = status;
+  });
+  // Store start date if not set
+  if (!load("startDate", null)) save("startDate", todayStr());
+}
+
+// ── INIT ──────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  initDate();
+  renderHabits();
+  renderDash();
+  restoreState();
+});
+
+// Close modal on bg click
+document.getElementById("log-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>
