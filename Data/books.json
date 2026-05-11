@@ -1,0 +1,364 @@
+{
+  "lists": {
+    "self-improvement-first": {
+      "id": "self-improvement-first",
+      "name": "Self-Improvement & Strategy \u2014 12 Month",
+      "description": "Starts with habit science, moves through philosophy and strategy, rewards discipline with fiction at month 4. Sequenced to build momentum.",
+      "books": [
+        {
+          "id": "atomichabits",
+          "month": 1,
+          "title": "Atomic Habits",
+          "author": "James Clear",
+          "pages": 320,
+          "genre": "Self-improvement",
+          "why": "The foundation of everything. Science of habit building \u2014 directly explains what you're building right now."
+        },
+        {
+          "id": "ego",
+          "month": 2,
+          "title": "Ego is the Enemy",
+          "author": "Ryan Holiday",
+          "pages": 240,
+          "genre": "Philosophy",
+          "why": "Confronts the mental patterns that kill momentum before it starts. Read when motivation first dips."
+        },
+        {
+          "id": "fouragree",
+          "month": 3,
+          "title": "The Four Agreements",
+          "author": "Don Miguel Ruiz",
+          "pages": 160,
+          "genre": "Mindset",
+          "why": "Short enough to finish in 2 weeks. A quiet reset before fiction begins."
+        },
+        {
+          "id": "redrising",
+          "month": 4,
+          "title": "Red Rising",
+          "author": "Pierce Brown",
+          "pages": 400,
+          "genre": "Sci-fi",
+          "why": "Reward month. Addictive pacing \u2014 placed here to reinforce the reading habit when it could stall. Series warning: Books 2 and 3 are equally good."
+        },
+        {
+          "id": "12rules",
+          "month": 5,
+          "title": "12 Rules for Life",
+          "author": "Jordan Peterson",
+          "pages": 400,
+          "genre": "Philosophy",
+          "why": "Hits differently once you've been doing the work for 4 months. The rules feel earned, not prescriptive."
+        },
+        {
+          "id": "nolongerhuman",
+          "month": 6,
+          "title": "No Longer Human",
+          "author": "Osamu Dazai",
+          "pages": 180,
+          "genre": "Fiction",
+          "why": "Short, dark, beautifully written. Perfect palate cleanser after Peterson."
+        },
+        {
+          "id": "richestman",
+          "month": 6,
+          "title": "The Richest Man in Babylon",
+          "author": "George S. Clason",
+          "pages": 145,
+          "genre": "Finance",
+          "why": "Very short. Financial mindset. Real estate career. Read same month as Dazai."
+        },
+        {
+          "id": "48laws",
+          "month": 7,
+          "title": "48 Laws of Power",
+          "author": "Robert Greene",
+          "pages": 480,
+          "genre": "Strategy",
+          "why": "Changes how you read every room and every conversation. One law per sitting \u2014 don't rush it."
+        },
+        {
+          "id": "outliers",
+          "month": 8,
+          "title": "Outliers",
+          "author": "Malcolm Gladwell",
+          "pages": 310,
+          "genre": "Psychology",
+          "why": "Fast and gripping. Reframes what getting good actually requires \u2014 applies to fitness and career equally."
+        },
+        {
+          "id": "mistborn",
+          "month": 9,
+          "title": "Mistborn",
+          "author": "Brandon Sanderson",
+          "pages": 650,
+          "genre": "Fantasy",
+          "why": "By Month 9 your volume is strong. Meticulous plotting, brilliant magic system. Also a trilogy."
+        },
+        {
+          "id": "mastery",
+          "month": 10,
+          "title": "Mastery",
+          "author": "Robert Greene",
+          "pages": 320,
+          "genre": "Strategy",
+          "why": "Read when real discipline is built. You'll recognize yourself in the early-stage learner."
+        },
+        {
+          "id": "breathbecomesair",
+          "month": 11,
+          "title": "When Breath Becomes Air",
+          "author": "Paul Kalanithi",
+          "pages": 230,
+          "genre": "Memoir",
+          "why": "Most profound book on the shelf. About meaning, time, what makes a life worth living."
+        },
+        {
+          "id": "thinkingfast",
+          "month": 12,
+          "title": "Thinking Fast and Slow",
+          "author": "Daniel Kahneman",
+          "pages": 500,
+          "genre": "Psychology",
+          "why": "Hardest book here. Save for last \u2014 by Month 12 your focus handles it."
+        }
+      ],
+      "year2_flagship": {
+        "title": "The Way of Kings",
+        "author": "Brandon Sanderson",
+        "pages": 1007,
+        "note": "Greatest epic fantasy written this century. Reward for completing Year 1. Do not start before Year 2."
+      }
+    },
+    "business-focus": {
+      "id": "business-focus",
+      "name": "Business & Finance \u2014 12 Month",
+      "description": "Practical business and financial intelligence. Heavy on real-world application for careers, investing, and building financial independence.",
+      "books": [
+        {
+          "id": "richestman-b",
+          "month": 1,
+          "title": "The Richest Man in Babylon",
+          "author": "George S. Clason",
+          "pages": 145,
+          "genre": "Finance",
+          "why": "Start small \u2014 this short book plants the seed for everything financial that follows."
+        },
+        {
+          "id": "atomichabits-b",
+          "month": 2,
+          "title": "Atomic Habits",
+          "author": "James Clear",
+          "pages": 320,
+          "genre": "Self-improvement",
+          "why": "Building financial habits is building any habit \u2014 this is the framework."
+        },
+        {
+          "id": "48laws-b",
+          "month": 3,
+          "title": "48 Laws of Power",
+          "author": "Robert Greene",
+          "pages": 480,
+          "genre": "Strategy",
+          "why": "Power dynamics in business \u2014 read one law per sitting."
+        },
+        {
+          "id": "outliers-b",
+          "month": 4,
+          "title": "Outliers",
+          "author": "Malcolm Gladwell",
+          "pages": 310,
+          "genre": "Psychology",
+          "why": "What actually drives success \u2014 dispels the myths."
+        },
+        {
+          "id": "tipping",
+          "month": 5,
+          "title": "The Tipping Point",
+          "author": "Malcolm Gladwell",
+          "pages": 280,
+          "genre": "Business",
+          "why": "How ideas spread \u2014 useful for any sales or marketing role including real estate."
+        },
+        {
+          "id": "influence",
+          "month": 6,
+          "title": "Influence: The Psychology of Persuasion",
+          "author": "Robert Cialdini",
+          "pages": 320,
+          "genre": "Psychology",
+          "why": "The bible of persuasion. Career-changing for anyone in sales."
+        },
+        {
+          "id": "mastery-b",
+          "month": 7,
+          "title": "Mastery",
+          "author": "Robert Greene",
+          "pages": 320,
+          "genre": "Strategy",
+          "why": "What becoming world-class actually looks like. Long game thinking."
+        },
+        {
+          "id": "thinkingfast-b",
+          "month": 8,
+          "title": "Thinking Fast and Slow",
+          "author": "Daniel Kahneman",
+          "pages": 500,
+          "genre": "Psychology",
+          "why": "How decisions are made \u2014 essential for negotiation and investing."
+        },
+        {
+          "id": "ego-b",
+          "month": 9,
+          "title": "Ego is the Enemy",
+          "author": "Ryan Holiday",
+          "pages": 240,
+          "genre": "Philosophy",
+          "why": "Keeps ambition grounded \u2014 important when things start going well."
+        },
+        {
+          "id": "4agreements-b",
+          "month": 10,
+          "title": "The Four Agreements",
+          "author": "Don Miguel Ruiz",
+          "pages": 160,
+          "genre": "Mindset",
+          "why": "Mental clarity for high-performance \u2014 short and powerful."
+        },
+        {
+          "id": "redrising-b",
+          "month": 11,
+          "title": "Red Rising",
+          "author": "Pierce Brown",
+          "pages": 400,
+          "genre": "Sci-fi",
+          "why": "Reward month \u2014 earn it with 10 months of non-fiction."
+        },
+        {
+          "id": "dailylaws",
+          "month": 12,
+          "title": "The Daily Laws",
+          "author": "Robert Greene",
+          "pages": 460,
+          "genre": "Strategy",
+          "why": "One entry per day \u2014 end the year with Greene's wisdom distilled."
+        }
+      ]
+    },
+    "fiction-first": {
+      "id": "fiction-first",
+      "name": "Fiction-Led with Growth \u2014 12 Month",
+      "description": "Fiction-heavy plan that still delivers real intellectual growth. Best for readers who need engaging stories to build the reading habit before heavier non-fiction.",
+      "books": [
+        {
+          "id": "atomichabits-f",
+          "month": 1,
+          "title": "Atomic Habits",
+          "author": "James Clear",
+          "pages": 320,
+          "genre": "Self-improvement",
+          "why": "Start with this regardless of preference \u2014 it explains why you're building the reading habit at all."
+        },
+        {
+          "id": "redrising-f",
+          "month": 2,
+          "title": "Red Rising",
+          "author": "Pierce Brown",
+          "pages": 400,
+          "genre": "Sci-fi",
+          "why": "Month 2 reward \u2014 get hooked on reading with this addictive series."
+        },
+        {
+          "id": "goldenson",
+          "month": 3,
+          "title": "Golden Son",
+          "author": "Pierce Brown",
+          "pages": 442,
+          "genre": "Sci-fi",
+          "why": "Series continuation \u2014 the momentum is too strong to stop."
+        },
+        {
+          "id": "mornstar",
+          "month": 4,
+          "title": "Morning Star",
+          "author": "Pierce Brown",
+          "pages": 518,
+          "genre": "Sci-fi",
+          "why": "Series finale. One of the great trilogy conclusions."
+        },
+        {
+          "id": "fouragree-f",
+          "month": 5,
+          "title": "The Four Agreements",
+          "author": "Don Miguel Ruiz",
+          "pages": 160,
+          "genre": "Mindset",
+          "why": "Short break after the Red Rising trilogy. Powerful and quick."
+        },
+        {
+          "id": "nolongerhuman-f",
+          "month": 6,
+          "title": "No Longer Human",
+          "author": "Osamu Dazai",
+          "pages": 180,
+          "genre": "Fiction",
+          "why": "Dark literary fiction \u2014 completely different tone, worth it."
+        },
+        {
+          "id": "ego-f",
+          "month": 7,
+          "title": "Ego is the Enemy",
+          "author": "Ryan Holiday",
+          "pages": 240,
+          "genre": "Philosophy",
+          "why": "First real non-fiction push \u2014 you're ready for it now."
+        },
+        {
+          "id": "mistborn-f",
+          "month": 8,
+          "title": "Mistborn",
+          "author": "Brandon Sanderson",
+          "pages": 650,
+          "genre": "Fantasy",
+          "why": "Epic fantasy with incredible world-building. Trilogy."
+        },
+        {
+          "id": "outliers-f",
+          "month": 9,
+          "title": "Outliers",
+          "author": "Malcolm Gladwell",
+          "pages": 310,
+          "genre": "Psychology",
+          "why": "Reads like a series of fascinating stories \u2014 easy non-fiction transition."
+        },
+        {
+          "id": "48laws-f",
+          "month": 10,
+          "title": "48 Laws of Power",
+          "author": "Robert Greene",
+          "pages": 480,
+          "genre": "Strategy",
+          "why": "Read one law per sitting \u2014 can be done alongside other reading."
+        },
+        {
+          "id": "breathbecomesair-f",
+          "month": 11,
+          "title": "When Breath Becomes Air",
+          "author": "Paul Kalanithi",
+          "pages": 230,
+          "genre": "Memoir",
+          "why": "Memoir that reads like beautiful fiction. Profound."
+        },
+        {
+          "id": "mastery-f",
+          "month": 12,
+          "title": "Mastery",
+          "author": "Robert Greene",
+          "pages": 320,
+          "genre": "Strategy",
+          "why": "End the year with the long game. You've built the habit \u2014 now build the skill."
+        }
+      ]
+    }
+  }
+}
