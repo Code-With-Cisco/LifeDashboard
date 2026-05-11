@@ -795,13 +795,30 @@ async function doFPR(){
   btn.disabled=true;btn.textContent='Updating...';
   const{error}=await sb.auth.updateUser({password:pass});
   if(error){btn.disabled=false;btn.textContent='SET NEW PASSWORD';showErr('fpr-err',error.message);return;}
-  await sb.from('profiles').update({force_password_reset:false}).eq('id',PROFILE.id);
-  PROFILE.force_password_reset=false;
+  // Clear the reset flag — works whether PROFILE is loaded or not
+  const{data:{user}}=await sb.auth.getUser();
+  if(user){
+    await sb.from('profiles').update({force_password_reset:false}).eq('id',user.id);
+    if(PROFILE)PROFILE.force_password_reset=false;
+  }
   btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-  toast('Password updated!');await loadAllContent();enterApp();
+  toast('Password updated! Signing you in...');
+  // If PROFILE already loaded, go straight to app
+  if(PROFILE){await loadAllContent();enterApp();return;}
+  // Otherwise fetch profile and enter (recovery flow)
+  if(user){
+    const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).single();
+    if(profile){PROFILE=profile;await loadAllContent();enterApp();}
+    else show('s-choose');
+  }
 }
 function logout(){sb.auth.signOut();}
 sb.auth.onAuthStateChange(async(event,session)=>{
+  // Password reset email link — show reset form immediately
+  if(event==='PASSWORD_RECOVERY'){
+    show('s-fpr');
+    return;
+  }
   if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
     if(!session){show('s-choose');return;}
     const{data:profile,error}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
@@ -811,6 +828,12 @@ sb.auth.onAuthStateChange(async(event,session)=>{
     if(profile.force_password_reset){show('s-fpr');return;}
     if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
     await loadAllContent();enterApp();
+  }else if(event==='USER_UPDATED'){
+    // After password change via recovery link — reload profile and enter app
+    if(session&&PROFILE===null){
+      const{data:profile}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
+      if(profile){PROFILE=profile;await loadAllContent();enterApp();}
+    }
   }else if(event==='SIGNED_OUT'){
     PROFILE=null;
     document.getElementById('app').classList.remove('show');
