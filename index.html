@@ -813,25 +813,85 @@ async function doFPR(){
   }
 }
 function logout(){sb.auth.signOut();}
-sb.auth.onAuthStateChange(async(event,session)=>{
-  // Password reset email link — show reset form immediately
-  if(event==='PASSWORD_RECOVERY'){
-    show('s-fpr');
-    return;
+const ADMIN_UUID='81dbcc87-60dc-4969-874b-588a8dd861b7';
+
+async function loadProfile(session){
+  // maybeSingle() returns null (not error) when 0 rows found
+  let{data:profile,error}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
+
+  // Success — profile exists
+  if(!error&&profile)return profile;
+
+  // No error but no profile — row missing, auto-create it
+  if(!error&&!profile){
+    return await createProfile(session);
   }
+
+  // Server error (500) — could be RLS conflict or table issue
+  // Log for debugging and try creating anyway in case it's just a missing row
+  console.warn('Profile fetch error:',error?.code, error?.message, error?.details);
+
+  if(error?.code==='42P01'){
+    // Table doesn't exist at all
+    showDbError('Table "profiles" not found. Run setup.sql in Supabase SQL Editor.');
+    return null;
+  }
+
+  // For 500 or other errors: attempt profile creation as fallback
+  // (handles cases where SELECT fails but INSERT succeeds due to RLS quirks)
+  const created = await createProfile(session);
+  if(created)return created;
+
+  showDbError('Error '+error?.code+': '+error?.message+'. Run fix.sql in Supabase SQL Editor.');
+  return null;
+}
+
+async function createProfile(session){
+  const meta=session.user.user_metadata||{};
+  const isAdmin=session.user.id===ADMIN_UUID;
+  const{data:created,error:ce}=await sb.from('profiles').insert({
+    id:session.user.id,
+    username:meta.username||session.user.email?.split('@')[0]||'user',
+    display_name:meta.display_name||meta.username||session.user.email?.split('@')[0]||'User',
+    role:isAdmin?'admin':'standard',
+    signup_complete:isAdmin,
+    force_password_reset:isAdmin,
+    assigned_workout_plan:'shred-advanced',
+    assigned_meal_plan:'high-protein-deficit',
+    assigned_reading_list:'self-improvement-first',
+  }).select().maybeSingle();
+  if(!ce&&created)return created;
+  console.error('Profile create failed:',ce?.code,ce?.message);
+  return null;
+}
+
+function showDbError(msg){
+  show('s-choose');
+  const existing=document.getElementById('db-err-banner');
+  if(existing)existing.remove();
+  const box=document.querySelector('#s-choose .auth-box');
+  if(!box)return;
+  const banner=document.createElement('div');
+  banner.id='db-err-banner';
+  banner.style.cssText='background:#1a0a0a;border:1px solid rgba(232,64,64,.4);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:12px;line-height:1.7;color:#E84040';
+  banner.innerHTML='<strong>Sign-in Error</strong><br>'+(msg||'Database issue detected.')+'<br><br>Run <strong>fix.sql</strong> in Supabase SQL Editor, then reload.';
+  box.insertBefore(banner,box.firstChild);
+}
+
+sb.auth.onAuthStateChange(async(event,session)=>{
+  if(event==='PASSWORD_RECOVERY'){show('s-fpr');return;}
   if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
     if(!session){show('s-choose');return;}
-    const{data:profile,error}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
-    if(error||!profile){show('s-choose');return;}
+    const profile=await loadProfile(session);
+    if(!profile)return;
     if(profile.is_disabled){await sb.auth.signOut();show('s-choose');toast('Account disabled. Contact admin.',5000);return;}
     PROFILE=profile;
     if(profile.force_password_reset){show('s-fpr');return;}
     if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
     await loadAllContent();enterApp();
   }else if(event==='USER_UPDATED'){
-    // After password change via recovery link — reload profile and enter app
-    if(session&&PROFILE===null){
-      const{data:profile}=await sb.from('profiles').select('*').eq('id',session.user.id).single();
+    if(session&&!PROFILE){
+      const profile=await loadProfile(session);
       if(profile){PROFILE=profile;await loadAllContent();enterApp();}
     }
   }else if(event==='SIGNED_OUT'){
