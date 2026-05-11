@@ -1,0 +1,517 @@
+{
+  "plans": {
+    "high-protein-deficit": {
+      "id": "high-protein-deficit",
+      "name": "High Protein Shred \u2014 1,900 Cal",
+      "description": "Aggressive fat loss protocol prioritizing muscle preservation. 750 calorie daily deficit with protein front-loaded. Designed for intermediate/advanced trainees.",
+      "goals": [
+        "weight-loss",
+        "recomposition"
+      ],
+      "targets": {
+        "calories": 1900,
+        "protein_g": 185,
+        "carbs_g": 175,
+        "fat_g": 55,
+        "sugar_max_g": 35,
+        "water_oz": 120
+      },
+      "floor_calories": 1800,
+      "notes": "Never go below 1,800 cal \u2014 below that you lose muscle, not just fat. Protein is the non-negotiable \u2014 hit it every day.",
+      "breakfast_options": [
+        {
+          "name": "Egg & Turkey Scramble Rice Bowl",
+          "cal": 505,
+          "protein": 52,
+          "carbs": 38,
+          "fat": 14,
+          "instructions": "4oz ground turkey + 2 eggs + 2 egg whites. Pan with olive oil spray, scramble together. Serve over \u00bd cup basmati. Hot sauce on top."
+        },
+        {
+          "name": "Japanese BBQ Chicken & Egg Bowl",
+          "cal": 490,
+          "protein": 48,
+          "carbs": 40,
+          "fat": 12,
+          "instructions": "5oz leftover chicken (Sunday prep) + 2 eggs + \u00bd cup rice + 1 tbsp Japanese BBQ sauce. Fastest morning option."
+        },
+        {
+          "name": "Kewpie Egg Salad Toast",
+          "cal": 510,
+          "protein": 28,
+          "carbs": 42,
+          "fat": 22,
+          "instructions": "4 boiled eggs + 1.5 tbsp Kewpie mayo + salt + white pepper. Mash. Serve on 2 slices 5-grain or sourdough."
+        },
+        {
+          "name": "Overnight Oats + Scrambled Eggs",
+          "cal": 505,
+          "protein": 42,
+          "carbs": 48,
+          "fat": 16,
+          "instructions": "Prep oats night before: \u00bd cup oats + \u00bd cup protein milk + 1 tbsp honey. Morning: 3 eggs + 2 whites scrambled. Zero morning effort."
+        },
+        {
+          "name": "Thin Bagel + Egg Scramble",
+          "cal": 480,
+          "protein": 40,
+          "carbs": 40,
+          "fat": 16,
+          "instructions": "1 thin bagel toasted + 3 eggs + 2 egg whites scrambled with \u00bd tsp Kerrygold. Quickest option on the plan."
+        }
+      ],
+      "lunch_options": [
+        {
+          "name": "Chipotle Chicken Rice Bowl",
+          "cal": 455,
+          "protein": 46,
+          "carbs": 42,
+          "fat": 10,
+          "instructions": "5oz Costco Chipotle Chicken + \u00be cup basmati + frozen broccoli (microwaved). Sunday prepped \u2014 grab and go."
+        },
+        {
+          "name": "Pan-Seared Chicken + Rice",
+          "cal": 445,
+          "protein": 46,
+          "carbs": 42,
+          "fat": 7,
+          "instructions": "6oz chicken breast (seared Sunday, sliced cold) + \u00be cup rice + hot sauce. Simple and reliable."
+        },
+        {
+          "name": "Ground Turkey Protein Pasta",
+          "cal": 490,
+          "protein": 50,
+          "carbs": 42,
+          "fat": 12,
+          "instructions": "5oz 90/10 turkey + 1\u00bd cups protein macaroni + olive oil + garlic. Reheats perfectly in a container."
+        },
+        {
+          "name": "Egg Salad Sandwich",
+          "cal": 470,
+          "protein": 28,
+          "carbs": 42,
+          "fat": 20,
+          "instructions": "Kewpie egg salad on 5-grain bread. Add hard-boiled egg on side to push protein higher."
+        }
+      ],
+      "snack_options": [
+        {
+          "name": "ON Gold Standard Whey \u2014 Strawberry Banana",
+          "cal": 120,
+          "protein": 24,
+          "carbs": 3,
+          "fat": 1,
+          "instructions": "1 scoop + 10\u201312oz cold water in shaker. Keep tub at desk or in gym bag. REPLACES the White Monster entirely."
+        },
+        {
+          "name": "Chobani Protein Yogurt Drink",
+          "cal": 160,
+          "protein": 20,
+          "carbs": 20,
+          "fat": 0,
+          "instructions": "Grab from work fridge. Zero prep. Check label \u2014 aim for under 170 cal and under 10g sugar."
+        }
+      ],
+      "dinner_options": [
+        {
+          "name": "Ribeye + Protein Pasta Aglio e Olio",
+          "cal": 585,
+          "protein": 52,
+          "carbs": 44,
+          "fat": 18,
+          "instructions": "5oz ribeye (ripping hot pan, 2\u20133 min/side, rest 5 min) + 1.5 cups protein spaghetti + aglio e olio sauce. The reward meal."
+        },
+        {
+          "name": "Ground Beef Bolognese",
+          "cal": 570,
+          "protein": 53,
+          "carbs": 48,
+          "fat": 14,
+          "instructions": "5oz 90/10 beef browned + crushed tomatoes + Italian seasoning + pinch sugar. Simmer 20 min. 1.5 cups protein pasta. Batch Sunday."
+        },
+        {
+          "name": "Japanese BBQ Chicken Thighs + Rice",
+          "cal": 575,
+          "protein": 50,
+          "carbs": 50,
+          "fat": 14,
+          "instructions": "7oz thighs + 1.5 tbsp Japanese BBQ sauce + 1 cup basmati. Baste last 2 min \u2014 don't add sauce early."
+        },
+        {
+          "name": "Chipotle Chicken + Protein Fettuccine",
+          "cal": 560,
+          "protein": 54,
+          "carbs": 48,
+          "fat": 12,
+          "instructions": "5oz Costco chicken + fettuccine + olive oil + garlic + parmesan. Done in 12 minutes."
+        },
+        {
+          "name": "Ground Turkey Taco Bowl",
+          "cal": 555,
+          "protein": 52,
+          "carbs": 44,
+          "fat": 12,
+          "instructions": "6oz 90/10 turkey + homemade taco seasoning + bell peppers + \u00bd cup rice + hot sauce."
+        },
+        {
+          "name": "Steak & Egg Rice Bowl",
+          "cal": 580,
+          "protein": 55,
+          "carbs": 38,
+          "fat": 19,
+          "instructions": "5oz ribeye/sirloin + 2 fried eggs over easy + \u00bd cup rice + Japanese BBQ sauce. Saturday reward meal \u2014 earn it."
+        }
+      ],
+      "timing": {
+        "pre_workout": {
+          "time": "6:00 AM",
+          "note": "Train fasted. Water only. If energy crashes badly after Week 1, add a banana."
+        },
+        "breakfast": {
+          "time": "7:40 AM",
+          "target_cal": 490,
+          "target_protein": 45
+        },
+        "lunch": {
+          "time": "12:30 PM",
+          "target_cal": 465,
+          "target_protein": 46
+        },
+        "snack": {
+          "time": "3:30 PM",
+          "target_cal": 140,
+          "target_protein": 22
+        },
+        "dinner": {
+          "time": "6:45 PM",
+          "target_cal": 575,
+          "target_protein": 52
+        }
+      }
+    },
+    "balanced-deficit": {
+      "id": "balanced-deficit",
+      "name": "Balanced Deficit \u2014 1,800 Cal",
+      "description": "Moderate deficit with flexible macros. Sustainable approach for consistent fat loss without feeling restricted. Good for beginners establishing habits.",
+      "goals": [
+        "weight-loss"
+      ],
+      "targets": {
+        "calories": 1800,
+        "protein_g": 150,
+        "carbs_g": 180,
+        "fat_g": 60
+      },
+      "floor_calories": 1600,
+      "breakfast_options": [
+        {
+          "name": "Greek Yogurt Parfait + Eggs",
+          "cal": 450,
+          "protein": 38,
+          "carbs": 40,
+          "fat": 12,
+          "instructions": "1 cup Greek yogurt + granola + berries + 2 scrambled eggs. Quick and filling."
+        },
+        {
+          "name": "Oat Bowl + Protein Shake",
+          "cal": 480,
+          "protein": 36,
+          "carbs": 55,
+          "fat": 10,
+          "instructions": "\u00be cup oats + banana + 1 scoop protein mixed in. Filling and simple."
+        },
+        {
+          "name": "Egg White Scramble + Toast",
+          "cal": 420,
+          "protein": 32,
+          "carbs": 38,
+          "fat": 10,
+          "instructions": "4 egg whites + 1 whole egg + 2 slices whole wheat toast + avocado. Balanced macros."
+        }
+      ],
+      "lunch_options": [
+        {
+          "name": "Chicken + Veggie Rice Bowl",
+          "cal": 450,
+          "protein": 40,
+          "carbs": 44,
+          "fat": 10,
+          "instructions": "5oz grilled chicken + \u00bd cup rice + roasted vegetables. Season with anything in the spice guide."
+        },
+        {
+          "name": "Turkey Wrap",
+          "cal": 430,
+          "protein": 36,
+          "carbs": 42,
+          "fat": 12,
+          "instructions": "5oz ground turkey + large tortilla + lettuce + tomato + mustard. Easy to pack."
+        },
+        {
+          "name": "Tuna + Rice Salad",
+          "cal": 400,
+          "protein": 38,
+          "carbs": 38,
+          "fat": 8,
+          "instructions": "1 can tuna + \u00bd cup rice + olive oil + lemon + herbs. Simple anti-inflammatory meal."
+        }
+      ],
+      "snack_options": [
+        {
+          "name": "Protein Shake",
+          "cal": 120,
+          "protein": 24,
+          "carbs": 3,
+          "fat": 1,
+          "instructions": "1 scoop whey + water. Hit protein gap."
+        },
+        {
+          "name": "Apple + Peanut Butter",
+          "cal": 200,
+          "protein": 5,
+          "carbs": 27,
+          "fat": 8,
+          "instructions": "1 medium apple + 1 tbsp natural peanut butter. Good fats and fiber."
+        },
+        {
+          "name": "Hard Boiled Eggs + Fruit",
+          "cal": 180,
+          "protein": 12,
+          "carbs": 18,
+          "fat": 7,
+          "instructions": "2 hard boiled eggs + 1 piece of fruit. Portable and filling."
+        }
+      ],
+      "dinner_options": [
+        {
+          "name": "Grilled Chicken + Sweet Potato + Veg",
+          "cal": 520,
+          "protein": 45,
+          "carbs": 52,
+          "fat": 10,
+          "instructions": "6oz chicken breast + medium sweet potato + steamed broccoli. Classic balanced meal."
+        },
+        {
+          "name": "Turkey Meatballs + Pasta",
+          "cal": 540,
+          "protein": 42,
+          "carbs": 56,
+          "fat": 14,
+          "instructions": "Ground turkey meatballs + marinara + whole wheat pasta. Satisfying and filling."
+        },
+        {
+          "name": "Salmon + Rice + Salad",
+          "cal": 510,
+          "protein": 40,
+          "carbs": 42,
+          "fat": 16,
+          "instructions": "5oz salmon (baked) + \u00bd cup rice + mixed greens + olive oil dressing."
+        }
+      ],
+      "timing": {
+        "breakfast": {
+          "time": "7:00\u20138:00 AM",
+          "target_cal": 450,
+          "target_protein": 35
+        },
+        "lunch": {
+          "time": "12:00\u20131:00 PM",
+          "target_cal": 440,
+          "target_protein": 38
+        },
+        "snack": {
+          "time": "3:00\u20134:00 PM",
+          "target_cal": 160,
+          "target_protein": 15
+        },
+        "dinner": {
+          "time": "6:00\u20137:30 PM",
+          "target_cal": 530,
+          "target_protein": 42
+        }
+      }
+    },
+    "maintenance-muscle": {
+      "id": "maintenance-muscle",
+      "name": "Muscle Building \u2014 2,400 Cal",
+      "description": "Moderate surplus focused on maximizing muscle gain while minimizing fat. High protein with strategic carb timing around workouts.",
+      "goals": [
+        "muscle-gain"
+      ],
+      "targets": {
+        "calories": 2400,
+        "protein_g": 190,
+        "carbs_g": 260,
+        "fat_g": 70
+      },
+      "floor_calories": 2200,
+      "breakfast_options": [
+        {
+          "name": "Mass Egg Bowl",
+          "cal": 650,
+          "protein": 55,
+          "carbs": 55,
+          "fat": 18,
+          "instructions": "4 whole eggs + 3 egg whites scrambled + 1 cup rice + salsa. High calorie quality breakfast."
+        },
+        {
+          "name": "Protein Oats + Eggs",
+          "cal": 620,
+          "protein": 48,
+          "carbs": 62,
+          "fat": 16,
+          "instructions": "1 cup oats + 1 scoop protein + banana + 3 scrambled eggs. Pre-workout fuel."
+        },
+        {
+          "name": "Big Bagel Scramble",
+          "cal": 680,
+          "protein": 50,
+          "carbs": 68,
+          "fat": 18,
+          "instructions": "Everything bagel + 4 egg scramble + 2oz turkey + cheese. Dense calories for growth."
+        }
+      ],
+      "lunch_options": [
+        {
+          "name": "Chicken + Large Rice Bowl",
+          "cal": 650,
+          "protein": 55,
+          "carbs": 65,
+          "fat": 12,
+          "instructions": "7oz chicken breast + 1 cup rice + vegetables. Biggest meal of the day."
+        },
+        {
+          "name": "Ground Beef + Pasta",
+          "cal": 680,
+          "protein": 52,
+          "carbs": 68,
+          "fat": 18,
+          "instructions": "6oz 90/10 beef + 2 cups pasta + marinara. Classic muscle meal."
+        },
+        {
+          "name": "Steak + Potato + Veg",
+          "cal": 700,
+          "protein": 58,
+          "carbs": 62,
+          "fat": 20,
+          "instructions": "6oz sirloin + medium potato + broccoli. Dense quality nutrition."
+        }
+      ],
+      "snack_options": [
+        {
+          "name": "Protein Shake + Banana",
+          "cal": 240,
+          "protein": 26,
+          "carbs": 28,
+          "fat": 2,
+          "instructions": "1.5 scoops protein + banana blended or eaten alongside."
+        },
+        {
+          "name": "Greek Yogurt + Granola",
+          "cal": 280,
+          "protein": 22,
+          "carbs": 35,
+          "fat": 7,
+          "instructions": "1 cup Greek yogurt + \u00bd cup granola. Good casein protein source."
+        }
+      ],
+      "dinner_options": [
+        {
+          "name": "Ribeye + Pasta + Salad",
+          "cal": 750,
+          "protein": 60,
+          "carbs": 58,
+          "fat": 26,
+          "instructions": "6oz ribeye + 2 cups pasta + mixed greens. Recovery meal."
+        },
+        {
+          "name": "Salmon + Rice + Veg",
+          "cal": 680,
+          "protein": 54,
+          "carbs": 62,
+          "fat": 18,
+          "instructions": "7oz salmon + 1 cup rice + roasted vegetables. Omega-3s for recovery."
+        },
+        {
+          "name": "Chicken Thighs + Sweet Potato",
+          "cal": 700,
+          "protein": 56,
+          "carbs": 65,
+          "fat": 20,
+          "instructions": "8oz thighs + large sweet potato + broccoli. Calorie dense quality meal."
+        }
+      ],
+      "timing": {
+        "breakfast": {
+          "time": "7:00 AM",
+          "target_cal": 640,
+          "target_protein": 50
+        },
+        "lunch": {
+          "time": "12:30 PM",
+          "target_cal": 670,
+          "target_protein": 55
+        },
+        "snack": {
+          "time": "3:30 PM",
+          "target_cal": 260,
+          "target_protein": 24
+        },
+        "dinner": {
+          "time": "7:00 PM",
+          "target_cal": 720,
+          "target_protein": 58
+        }
+      }
+    }
+  },
+  "condiment_guide": [
+    {
+      "name": "Ranch (2 tbsp)",
+      "cal": 140,
+      "fat_g": 14,
+      "note": "Measure \u2014 don't drizzle"
+    },
+    {
+      "name": "Japanese BBQ (1 tbsp)",
+      "cal": 28,
+      "sugar_g": 6,
+      "note": "Log every time \u2014 adds up"
+    },
+    {
+      "name": "Kewpie Mayo (1 tbsp)",
+      "cal": 100,
+      "fat_g": 11,
+      "note": "Measure strictly"
+    },
+    {
+      "name": "Olive Oil (1 tsp)",
+      "cal": 40,
+      "fat_g": 4.5,
+      "note": "Use spray when possible"
+    },
+    {
+      "name": "Kerrygold (1 tsp)",
+      "cal": 33,
+      "fat_g": 3.5,
+      "note": "Searing and finishing only"
+    },
+    {
+      "name": "Hot Sauce",
+      "cal": 5,
+      "note": "Use freely \u2014 no tracking needed"
+    },
+    {
+      "name": "Ketchup (1 tbsp)",
+      "cal": 20,
+      "sugar_g": 3,
+      "note": "Counts toward sugar limit"
+    }
+  ],
+  "meal_timing_rules": [
+    "Log in MyFitnessPal before or during eating \u2014 not after",
+    "Never eat after 9 PM",
+    "Protein first \u2014 always build the meal around the protein source",
+    "Drink 8 oz water with every meal",
+    "Train fasted when possible \u2014 use fat for fuel"
+  ]
+}

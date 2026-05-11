@@ -1,0 +1,1176 @@
+{
+  "plans": {
+    "shred-advanced": {
+      "id": "shred-advanced",
+      "name": "6-Day Shred Protocol",
+      "description": "High-intensity 6-day split for maximum fat loss while preserving muscle. Features HIIT finishers, progressive overload, and built-in knee rehab.",
+      "goals": [
+        "weight-loss",
+        "recomposition"
+      ],
+      "levels": [
+        "intermediate",
+        "advanced"
+      ],
+      "days_per_week": 6,
+      "requires_gym": true,
+      "has_knee_mods": true,
+      "targets": {
+        "calories_deficit": 750,
+        "protein_priority": true
+      },
+      "days": [
+        {
+          "day_name": "Monday",
+          "focus": "Upper Push",
+          "muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "color": "red",
+          "has_hiit": true,
+          "exercises": [
+            {
+              "name": "Incline DB Press",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Control the negative \u2014 feel the stretch at bottom"
+            },
+            {
+              "name": "Cable Chest Fly",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Squeeze at peak contraction, slow return"
+            },
+            {
+              "name": "DB Shoulder Press",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Neutral grip throughout, don't lock out"
+            },
+            {
+              "name": "Lateral Raises",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Lead with elbows, slight bend in arm"
+            },
+            {
+              "name": "Tricep Pushdown",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Elbows pinned to sides \u2014 don't swing"
+            },
+            {
+              "name": "Overhead Tricep Extension",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Full stretch at the bottom of every rep"
+            }
+          ],
+          "hiit": [
+            {
+              "name": "Rower Sprints",
+              "work": "45s",
+              "rest": "30s",
+              "rounds": 4,
+              "notes": "Max effort every round"
+            },
+            {
+              "name": "Mountain Climbers",
+              "work": "30s",
+              "rest": "15s",
+              "rounds": 3,
+              "notes": "Drive knees fast to chest"
+            },
+            {
+              "name": "Push-up to Shoulder Tap",
+              "reps": "20",
+              "rounds": 3,
+              "notes": "Don't let hips rotate \u2014 stay tight"
+            }
+          ]
+        },
+        {
+          "day_name": "Tuesday",
+          "focus": "Lower Body",
+          "muscles": [
+            "Glutes",
+            "Hamstrings",
+            "Hips"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "knee_friendly": true,
+          "exercises": [
+            {
+              "name": "Leg Press (partial ROM)",
+              "sets": 4,
+              "reps": "12",
+              "notes": "NEVER lock the knee at top \u2014 controlled partial range"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Hinge at the hips \u2014 this is NOT a squat"
+            },
+            {
+              "name": "Hip Thrust / Glute Bridge",
+              "sets": 4,
+              "reps": "15",
+              "notes": "Drive through heels, full hip extension at top"
+            },
+            {
+              "name": "Lying Leg Curl",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Full range of motion, controlled on the way down"
+            },
+            {
+              "name": "Step-Ups (low platform)",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Slow and controlled \u2014 no momentum"
+            },
+            {
+              "name": "Standing Calf Raises",
+              "sets": 3,
+              "reps": "20",
+              "notes": "Full range, pause at top for 1 second"
+            },
+            {
+              "name": "Bike Zone 2 Cool-down",
+              "duration": "20 min",
+              "notes": "115\u2013134 bpm \u2014 you should be able to hold a conversation"
+            }
+          ]
+        },
+        {
+          "day_name": "Wednesday",
+          "focus": "Upper Pull",
+          "muscles": [
+            "Back",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "color": "amber",
+          "has_hiit": true,
+          "exercises": [
+            {
+              "name": "Lat Pulldown",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Pull to upper chest, drive elbows down and back"
+            },
+            {
+              "name": "Seated Cable Row",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Squeeze shoulder blades together at contraction"
+            },
+            {
+              "name": "Single-Arm DB Row",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Support on bench, full stretch at bottom"
+            },
+            {
+              "name": "Face Pulls",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Elbows high, focus on external rotation"
+            },
+            {
+              "name": "Hammer Curls",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Neutral grip, no swinging"
+            },
+            {
+              "name": "Reverse Curls",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Forearm strength and definition \u2014 go lighter"
+            }
+          ],
+          "hiit": [
+            {
+              "name": "Battle Rope Slams",
+              "work": "30s",
+              "rest": "20s",
+              "rounds": 4,
+              "notes": "Full body \u2014 stay explosive through all rounds"
+            },
+            {
+              "name": "Cable Crunch",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Crunch down, don't pull neck forward"
+            },
+            {
+              "name": "Hanging Knee Raises",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Control the descent \u2014 don't swing"
+            }
+          ]
+        },
+        {
+          "day_name": "Thursday",
+          "focus": "Conditioning + Core",
+          "muscles": [
+            "Full Body",
+            "Core"
+          ],
+          "color": "red",
+          "has_hiit": false,
+          "fighter_day": true,
+          "exercises": [
+            {
+              "name": "Bike Warm-up",
+              "duration": "5 min",
+              "notes": "Get heart rate elevated before starting rounds"
+            },
+            {
+              "name": "4 Rounds: Rower 45s \u2192 Climbers 30s \u2192 Push-ups 15 \u2192 Rest 30s",
+              "rounds": 4,
+              "notes": "This is your hardest day \u2014 do not skip it"
+            },
+            {
+              "name": "Dead Bug",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Lower back pressed to floor at all times"
+            },
+            {
+              "name": "Plank",
+              "sets": 3,
+              "duration": "60s",
+              "notes": "Brace hard \u2014 don't let hips sag or rise"
+            },
+            {
+              "name": "Bicycle Crunches",
+              "sets": 3,
+              "reps": "25",
+              "notes": "Slow and controlled \u2014 quality over speed"
+            },
+            {
+              "name": "Russian Twists",
+              "sets": 3,
+              "reps": "20",
+              "notes": "Feet elevated for more challenge"
+            },
+            {
+              "name": "Extended Knee Rehab",
+              "duration": "15 min",
+              "notes": "Longer session today \u2014 don't skip this one"
+            },
+            {
+              "name": "Foam Roll: Quads, IT Band, Glutes",
+              "duration": "10 min",
+              "notes": "Hold each spot 30\u201360 sec"
+            }
+          ]
+        },
+        {
+          "day_name": "Friday",
+          "focus": "Full Body Compound",
+          "muscles": [
+            "Full Body"
+          ],
+          "color": "green",
+          "has_hiit": true,
+          "exercises": [
+            {
+              "name": "DB Romanian Deadlift",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Hip drive \u2014 keep the bar close to your legs"
+            },
+            {
+              "name": "Incline DB Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Compound push \u2014 heavier than Monday"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Compound pull \u2014 match or beat Wednesday"
+            },
+            {
+              "name": "DB Shoulder Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Overhead push \u2014 full range"
+            },
+            {
+              "name": "Goblet Squat (shallow)",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Watch the knee \u2014 controlled depth only"
+            },
+            {
+              "name": "Single-Arm DB Row",
+              "sets": 3,
+              "reps": "10 each",
+              "notes": "Superset with goblet squat to save time"
+            }
+          ],
+          "hiit": [
+            {
+              "name": "Rower Sprints",
+              "work": "45s",
+              "rest": "30s",
+              "rounds": 4,
+              "notes": "Max effort"
+            },
+            {
+              "name": "Push-up Variations",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Wide, close, or diamond \u2014 vary each set"
+            },
+            {
+              "name": "Ab Wheel / Cable Crunch",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Full extension on the ab wheel"
+            }
+          ]
+        },
+        {
+          "day_name": "Saturday",
+          "focus": "Long Cardio + Bodyweight",
+          "muscles": [
+            "Cardiovascular",
+            "Full Body"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "endurance": true,
+          "exercises": [
+            {
+              "name": "Elliptical or Bike Zone 2",
+              "duration": "30 min",
+              "notes": "115\u2013134 bpm \u2014 conversational pace the whole time"
+            },
+            {
+              "name": "Push-ups",
+              "sets": 4,
+              "reps": "20",
+              "notes": "Full range of motion \u2014 no half reps"
+            },
+            {
+              "name": "DB Rows",
+              "sets": 3,
+              "reps": "15 each",
+              "notes": "Light weight, higher reps \u2014 focus on the squeeze"
+            },
+            {
+              "name": "Goblet Squat (shallow)",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Controlled depth \u2014 watch the knee"
+            },
+            {
+              "name": "Plank",
+              "sets": 3,
+              "duration": "60s",
+              "notes": "Core stability \u2014 the foundation"
+            },
+            {
+              "name": "Bike Cool-down",
+              "duration": "15 min",
+              "notes": "Bring heart rate down gradually"
+            }
+          ]
+        },
+        {
+          "day_name": "Sunday",
+          "focus": "Rest + Meal Prep",
+          "muscles": [],
+          "color": "dim",
+          "rest": true,
+          "exercises": [
+            {
+              "name": "No gym today",
+              "notes": "Recovery is built into the plan \u2014 respect it or you'll stall"
+            },
+            {
+              "name": "Sunday Meal Prep",
+              "duration": "2 hrs",
+              "notes": "5 lunch containers, rice batch, batch protein sauce"
+            },
+            {
+              "name": "Light Walk (optional)",
+              "duration": "20\u201330 min",
+              "notes": "Only if you genuinely feel like it \u2014 don't force it"
+            },
+            {
+              "name": "Weekly Check-in",
+              "duration": "15 min",
+              "notes": "Answer the 5 check-in questions honestly"
+            }
+          ]
+        }
+      ]
+    },
+    "shred-intermediate": {
+      "id": "shred-intermediate",
+      "name": "4-Day Fat Loss Split",
+      "description": "Four focused training days designed to maximize fat loss while building a solid foundation. Perfect for intermediate lifters ready to step up their training.",
+      "goals": [
+        "weight-loss",
+        "recomposition"
+      ],
+      "levels": [
+        "beginner",
+        "intermediate"
+      ],
+      "days_per_week": 4,
+      "requires_gym": true,
+      "has_knee_mods": true,
+      "days": [
+        {
+          "day_name": "Monday",
+          "focus": "Upper Body Push + Core",
+          "muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps",
+            "Core"
+          ],
+          "color": "red",
+          "has_hiit": true,
+          "exercises": [
+            {
+              "name": "Flat DB Press",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Controlled tempo \u2014 2 sec down, explode up"
+            },
+            {
+              "name": "DB Shoulder Press",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Seated or standing \u2014 full range of motion"
+            },
+            {
+              "name": "Cable Chest Fly",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Feel the stretch across the chest"
+            },
+            {
+              "name": "Lateral Raises",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Lighter is better here \u2014 feel the muscle"
+            },
+            {
+              "name": "Tricep Pushdown",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Elbows pinned, full extension"
+            },
+            {
+              "name": "Plank",
+              "sets": 3,
+              "duration": "45s",
+              "notes": "Brace your core \u2014 quality over time"
+            }
+          ],
+          "hiit": [
+            {
+              "name": "Bike Sprints",
+              "work": "30s",
+              "rest": "30s",
+              "rounds": 6,
+              "notes": "All out effort on the work intervals"
+            },
+            {
+              "name": "Mountain Climbers",
+              "work": "30s",
+              "rest": "15s",
+              "rounds": 3,
+              "notes": "Drive the knees fast"
+            }
+          ]
+        },
+        {
+          "day_name": "Wednesday",
+          "focus": "Lower Body",
+          "muscles": [
+            "Glutes",
+            "Hamstrings",
+            "Quads"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "knee_friendly": true,
+          "exercises": [
+            {
+              "name": "Leg Press (partial ROM)",
+              "sets": 4,
+              "reps": "12",
+              "notes": "Control the range \u2014 no knee lockout"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Hip hinge movement \u2014 push hips back"
+            },
+            {
+              "name": "Hip Thrust",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Full hip extension at the top"
+            },
+            {
+              "name": "Leg Curl (machine)",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Slow on the way down"
+            },
+            {
+              "name": "Calf Raises",
+              "sets": 3,
+              "reps": "20",
+              "notes": "Full range \u2014 pause at top"
+            },
+            {
+              "name": "Bike Zone 2",
+              "duration": "20 min",
+              "notes": "Conversational pace cool-down"
+            }
+          ]
+        },
+        {
+          "day_name": "Friday",
+          "focus": "Upper Body Pull + Core",
+          "muscles": [
+            "Back",
+            "Biceps",
+            "Core"
+          ],
+          "color": "amber",
+          "has_hiit": true,
+          "exercises": [
+            {
+              "name": "Lat Pulldown",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Drive elbows down to lats"
+            },
+            {
+              "name": "Seated Cable Row",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Squeeze shoulder blades at contraction"
+            },
+            {
+              "name": "Single-Arm DB Row",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Full stretch at bottom"
+            },
+            {
+              "name": "Face Pulls",
+              "sets": 3,
+              "reps": "15",
+              "notes": "External rotation focus"
+            },
+            {
+              "name": "Hammer Curls",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Controlled, no swinging"
+            },
+            {
+              "name": "Bicycle Crunches",
+              "sets": 3,
+              "reps": "20",
+              "notes": "Slow \u2014 feel the obliques"
+            }
+          ],
+          "hiit": [
+            {
+              "name": "Rower",
+              "work": "40s",
+              "rest": "30s",
+              "rounds": 4,
+              "notes": "Strong pace \u2014 not all out"
+            },
+            {
+              "name": "Battle Ropes",
+              "work": "30s",
+              "rest": "20s",
+              "rounds": 3,
+              "notes": "Consistent powerful slams"
+            }
+          ]
+        },
+        {
+          "day_name": "Saturday",
+          "focus": "Full Body + Cardio",
+          "muscles": [
+            "Full Body"
+          ],
+          "color": "green",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Goblet Squat",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Control the depth \u2014 knees track over toes"
+            },
+            {
+              "name": "DB Bench Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Compound push to start"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Compound pull to match"
+            },
+            {
+              "name": "DB RDL",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Hip hinge \u2014 keep back flat"
+            },
+            {
+              "name": "Elliptical Zone 2",
+              "duration": "25 min",
+              "notes": "Steady state cardio \u2014 finish strong"
+            }
+          ]
+        }
+      ]
+    },
+    "beginner-fullbody": {
+      "id": "beginner-fullbody",
+      "name": "3-Day Full Body Foundation",
+      "description": "Three full-body sessions per week focused on learning movement patterns, building a base of strength, and establishing training habits that last.",
+      "goals": [
+        "weight-loss",
+        "muscle-gain",
+        "general-fitness"
+      ],
+      "levels": [
+        "beginner"
+      ],
+      "days_per_week": 3,
+      "requires_gym": true,
+      "has_knee_mods": true,
+      "days": [
+        {
+          "day_name": "Monday",
+          "focus": "Full Body A",
+          "muscles": [
+            "Full Body"
+          ],
+          "color": "red",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Goblet Squat",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Learn the movement \u2014 depth and form first"
+            },
+            {
+              "name": "DB Bench Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Control the bar \u2014 2 sec down"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Pull to chest level \u2014 squeeze at bottom"
+            },
+            {
+              "name": "DB Shoulder Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Seated is fine to start \u2014 full range"
+            },
+            {
+              "name": "Plank",
+              "sets": 3,
+              "duration": "30s",
+              "notes": "Build up the time each week"
+            },
+            {
+              "name": "Bike or Walk Cardio",
+              "duration": "15 min",
+              "notes": "Easy pace \u2014 this is your warm-down"
+            }
+          ]
+        },
+        {
+          "day_name": "Wednesday",
+          "focus": "Full Body B",
+          "muscles": [
+            "Full Body"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Leg Press",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Start with a weight you can control comfortably"
+            },
+            {
+              "name": "DB Row (single arm)",
+              "sets": 3,
+              "reps": "10 each",
+              "notes": "Support on bench \u2014 pull to hip"
+            },
+            {
+              "name": "Incline DB Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "30\u201345 degree angle \u2014 chest focus"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Hip hinge \u2014 feel the hamstrings stretch"
+            },
+            {
+              "name": "Cable Crunch",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Crunch down \u2014 short range, big squeeze"
+            },
+            {
+              "name": "Elliptical",
+              "duration": "15 min",
+              "notes": "Zone 2 pace \u2014 easy conversation speed"
+            }
+          ]
+        },
+        {
+          "day_name": "Friday",
+          "focus": "Full Body C",
+          "muscles": [
+            "Full Body"
+          ],
+          "color": "green",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Step-Ups",
+              "sets": 3,
+              "reps": "10 each",
+              "notes": "Low platform to start \u2014 build confidence"
+            },
+            {
+              "name": "DB Bench Press",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Try to add a little weight from Monday"
+            },
+            {
+              "name": "Lat Pulldown",
+              "sets": 3,
+              "reps": "10",
+              "notes": "Try to add weight from Wednesday"
+            },
+            {
+              "name": "Hammer Curls",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Arms \u2014 neutral grip, controlled"
+            },
+            {
+              "name": "Tricep Pushdown",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Elbows pinned"
+            },
+            {
+              "name": "Hip Thrust",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Glute activation \u2014 drive through heels"
+            },
+            {
+              "name": "Walk or Bike",
+              "duration": "20 min",
+              "notes": "End of week \u2014 easy movement"
+            }
+          ]
+        }
+      ]
+    },
+    "ppl-advanced": {
+      "id": "ppl-advanced",
+      "name": "Push / Pull / Legs \u2014 6-Day",
+      "description": "Classic PPL split run twice per week. Maximum volume for muscle gain. Designed for advanced lifters with strong training foundations.",
+      "goals": [
+        "muscle-gain"
+      ],
+      "levels": [
+        "advanced"
+      ],
+      "days_per_week": 6,
+      "requires_gym": true,
+      "has_knee_mods": false,
+      "days": [
+        {
+          "day_name": "Monday",
+          "focus": "Push 1",
+          "muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "color": "red",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Flat Barbell Press",
+              "sets": 4,
+              "reps": "6\u20138",
+              "notes": "Primary strength movement \u2014 progressive overload focus"
+            },
+            {
+              "name": "Incline DB Press",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Upper chest emphasis"
+            },
+            {
+              "name": "Cable Chest Fly",
+              "sets": 3,
+              "reps": "12\u201315",
+              "notes": "Isolation \u2014 constant tension"
+            },
+            {
+              "name": "Seated DB Shoulder Press",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Full range"
+            },
+            {
+              "name": "Lateral Raises",
+              "sets": 4,
+              "reps": "15\u201320",
+              "notes": "Light and strict"
+            },
+            {
+              "name": "Skull Crushers",
+              "sets": 3,
+              "reps": "10",
+              "notes": "EZ bar or DB \u2014 full extension"
+            },
+            {
+              "name": "Tricep Pushdown",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Burnout finisher"
+            }
+          ]
+        },
+        {
+          "day_name": "Tuesday",
+          "focus": "Pull 1",
+          "muscles": [
+            "Back",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Weighted Pull-ups",
+              "sets": 4,
+              "reps": "6\u20138",
+              "notes": "If not yet, use lat pulldown instead"
+            },
+            {
+              "name": "Barbell Row",
+              "sets": 4,
+              "reps": "8",
+              "notes": "Overhand grip \u2014 pull to belly button"
+            },
+            {
+              "name": "Seated Cable Row",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Full stretch, full squeeze"
+            },
+            {
+              "name": "Face Pulls",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Shoulder health \u2014 never skip"
+            },
+            {
+              "name": "Incline DB Curl",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Full stretch at bottom"
+            },
+            {
+              "name": "Hammer Curls",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Neutral grip \u2014 forearm hit"
+            }
+          ]
+        },
+        {
+          "day_name": "Wednesday",
+          "focus": "Legs 1",
+          "muscles": [
+            "Quads",
+            "Hamstrings",
+            "Glutes",
+            "Calves"
+          ],
+          "color": "green",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Barbell Squat",
+              "sets": 4,
+              "reps": "6\u20138",
+              "notes": "King of all exercises \u2014 depth and form first"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Hamstring stretch \u2014 controlled negative"
+            },
+            {
+              "name": "Leg Press",
+              "sets": 3,
+              "reps": "12",
+              "notes": "High foot placement for glute emphasis"
+            },
+            {
+              "name": "Leg Extension",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Quad isolation"
+            },
+            {
+              "name": "Leg Curl",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Hamstring isolation"
+            },
+            {
+              "name": "Standing Calf Raises",
+              "sets": 4,
+              "reps": "15",
+              "notes": "Full range \u2014 no bouncing"
+            }
+          ]
+        },
+        {
+          "day_name": "Thursday",
+          "focus": "Push 2",
+          "muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "color": "red",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Incline Barbell Press",
+              "sets": 4,
+              "reps": "8",
+              "notes": "Upper chest primary today"
+            },
+            {
+              "name": "Flat DB Press",
+              "sets": 4,
+              "reps": "10\u201312",
+              "notes": "Higher reps today \u2014 pump focus"
+            },
+            {
+              "name": "Cable Fly (low to high)",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Lower chest emphasis"
+            },
+            {
+              "name": "Arnold Press",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Full shoulder rotation"
+            },
+            {
+              "name": "Upright Row",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Traps and lateral delt hit"
+            },
+            {
+              "name": "Overhead Tricep Extension",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Long head emphasis"
+            },
+            {
+              "name": "Tricep Dips (bench)",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Bodyweight burnout"
+            }
+          ]
+        },
+        {
+          "day_name": "Friday",
+          "focus": "Pull 2",
+          "muscles": [
+            "Back",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "color": "blue",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Lat Pulldown (wide grip)",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Wide lat flare focus"
+            },
+            {
+              "name": "Single-Arm DB Row",
+              "sets": 4,
+              "reps": "10 each",
+              "notes": "Heavy \u2014 pull from hip"
+            },
+            {
+              "name": "Cable Pullover",
+              "sets": 3,
+              "reps": "12",
+              "notes": "Lat stretch and squeeze"
+            },
+            {
+              "name": "Reverse Fly (machine or cable)",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Rear delt isolation"
+            },
+            {
+              "name": "EZ Bar Curl",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Bicep primary \u2014 full range"
+            },
+            {
+              "name": "Concentration Curl",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Peak contraction focus"
+            }
+          ]
+        },
+        {
+          "day_name": "Saturday",
+          "focus": "Legs 2",
+          "muscles": [
+            "Hamstrings",
+            "Glutes",
+            "Calves"
+          ],
+          "color": "green",
+          "has_hiit": false,
+          "exercises": [
+            {
+              "name": "Hack Squat or Leg Press",
+              "sets": 4,
+              "reps": "10\u201312",
+              "notes": "Quad focus today"
+            },
+            {
+              "name": "Romanian Deadlift",
+              "sets": 4,
+              "reps": "10",
+              "notes": "Hamstring stretch primary"
+            },
+            {
+              "name": "Hip Thrust",
+              "sets": 4,
+              "reps": "12",
+              "notes": "Heavy glute loading"
+            },
+            {
+              "name": "Walking Lunges",
+              "sets": 3,
+              "reps": "12 each",
+              "notes": "Unilateral \u2014 balance and stability"
+            },
+            {
+              "name": "Seated Leg Curl",
+              "sets": 3,
+              "reps": "15",
+              "notes": "Hamstring isolation \u2014 full squeeze"
+            },
+            {
+              "name": "Seated Calf Raises",
+              "sets": 4,
+              "reps": "20",
+              "notes": "Soleus \u2014 slow and controlled"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "knee_rehab": {
+    "label": "Knee Rehab Protocol",
+    "mandatory": true,
+    "note": "Complete at the end of every training session \u2014 non-negotiable",
+    "exercises": [
+      {
+        "name": "Straight Leg Raises",
+        "sets": 3,
+        "reps": "15 each",
+        "notes": "Tighten quad before lifting \u2014 squeeze hard"
+      },
+      {
+        "name": "Terminal Knee Extensions (band)",
+        "sets": 3,
+        "reps": "15 each",
+        "notes": "Band around knee \u2014 extend fully, feel the VMO"
+      },
+      {
+        "name": "Clamshells",
+        "sets": 3,
+        "reps": "15 each side",
+        "notes": "Band above knees \u2014 rotate top knee up slowly"
+      },
+      {
+        "name": "Glute Bridges",
+        "sets": 3,
+        "reps": "20",
+        "notes": "Drive through heels, full hip extension at top"
+      }
+    ]
+  }
+}

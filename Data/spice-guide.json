@@ -1,0 +1,466 @@
+{
+  "profiles": [
+    {
+      "id": "japanese",
+      "label": "\ud83c\uddef\ud83c\uddf5 Japanese",
+      "color": "blue",
+      "recipes": [
+        {
+          "name": "Teriyaki Chicken (breast/thighs)",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Dry rub",
+              "spices": "Garlic powder 1 tsp \u00b7 Ginger powder \u00bd tsp \u00b7 White pepper \u00b7 Salt"
+            },
+            {
+              "label": "Sauce (last 2 min)",
+              "spices": "Japanese BBQ sauce 1.5 tbsp \u00b7 Coconut aminos 1 tsp \u00b7 Sesame oil \u00bd tsp"
+            }
+          ],
+          "method": "Add sauce last 2 min only \u2014 it burns early. Baste and caramelize. This is your go-to weeknight protein."
+        },
+        {
+          "name": "Garlic Ginger Turkey Bowl",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Spices",
+              "spices": "Garlic powder \u00bd tsp \u00b7 Ginger powder \u00bd tsp \u00b7 White pepper \u00b7 Onion powder \u00bc tsp"
+            },
+            {
+              "label": "Sauce",
+              "spices": "Coconut aminos 2 tsp \u00b7 Japanese BBQ 1 tbsp \u00b7 Sesame oil \u00bd tsp"
+            }
+          ],
+          "method": "Brown turkey, add garlic, then ginger. Deglaze with coconut aminos. Soft fried egg on top = soboro bowl."
+        },
+        {
+          "name": "Japanese Steakhouse Ribeye",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Season",
+              "spices": "Salt (generous) \u00b7 White pepper \u00b7 Garlic powder (light dusting)"
+            },
+            {
+              "label": "Finish",
+              "spices": "Japanese BBQ sauce on side \u00b7 Kerrygold baste \u00bd tsp \u00b7 Lemon squeeze optional"
+            }
+          ],
+          "method": "Ripping hot pan. Salt 30 min before. 2\u20133 min/side for medium rare. Rest 5 min \u2014 non-negotiable."
+        },
+        {
+          "name": "Tamago Scrambled Eggs",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Egg mix",
+              "spices": "White pepper \u00b7 Pinch salt \u00b7 Coconut aminos \u00bd tsp"
+            },
+            {
+              "label": "Finish",
+              "spices": "Kewpie drizzle \u00bd tsp \u00b7 Hot sauce"
+            }
+          ],
+          "method": "Low heat. Constant gentle folding. Soft curds only. Serve over rice."
+        },
+        {
+          "name": "Japanese Chicken Thigh Bake",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Marinade (30 min+)",
+              "spices": "Japanese BBQ 2 tbsp \u00b7 Sesame oil 1 tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Ginger powder \u00bc tsp"
+            },
+            {
+              "label": "Finish",
+              "spices": "Sesame seeds \u00b7 Green onion if available"
+            }
+          ],
+          "method": "400\u00b0F for 25 min. Baste halfway. Best batch-cooked protein on the plan."
+        }
+      ]
+    },
+    {
+      "id": "mexican",
+      "label": "\ud83c\udf2e Mexican",
+      "color": "red",
+      "recipes": [
+        {
+          "name": "Fajita Chicken",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Dry rub",
+              "spices": "Cumin 1 tsp \u00b7 Smoked paprika 1 tsp \u00b7 Chili powder \u00bd tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Onion powder \u00bd tsp \u00b7 Oregano \u00bc tsp \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Finish",
+              "spices": "Lime juice squeezed right after pulling from heat"
+            }
+          ],
+          "method": "Sit 10\u201315 min before cooking. Deglaze pan fond with 2 tbsp water over rice \u2014 free flavor."
+        },
+        {
+          "name": "Homemade Taco Seasoning",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Per pound of meat",
+              "spices": "Cumin 1.5 tsp \u00b7 Chili powder 1 tsp \u00b7 Smoked paprika 1 tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Onion powder \u00bd tsp \u00b7 Cayenne pinch"
+            },
+            {
+              "label": "After browning",
+              "spices": "Add \u00bc cup water \u00b7 Simmer 2 min until absorbed"
+            }
+          ],
+          "method": "Better than any packet \u2014 no fillers. Brown meat, add seasoning, add water, simmer."
+        },
+        {
+          "name": "Carne Asada (flank/skirt)",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Marinade",
+              "spices": "Cumin 1 tsp \u00b7 Chili powder \u00bd tsp \u00b7 Smoked paprika \u00bd tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Lime 1 tbsp \u00b7 Olive oil \u00bd tsp \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Method",
+              "spices": "Min 30 min marinade. Overnight is ideal. Ripping hot pan."
+            }
+          ],
+          "method": "\u26a0\ufe0f ALWAYS slice against the grain on flank/skirt \u2014 mandatory or it's chewy."
+        },
+        {
+          "name": "Mexican Rice",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Toast first",
+              "spices": "Cumin \u00bd tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Smoked paprika \u00bc tsp \u2014 30 sec dry pan"
+            },
+            {
+              "label": "Optional",
+              "spices": "1 tbsp tomato paste \u2014 adds depth and color"
+            }
+          ],
+          "method": "Toast spices before adding rice + water. Transforms the whole taco bowl."
+        },
+        {
+          "name": "Chipotle-Spiced Thighs",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Rub",
+              "spices": "Chipotle powder \u00be tsp \u00b7 Smoked paprika 1 tsp \u00b7 Cumin \u00bd tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Pair with",
+              "spices": "Mexican rice or basmati + hot sauce"
+            }
+          ],
+          "method": "Pan-sear same as fajita chicken. Perfect match for Costco chipotle flavor profile."
+        }
+      ]
+    },
+    {
+      "id": "italian",
+      "label": "\ud83c\uddee\ud83c\uddf9 Italian",
+      "color": "amber",
+      "recipes": [
+        {
+          "name": "Italian Herb Pan Chicken",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Season",
+              "spices": "Italian seasoning 1.5 tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Onion powder \u00bc tsp \u00b7 Smoked paprika \u00bc tsp \u00b7 Chili flakes \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Deglaze",
+              "spices": "3 tbsp water + garlic in last minute, spoon over chicken"
+            }
+          ],
+          "method": "Finish with 1 tbsp parmesan over protein pasta. Classic weeknight."
+        },
+        {
+          "name": "Bolognese (Sunday batch)",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Per pound",
+              "spices": "Italian seasoning 2 tsp \u00b7 Garlic 3 cloves \u00b7 Chili flakes \u00bc tsp \u00b7 Onion powder \u00bd tsp"
+            },
+            {
+              "label": "Sauce",
+              "spices": "1 can crushed tomatoes \u00b7 Pinch of sugar \u00b7 Simmer 15\u201320 min"
+            }
+          ],
+          "method": "Make double batch, freeze half. Fastest mid-week meal on the plan."
+        },
+        {
+          "name": "Aglio e Olio (pasta base)",
+          "color": "blue",
+          "rows": [
+            {
+              "label": "The sauce",
+              "spices": "Garlic 3 cloves (sliced thin) \u00b7 Chili flakes \u00bd tsp \u00b7 Olive oil 1 tsp \u00b7 Pasta water 3 tbsp \u00b7 Parmesan 1 tbsp"
+            },
+            {
+              "label": "Method",
+              "spices": "Golden garlic on medium-LOW. Emulsify with pasta water."
+            }
+          ],
+          "method": "Pairs with anything. The dinner-party move that's done in 10 minutes."
+        },
+        {
+          "name": "Bistecca Ribeye",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Season",
+              "spices": "Salt (generous, 30 min before) \u00b7 Coarse black pepper \u00b7 Rosemary (bruised)"
+            },
+            {
+              "label": "Baste",
+              "spices": "Kerrygold + rosemary + garlic in last minute \u00b7 Lemon finish"
+            }
+          ],
+          "method": "Simplest and most impressive steak cook. Fewer seasonings = better result."
+        },
+        {
+          "name": "Lemon Garlic Chicken Breast",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Season",
+              "spices": "Garlic powder 1 tsp \u00b7 Italian seasoning 1 tsp \u00b7 Lemon zest \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Sauce",
+              "spices": "Lemon juice 1 tbsp + butter \u00bd tsp in pan after pulling chicken"
+            }
+          ],
+          "method": "Pan-sear, rest, sauce. Bright and clean \u2014 great over pasta."
+        }
+      ]
+    },
+    {
+      "id": "bbq",
+      "label": "\ud83d\udd25 BBQ",
+      "color": "amber",
+      "recipes": [
+        {
+          "name": "Southern Dry Rub Chicken",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Dry rub",
+              "spices": "Smoked paprika 1.5 tsp \u00b7 Garlic powder 1 tsp \u00b7 Onion powder \u00bd tsp \u00b7 Black pepper \u00bd tsp \u00b7 Cayenne \u00bc tsp \u00b7 Cumin \u00bc tsp \u00b7 Salt 1 tsp"
+            },
+            {
+              "label": "Finish",
+              "spices": "Japanese BBQ sauce on side or hot sauce"
+            }
+          ],
+          "method": "Press rub in. Sit 15 min. Cover pan last 4 min to keep juicy."
+        },
+        {
+          "name": "BBQ Smash Burger Bowl",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Per pound",
+              "spices": "Smoked paprika 1 tsp \u00b7 Garlic powder \u00be tsp \u00b7 Onion powder \u00bd tsp \u00b7 Black pepper \u00bd tsp \u00b7 Salt 1 tsp \u00b7 Cayenne pinch"
+            },
+            {
+              "label": "Method",
+              "spices": "Mix into raw beef. High heat. Don't stir \u2014 let it crust."
+            }
+          ],
+          "method": "Ketchup + hot sauce over rice. Deconstructed burger bowl that hits every time."
+        },
+        {
+          "name": "Classic Steakhouse Crust",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Rub",
+              "spices": "Salt (heavy, 30 min before) \u00b7 Coarse black pepper \u00b7 Smoked paprika \u00bd tsp \u00b7 Garlic powder \u00bc tsp"
+            },
+            {
+              "label": "Baste",
+              "spices": "Kerrygold butter \u2014 no other sauce needed"
+            }
+          ],
+          "method": "Screaming hot pan. Do not move it while searing \u2014 crust needs contact time."
+        },
+        {
+          "name": "BBQ Ground Turkey",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Season",
+              "spices": "Smoked paprika 1 tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Onion powder \u00bd tsp \u00b7 Brown sugar pinch"
+            },
+            {
+              "label": "Sauce",
+              "spices": "1 tbsp ketchup + 1 tsp hot sauce \u2014 stir through at end"
+            }
+          ],
+          "method": "Quick BBQ sauce from pantry staples. Fast weeknight bowl."
+        }
+      ]
+    },
+    {
+      "id": "mediterranean",
+      "label": "\ud83e\uded2 Mediterranean",
+      "color": "green",
+      "recipes": [
+        {
+          "name": "Shawarma Chicken",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Marinade",
+              "spices": "Cumin 1 tsp \u00b7 Smoked paprika 1 tsp \u00b7 Garlic powder \u00be tsp \u00b7 Oregano \u00bd tsp \u00b7 CINNAMON \u215b tsp \u00b7 Onion powder \u00bd tsp \u00b7 Salt + pepper + Olive oil \u00bd tsp"
+            },
+            {
+              "label": "Finish",
+              "spices": "Hot sauce + lemon squeeze after cooking"
+            }
+          ],
+          "method": "Cinnamon is the signature \u2014 don't skip or double it. Restaurant-level flavor when done right."
+        },
+        {
+          "name": "Kofta Ground Beef Bowl",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Per pound",
+              "spices": "Cumin 1.5 tsp \u00b7 Coriander 1 tsp \u00b7 Cinnamon \u00bc tsp \u00b7 Garlic powder \u00be tsp \u00b7 Allspice \u00bc tsp \u00b7 Chili flakes \u00bc tsp \u00b7 Onion powder \u00bd tsp"
+            },
+            {
+              "label": "Method",
+              "spices": "Mix into raw meat before browning. Small crumbles. Over rice."
+            }
+          ],
+          "method": "Completely different flavor profile from everything else \u2014 keeps the rotation interesting."
+        },
+        {
+          "name": "Mediterranean Herb Steak",
+          "color": "blue",
+          "rows": [
+            {
+              "label": "Rub",
+              "spices": "Oregano 1 tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Rosemary \u00bd tsp crushed \u00b7 Smoked paprika \u00bc tsp"
+            },
+            {
+              "label": "Finish",
+              "spices": "Olive oil (not butter here) \u00b7 Lemon zest + squeeze off heat"
+            }
+          ],
+          "method": "Olive oil suits Mediterranean better than Kerrygold \u2014 different flavor profile entirely."
+        },
+        {
+          "name": "Greek Chicken Thighs",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Marinade",
+              "spices": "Oregano 1.5 tsp \u00b7 Garlic powder 1 tsp \u00b7 Lemon juice 1 tbsp \u00b7 Olive oil 1 tsp \u00b7 Cumin \u00bc tsp \u00b7 Salt + pepper"
+            },
+            {
+              "label": "Pair with",
+              "spices": "Rice + hot sauce"
+            }
+          ],
+          "method": "Marinate 20+ min. Pan-sear until golden and 165\u00b0F internal."
+        }
+      ]
+    },
+    {
+      "id": "basics",
+      "label": "\u26a1 Basics",
+      "color": "dim",
+      "recipes": [
+        {
+          "name": "The Default \u2014 Any Protein",
+          "color": "dim",
+          "rows": [
+            {
+              "label": "5 spices to memorize",
+              "spices": "Salt \u00b7 Black pepper \u00b7 Garlic powder \u00b7 Onion powder \u00b7 Smoked paprika"
+            },
+            {
+              "label": "Change the flavor",
+              "spices": "Add hot sauce or Japanese BBQ on top to vary the profile"
+            }
+          ],
+          "method": "When you're tired \u2014 these 5 on anything = good. Reliable, fast, done."
+        },
+        {
+          "name": "Garlic Rice",
+          "color": "green",
+          "rows": [
+            {
+              "label": "Per cup cooked",
+              "spices": "Garlic powder \u00bd tsp \u00b7 Pinch salt \u00b7 Olive oil \u00bc tsp"
+            },
+            {
+              "label": "Method",
+              "spices": "Toss into hot rice. 20 seconds."
+            }
+          ],
+          "method": "Never eat plain basmati. This transforms the whole meal."
+        },
+        {
+          "name": "Asian-Style Rice",
+          "color": "blue",
+          "rows": [
+            {
+              "label": "Per cup cooked",
+              "spices": "Coconut aminos 1 tsp \u00b7 Sesame oil \u00bc tsp \u00b7 White pepper pinch"
+            },
+            {
+              "label": "Method",
+              "spices": "Toss into hot rice. Done."
+            }
+          ],
+          "method": "Pairs with every Japanese or Asian-inspired protein on the plan."
+        },
+        {
+          "name": "Mexican Rice",
+          "color": "red",
+          "rows": [
+            {
+              "label": "Toast first",
+              "spices": "Cumin \u00bd tsp \u00b7 Garlic powder \u00bd tsp \u00b7 Smoked paprika \u00bc tsp \u2014 30 sec dry pan"
+            },
+            {
+              "label": "Optional",
+              "spices": "1 tbsp tomato paste \u2014 adds depth"
+            }
+          ],
+          "method": "Toast spices before adding rice and water."
+        },
+        {
+          "name": "Italian Pasta Finish",
+          "color": "amber",
+          "rows": [
+            {
+              "label": "Per 1.5 cups pasta",
+              "spices": "Garlic powder \u00bd tsp \u00b7 Chili flakes \u00bc tsp \u00b7 Parmesan 1 tbsp \u00b7 Pasta water 2 tbsp"
+            },
+            {
+              "label": "Method",
+              "spices": "Toss with olive oil and pasta water until glossy"
+            }
+          ],
+          "method": "Elevates any protein pasta dish in 90 seconds."
+        }
+      ]
+    }
+  ]
+}

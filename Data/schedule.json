@@ -1,0 +1,392 @@
+{
+  "templates": {
+    "standard-commuter": {
+      "id": "standard-commuter",
+      "name": "Standard Commuter Schedule",
+      "description": "5:30 AM start, gym before work, 40-min commute each way, 9\u20136 job.",
+      "weekday": [
+        {
+          "time": "5:30 AM",
+          "title": "Wake up & hydrate",
+          "desc": "16 oz water immediately. No phone for 5 min.",
+          "type": "r",
+          "is_major": true
+        },
+        {
+          "time": "5:35",
+          "title": "Morning mobility (15 min)",
+          "desc": "Hip circles, leg swings, ankle rotations, shoulder rolls.",
+          "type": "a"
+        },
+        {
+          "time": "5:50",
+          "title": "Drive to gym \u2014 fasted",
+          "desc": "Train fasted on shred protocol. No pre-workout snack.",
+          "type": "d"
+        },
+        {
+          "time": "6:00",
+          "title": "WORKOUT (55\u201370 min)",
+          "desc": "Follow weekly split. End with knee rehab every session.",
+          "type": "r",
+          "is_major": true
+        },
+        {
+          "time": "7:10",
+          "title": "Shower & get ready",
+          "desc": "30 min max. You already won the morning.",
+          "type": "d"
+        },
+        {
+          "time": "7:40",
+          "title": "Breakfast + pack lunch",
+          "desc": "Log in MFP before eating. Grab prepped container.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "8:05",
+          "title": "Commute to work (~40 min)",
+          "desc": "Audiobook the entire drive. 80 min reading per day.",
+          "type": "d"
+        },
+        {
+          "time": "9:00 AM",
+          "title": "Work",
+          "desc": "Lunch at 12:30 PM. 8 oz water every 2 hours.",
+          "type": "d"
+        },
+        {
+          "time": "12:30",
+          "title": "Lunch (prepped container)",
+          "desc": "Pre-portioned Sunday container. Log before eating.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "3:30",
+          "title": "Protein shake or Chobani",
+          "desc": "Replaces White Monster. Non-negotiable.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "6:00 PM",
+          "title": "Commute home",
+          "desc": "Continue audiobook. Mentally transition from work.",
+          "type": "d"
+        },
+        {
+          "time": "6:45",
+          "title": "Cook & eat dinner",
+          "desc": "Lean protein + veggies + small carbs. Log before plating.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "7:30",
+          "title": "Evening walk (30 min)",
+          "desc": "Zone 1 pace. Burns ~150 cal. Kills nighttime cravings.",
+          "type": "r",
+          "is_major": true
+        },
+        {
+          "time": "8:00",
+          "title": "Personal time",
+          "desc": "No agenda. Watch something, relax, recharge.",
+          "type": "d"
+        },
+        {
+          "time": "9:00",
+          "title": "Reading (30 min \u2014 physical book)",
+          "desc": "Non-negotiable. No phone in hand.",
+          "type": "b",
+          "is_major": true
+        },
+        {
+          "time": "9:30",
+          "title": "Prep for tomorrow (15 min)",
+          "desc": "Gym bag, clothes, lunch packed. Remove all friction.",
+          "type": "d"
+        },
+        {
+          "time": "10:00",
+          "title": "Screens off \u2014 wind down",
+          "desc": "Dim lights. No scrolling. This makes 5:30 AM possible.",
+          "type": "d"
+        },
+        {
+          "time": "11:30",
+          "title": "Lights out",
+          "desc": "Protect every hour. Poor sleep = stalled fat loss.",
+          "type": "d",
+          "is_major": true
+        }
+      ],
+      "weekend_sat": [
+        {
+          "time": "7:00 AM",
+          "title": "Wake naturally \u2014 hydrate",
+          "desc": "No alarm. Let the body recover. Water first.",
+          "type": "g"
+        },
+        {
+          "time": "8:00",
+          "title": "WORKOUT \u2014 Saturday",
+          "desc": "Long cardio + bodyweight circuit. See workout tab.",
+          "type": "r",
+          "is_major": true
+        },
+        {
+          "time": "10:00",
+          "title": "Breakfast \u2014 take your time",
+          "desc": "Cook something real. Same macro targets apply.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "1:00 PM",
+          "title": "Free time / errands",
+          "desc": "Groceries, personal time. Recharge.",
+          "type": "d"
+        },
+        {
+          "time": "6:00",
+          "title": "Dinner \u2014 stay on plan",
+          "desc": "Weekends kill most diets. Consistency is the game.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "7:30",
+          "title": "Extended reading (45\u201360 min)",
+          "desc": "More time than weekdays \u2014 use it.",
+          "type": "b",
+          "is_major": true
+        },
+        {
+          "time": "11:30",
+          "title": "Lights out \u2014 keep consistent",
+          "desc": "Sleeping in past 8 AM Sunday makes Monday brutal.",
+          "type": "d"
+        }
+      ],
+      "weekend_sun": [
+        {
+          "time": "7:00 AM",
+          "title": "Wake naturally \u2014 hydrate",
+          "desc": "Rest day. No alarm needed. Water first.",
+          "type": "g"
+        },
+        {
+          "time": "8:00",
+          "title": "Extended mobility + stretch",
+          "desc": "20 min. Slower pace. Honor the recovery.",
+          "type": "a",
+          "is_major": true
+        },
+        {
+          "time": "10:00",
+          "title": "Breakfast \u2014 relaxed",
+          "desc": "Same macro targets. Cook something you enjoy.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "11:00 AM",
+          "title": "SUNDAY MEAL PREP (2 hrs)",
+          "desc": "Batch cook proteins. Rice. 5 lunch containers. Batch sauce.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "1:00 PM",
+          "title": "Free time",
+          "desc": "Personal time. Groceries if needed.",
+          "type": "d"
+        },
+        {
+          "time": "6:00",
+          "title": "Dinner \u2014 light and clean",
+          "desc": "Lighter than usual. Prep for a strong Monday.",
+          "type": "g",
+          "is_major": true
+        },
+        {
+          "time": "7:30",
+          "title": "Weekly check-in (15 min)",
+          "desc": "Review the week. Plan the next one. Be honest.",
+          "type": "b",
+          "is_major": true
+        },
+        {
+          "time": "9:00",
+          "title": "Reading (30 min)",
+          "desc": "Wind-down reading. No screens after this.",
+          "type": "b"
+        },
+        {
+          "time": "10:30",
+          "title": "Early lights out",
+          "desc": "Better Monday starts with better Sunday night.",
+          "type": "d",
+          "is_major": true
+        }
+      ]
+    }
+  },
+  "financial_roadmap": {
+    "debt-payoff": {
+      "id": "debt-payoff",
+      "name": "Debt Payoff First \u2014 Financial Roadmap",
+      "steps": [
+        {
+          "num": 1,
+          "timing": "This Week",
+          "action": "Set up direct deposit from your job \u2192 main checking account",
+          "why": "Eliminates bank service fees. One call, 10 minutes.",
+          "col": "red"
+        },
+        {
+          "num": 2,
+          "timing": "This Month",
+          "action": "Audit and cancel unused subscriptions",
+          "why": "Every dollar saved on recurring fees is guaranteed ROI.",
+          "col": "red"
+        },
+        {
+          "num": 3,
+          "timing": "Every Month",
+          "action": "Pay more than minimum on highest-interest debt",
+          "why": "High-interest debt is a guaranteed negative return. Eliminating it is the safest investment available.",
+          "col": "red"
+        },
+        {
+          "num": 4,
+          "timing": "Month 1",
+          "action": "Open a high-yield savings account (HYSA) \u2014 Ally or Marcus",
+          "why": "Emergency fund needs to be separate, earning 4%+, out of sight.",
+          "col": "amber"
+        },
+        {
+          "num": 5,
+          "timing": "Month 1\u20133",
+          "action": "Add a side income stream (gig work, weekend shifts)",
+          "why": "Extra income compresses the debt payoff timeline dramatically.",
+          "col": "amber"
+        },
+        {
+          "num": 6,
+          "timing": "Month 3",
+          "action": "Emergency fund hits $1,000 first milestone",
+          "why": "First buffer. Stops you using credit cards for emergencies.",
+          "col": "amber"
+        },
+        {
+          "num": 7,
+          "timing": "After $1K",
+          "action": "Open a Roth IRA \u2014 start at $50/month",
+          "why": "Tax-free growth. Time in market beats timing the market \u2014 start small now.",
+          "col": "blue"
+        },
+        {
+          "num": 8,
+          "timing": "Month 6",
+          "action": "Primary debt balance at $0",
+          "why": "Zero interest payments. You own your money instead of owing it.",
+          "col": "green"
+        },
+        {
+          "num": 9,
+          "timing": "Month 12",
+          "action": "Emergency fund hits $5,000",
+          "why": "Full 3-month buffer. Real financial security floor.",
+          "col": "green"
+        },
+        {
+          "num": 10,
+          "timing": "Year 2",
+          "action": "Increase Roth IRA contributions to $100\u2013200/month",
+          "why": "Compounding only works over time \u2014 earlier is always better.",
+          "col": "green"
+        }
+      ]
+    },
+    "savings-focus": {
+      "id": "savings-focus",
+      "name": "Emergency Fund Focus \u2014 Financial Roadmap",
+      "steps": [
+        {
+          "num": 1,
+          "timing": "This Week",
+          "action": "Audit all subscriptions \u2014 cancel everything unused",
+          "why": "Recurring waste is the easiest money to recover.",
+          "col": "red"
+        },
+        {
+          "num": 2,
+          "timing": "This Month",
+          "action": "Open Ally Bank HYSA or Marcus",
+          "why": "Emergency fund needs 4%+ APY, separate from checking.",
+          "col": "red"
+        },
+        {
+          "num": 3,
+          "timing": "Every Month",
+          "action": "Auto-transfer $300+ to HYSA on payday",
+          "why": "Pay yourself first \u2014 automate it so it's not a decision.",
+          "col": "red"
+        },
+        {
+          "num": 4,
+          "timing": "Month 2",
+          "action": "Emergency fund hits $1,000",
+          "why": "First real buffer. Changes how you handle unexpected expenses.",
+          "col": "amber"
+        },
+        {
+          "num": 5,
+          "timing": "Month 4",
+          "action": "Emergency fund hits $3,000",
+          "why": "Covers most car repairs, medical costs, or income gaps.",
+          "col": "amber"
+        },
+        {
+          "num": 6,
+          "timing": "Month 6",
+          "action": "Open Roth IRA \u2014 start at $100/month",
+          "why": "You have a foundation now. Time to start building wealth.",
+          "col": "blue"
+        },
+        {
+          "num": 7,
+          "timing": "Month 8",
+          "action": "Emergency fund hits $5,000",
+          "why": "3-month baseline achieved. Solid financial floor.",
+          "col": "green"
+        },
+        {
+          "num": 8,
+          "timing": "Month 10",
+          "action": "Review and pay down any remaining high-interest debt",
+          "why": "With savings base secure, eliminate interest drain.",
+          "col": "green"
+        },
+        {
+          "num": 9,
+          "timing": "Year 2",
+          "action": "Increase Roth IRA to $200\u2013300/month",
+          "why": "Real wealth-building phase begins.",
+          "col": "green"
+        },
+        {
+          "num": 10,
+          "timing": "Year 2",
+          "action": "Explore index fund investing beyond Roth IRA",
+          "why": "Diversify beyond tax-advantaged limits.",
+          "col": "green"
+        }
+      ]
+    }
+  }
+}
