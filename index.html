@@ -276,10 +276,12 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <div class="auth-sub" style="color:var(--amb)">Password Reset Required</div>
     <div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--amb);margin-bottom:16px;line-height:1.6" id="fpr-reason">Your password was reset by an admin. Please set a new password to continue.</div>
     <div class="auth-err" id="fpr-err"></div>
+    <div class="auth-lbl">Current Password</div>
+    <input class="auth-inp" id="fpr-cur" type="password" placeholder="Your current password" autocomplete="current-password">
     <div class="auth-lbl">New Password</div>
-    <input class="auth-inp" id="fpr-pass" type="password" placeholder="Min 8 characters">
+    <input class="auth-inp" id="fpr-pass" type="password" placeholder="Min 8 characters" autocomplete="new-password">
     <div class="auth-lbl">Confirm New Password</div>
-    <input class="auth-inp" id="fpr-pass2" type="password" placeholder="Confirm password" onkeydown="if(event.key==='Enter')doFPR()">
+    <input class="auth-inp" id="fpr-pass2" type="password" placeholder="Confirm new password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doFPR()">
     <button class="auth-btn" id="fpr-btn" onclick="doFPR()">SET NEW PASSWORD</button>
   </div>
 </div>
@@ -788,28 +790,46 @@ async function doSignup(){
 }
 async function doFPR(){
   const btn=document.getElementById('fpr-btn');
+  const cur=(document.getElementById('fpr-cur')?.value||'').trim();
   const pass=document.getElementById('fpr-pass').value;
   const pass2=document.getElementById('fpr-pass2').value;
-  if(!pass||pass!==pass2){showErr('fpr-err',"Passwords don't match.");return;}
-  if(pass.length<8){showErr('fpr-err','Min 8 characters.');return;}
-  btn.disabled=true;btn.textContent='Updating...';
-  const{error}=await sb.auth.updateUser({password:pass});
-  if(error){btn.disabled=false;btn.textContent='SET NEW PASSWORD';showErr('fpr-err',error.message);return;}
-  // Clear the reset flag — works whether PROFILE is loaded or not
+  if(!cur){showErr('fpr-err','Enter your current password.');return;}
+  if(!pass){showErr('fpr-err','Enter a new password.');return;}
+  if(pass!==pass2){showErr('fpr-err',"Passwords don't match.");return;}
+  if(pass.length<8){showErr('fpr-err','New password must be at least 8 characters.');return;}
+  if(cur===pass){showErr('fpr-err','New password must be different from your current password.');return;}
+  btn.disabled=true;btn.textContent='Verifying...';
+  // Step 1: Re-authenticate with current password (Supabase requires this for security)
+  const{data:{user:curUser}}=await sb.auth.getUser();
+  if(!curUser?.email){
+    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
+    showErr('fpr-err','Session expired. Please sign in again.');show('s-login');return;
+  }
+  const{error:reAuthErr}=await sb.auth.signInWithPassword({email:curUser.email,password:cur});
+  if(reAuthErr){
+    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
+    showErr('fpr-err','Current password is incorrect. Try again.');return;
+  }
+  // Step 2: Set the new password
+  btn.textContent='Updating...';
+  const{error:updateErr}=await sb.auth.updateUser({password:pass});
+  if(updateErr){
+    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
+    showErr('fpr-err',updateErr.message);return;
+  }
+  // Step 3: Clear the forced reset flag in profiles
   const{data:{user}}=await sb.auth.getUser();
   if(user){
     await sb.from('profiles').update({force_password_reset:false}).eq('id',user.id);
     if(PROFILE)PROFILE.force_password_reset=false;
   }
   btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-  toast('Password updated! Signing you in...');
-  // If PROFILE already loaded, go straight to app
+  toast('Password updated! Entering your dashboard...');
   if(PROFILE){await loadAllContent();enterApp();return;}
-  // Otherwise fetch profile and enter (recovery flow)
   if(user){
-    const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).single();
+    const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
     if(profile){PROFILE=profile;await loadAllContent();enterApp();}
-    else show('s-choose');
+    else{show('s-choose');}
   }
 }
 function logout(){sb.auth.signOut();}
