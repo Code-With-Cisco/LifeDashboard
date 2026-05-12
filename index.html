@@ -458,10 +458,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <!-- FINANCIAL -->
     <div class="page" id="page-financial">
       <div class="g4" style="margin-bottom:14px">
+        <div class="stat" style="cursor:pointer;border-left:2px solid var(--grn)" onclick="editTakeHome()" title="Click to update"><div class="stat-l">TAKE-HOME ✏️</div><div class="stat-v" style="color:var(--grn)" id="fin-take-home">$3,370</div><div class="stat-s">monthly net</div></div>
+        <div class="stat"><div class="stat-l">EXPENSES</div><div class="stat-v" style="color:var(--red)" id="fin-expenses">$0</div><div class="stat-s">payments + subs</div></div>
+        <div class="stat"><div class="stat-l">FREE CASH</div><div class="stat-v" style="color:var(--amb)" id="fin-free-cash">$0</div><div class="stat-s">to allocate</div></div>
         <div class="stat"><div class="stat-l">TOTAL DEBT</div><div class="stat-v" style="color:var(--red)" id="fin-total-debt">$0</div><div class="stat-s" id="fin-debt-ct">0 accounts</div></div>
-        <div class="stat"><div class="stat-l">MONTHLY PAYMENTS</div><div class="stat-v" style="color:var(--amb)" id="fin-monthly-pay">$0</div><div class="stat-s">debt payments</div></div>
-        <div class="stat"><div class="stat-l">MONTHLY SUBS</div><div class="stat-v" style="color:var(--blu)" id="fin-monthly-subs">$0</div><div class="stat-s" id="fin-subs-ct">0 subscriptions</div></div>
-        <div class="stat"><div class="stat-l">TOTAL MONTHLY</div><div class="stat-v" style="color:var(--red)" id="fin-total-monthly">$0</div><div class="stat-s">all obligations</div></div>
       </div>
       <div class="g2" style="margin-bottom:14px">
         <div class="card">
@@ -1146,8 +1146,10 @@ async function renderHome(){
   const evEl=document.getElementById('home-events');
   if(evEl){
     const dayNum=new Date().getDate();
-    const bills=[{name:'Rent due',d:3},{name:'Phone bill',d:12},{name:'Car insurance',d:15},{name:'Car payment',d:27}];
-    const upcoming=bills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({l:b.name,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d',c:'a'}));
+    const{data:ub_d}=await sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id);
+    const{data:ub_s}=await sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',PROFILE.id);
+    const allBills=[...(ub_d||[]).filter(d=>d.due_day).map(d=>({l:d.debt_name,d:d.due_day,c:'r'})),...(ub_s||[]).filter(s=>s.renewal_day).map(s=>({l:s.sub_name,d:s.renewal_day,c:'b'}))];
+    const upcoming=allBills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({...b,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d'}));
     const{data:evs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id);
     (evs||[]).forEach(e=>{
       const diff=Math.round((new Date(e.event_date+'T12:00:00')-new Date(new Date().toDateString()))/86400000);
@@ -1173,7 +1175,9 @@ async function renderWeightLog(){
   el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
     ||'<div style="color:var(--t3);font-size:12px">No entries yet.</div>';
   if(logs?.length){
-    const pct=Math.round(Math.max(0,Math.min(100,(220.4-logs[0].weight_lbs)/(220.4-165)*100)));
+    const _tgt=parseFloat(localStorage.getItem('tgt_weight_'+PROFILE.id))||165;
+    const _startWt=parseFloat(localStorage.getItem('start_weight_'+PROFILE.id))||logs[logs.length-1]?.weight_lbs||logs[0].weight_lbs;
+    const pct=_startWt>_tgt?Math.round(Math.max(0,Math.min(100,(_startWt-logs[0].weight_lbs)/(_startWt-_tgt)*100))):0;
     const pe=document.getElementById('wt-pct');const pb=document.getElementById('wt-bar');
     if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';
     const cw=document.getElementById('d-cur-wt');if(cw)cw.textContent=logs[0].weight_lbs+' lbs';
@@ -1757,7 +1761,6 @@ async function renderFinCal(){
   const{data:debts}=await sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id);
   const{data:subs}=await sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id);
   const bMap={};
-  [{name:'Rent',d:3,c:'r'},{name:'Phone',d:12,c:'b'},{name:'Car Insurance',d:15,c:'a'},{name:'Car Payment',d:27,c:'a'}].forEach(b=>{if(!bMap[b.d])bMap[b.d]=[];bMap[b.d].push({name:b.name,c:b.c});});
   (debts||[]).forEach(d=>{if(!d.due_day)return;if(!bMap[d.due_day])bMap[d.due_day]=[];bMap[d.due_day].push({name:d.debt_name,c:'r'});});
   (subs||[]).forEach(s=>{if(!s.renewal_day)return;if(!bMap[s.renewal_day])bMap[s.renewal_day]=[];bMap[s.renewal_day].push({name:s.sub_name,c:s.action==='Keep'?'b':'d'});});
   let html='';D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
@@ -2227,6 +2230,279 @@ enterApp=async function(){
   await _origEnterApp();
   setTimeout(loadDashStats,200);
 }
+
+
+// ── FALLBACK MEALS (works even when data files are 404) ─────────
+const FALLBACK_MEALS={
+  breakfast_options:[
+    {name:'Egg & Turkey Scramble Rice Bowl',cal:505,protein:52,carbs:38,fat:14,instructions:'4oz turkey + 2 eggs + 2 whites + basmati rice. Pan sear, serve over rice.'},
+    {name:'Japanese BBQ Chicken Bowl',cal:490,protein:48,carbs:40,fat:12,instructions:'5oz leftover chicken + rice + 1 tbsp Japanese BBQ sauce. Fastest morning.'},
+    {name:'Kewpie Egg Salad Toast',cal:510,protein:28,carbs:42,fat:22,instructions:'4 boiled eggs + 1.5 tbsp Kewpie mayo. Mash. Serve on 2 slices 5-grain.'},
+    {name:'Overnight Oats + Scrambled Eggs',cal:505,protein:42,carbs:48,fat:16,instructions:'Prep oats night before. Morning: 3 eggs + 2 whites scrambled.'},
+    {name:'Thin Bagel + Egg Scramble',cal:480,protein:40,carbs:40,fat:16,instructions:'1 thin bagel + 3 eggs + 2 whites scrambled with Kerrygold.'},
+  ],
+  lunch_options:[
+    {name:'Chipotle Chicken Rice Bowl',cal:455,protein:46,carbs:42,fat:10,instructions:'5oz Costco chipotle chicken + 3/4 cup basmati + frozen broccoli.'},
+    {name:'Pan-Seared Chicken + Rice',cal:445,protein:46,carbs:42,fat:7,instructions:'6oz chicken breast + 3/4 cup rice + hot sauce. Simple and reliable.'},
+    {name:'Ground Turkey Protein Pasta',cal:490,protein:50,carbs:42,fat:12,instructions:'5oz 90/10 turkey + 1.5 cups protein macaroni + olive oil + garlic.'},
+    {name:'Egg Salad Sandwich',cal:470,protein:28,carbs:42,fat:20,instructions:'Kewpie egg salad on 5-grain bread. Add hard-boiled egg for more protein.'},
+  ],
+  snack_options:[
+    {name:'ON Gold Standard Whey Shake',cal:120,protein:24,carbs:3,fat:1,instructions:'1 scoop + 10-12oz cold water. Replaces the White Monster entirely.'},
+    {name:'Chobani Protein Yogurt Drink',cal:160,protein:20,carbs:20,fat:0,instructions:'Grab from fridge. Zero prep.'},
+  ],
+  dinner_options:[
+    {name:'Ribeye + Protein Pasta Aglio e Olio',cal:585,protein:52,carbs:44,fat:18,instructions:'5oz ribeye + 1.5 cups protein spaghetti. Sear hot 2-3 min/side.'},
+    {name:'Ground Beef Bolognese',cal:570,protein:53,carbs:48,fat:14,instructions:'5oz 90/10 beef + crushed tomatoes + Italian seasoning. Simmer 20 min.'},
+    {name:'Japanese BBQ Chicken Thighs + Rice',cal:575,protein:50,carbs:50,fat:14,instructions:'7oz thighs + 1.5 tbsp Japanese BBQ sauce + 1 cup basmati.'},
+    {name:'Chipotle Chicken + Protein Fettuccine',cal:560,protein:54,carbs:48,fat:12,instructions:'5oz Costco chicken + fettuccine + olive oil + garlic.'},
+    {name:'Ground Turkey Taco Bowl',cal:555,protein:52,carbs:44,fat:12,instructions:'6oz 90/10 turkey + homemade taco seasoning + rice + hot sauce.'},
+    {name:'Steak & Egg Rice Bowl',cal:580,protein:55,carbs:38,fat:19,instructions:'5oz ribeye/sirloin + 2 fried eggs + rice + Japanese BBQ sauce.'},
+  ]
+};
+
+// ── PATCH updateMealList to use fallback when data absent ────────
+updateMealList=function(){
+  const cat=document.getElementById('mm-cat')?.value||'breakfast_options';
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const items=mPlan?.[cat]||FALLBACK_MEALS[cat]||[];
+  const el=document.getElementById('mm-list');if(!el)return;
+  if(!items.length){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">No meals found. Upload data/ folder to GitHub to unlock full meal database.</div>';return;}
+  el.innerHTML=items.map(m=>{
+    const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:5px;gap:10px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0})" onmouseover="this.style.borderColor='var(--grn)'" onmouseout="this.style.borderColor='transparent'">
+      <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div></div>
+      <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0})">+ Log</button>
+    </div>`;
+  }).join('');
+};
+
+// ── FINANCIAL TAKE-HOME ─────────────────────────────────────────
+function editTakeHome(){
+  const el=document.getElementById('fin-take-home');if(!el)return;
+  const cur=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  el.innerHTML=`<input type="number" value="${cur}" step="1" style="width:90px;background:none;border:none;border-bottom:2px solid var(--grn);color:var(--grn);font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveTakeHome(this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  el.querySelector('input').select();
+}
+function saveTakeHome(value){
+  const v=parseFloat(value);
+  if(!isNaN(v)&&v>0)localStorage.setItem('take_home_'+PROFILE.id,v);
+  updateFinancialBoxes();
+}
+updateFinancialBoxes=async function(){
+  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
+  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
+  const totalPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
+  const expenses=totalPay+totalSubs;
+  const takeHome=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  const freeCash=takeHome-expenses;
+  const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-take-home',fmt(takeHome));
+  set('fin-expenses',fmt(expenses));
+  set('fin-free-cash',fmt(freeCash));
+  const fce=document.getElementById('fin-free-cash');
+  if(fce)fce.style.color=freeCash>=0?'var(--amb)':'var(--red)';
+  set('fin-total-debt',fmt(totalDebt));
+  set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
+};
+
+// ── QUESTIONNAIRE — ADD PROFILE INFO STEP ───────────────────────
+// Add body_profile as first Q step (inject into existing array)
+const BODY_PROFILE_STEP={
+  id:'body_profile',
+  title:'Tell us about yourself',
+  sub:'Personalizes your targets, progress tracking, and calorie goals.',
+  type:'inputs',
+  inputs:[
+    {id:'age',label:'Age',type:'number',placeholder:'28',unit:'years',min:16,max:80},
+    {id:'gender',label:'Gender',type:'select',opts:['Male','Female','Non-binary','Prefer not to say']},
+    {id:'cur_weight',label:'Current Weight',type:'number',placeholder:'220',unit:'lbs',required:true},
+    {id:'goal_weight',label:'Goal Weight (target)',type:'number',placeholder:'165',unit:'lbs',required:true},
+  ]
+};
+Q_STEPS.unshift(BODY_PROFILE_STEP);
+
+// Extend renderQStep to handle 'inputs' type
+const _origRenderQStep=renderQStep;
+renderQStep=function(){
+  const s=Q_STEPS[qStep];
+  document.getElementById('q-prog-fill').style.width=Math.round(qStep/Q_STEPS.length*100)+'%';
+  document.getElementById('q-back').style.display=qStep>0?'block':'none';
+  document.getElementById('q-next').textContent=qStep===Q_STEPS.length-1?'Build My Dashboard':'Continue';
+  document.getElementById('q-next').disabled=false;
+  if(s.type==='inputs'){
+    document.getElementById('q-steps').innerHTML=`
+      <div class="q-step show">
+        <div class="q-num">QUESTION ${qStep+1} OF ${Q_STEPS.length}</div>
+        <div class="q-title">${s.title}</div>
+        <div class="q-sub">${s.sub}</div>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">
+          ${s.inputs.map(inp=>`
+            <div>
+              <div style="font-size:11px;font-weight:600;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${inp.label}${inp.unit?' ('+inp.unit+')':''}${inp.required?' *':''}</div>
+              ${inp.type==='select'
+                ?`<select class="inp sel" id="qi-${inp.id}" style="background:var(--s3)">
+                    <option value="">Select...</option>
+                    ${(inp.opts||[]).map(o=>`<option value="${o}"${qAnswers[inp.id]===o?' selected':''}>${o}</option>`).join('')}
+                  </select>`
+                :`<div style="display:flex;align-items:center;gap:10px">
+                    <input class="inp" id="qi-${inp.id}" type="${inp.type||'text'}" placeholder="${inp.placeholder||''}" value="${qAnswers[inp.id]||''}" ${inp.min!==undefined?'min='+inp.min:''} ${inp.max!==undefined?'max='+inp.max:''} style="flex:1">
+                    ${inp.unit?`<span style="font-size:13px;color:var(--t3);white-space:nowrap">${inp.unit}</span>`:''}
+                  </div>`
+              }
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }else{
+    _origRenderQStep();
+  }
+};
+
+// Extend qNext to handle 'inputs' type
+const _origQNext=qNext;
+qNext=async function(){
+  const s=Q_STEPS[qStep];
+  if(s.type==='inputs'){
+    // Read input values into qAnswers
+    (s.inputs||[]).forEach(inp=>{
+      const el=document.getElementById('qi-'+inp.id);
+      if(el)qAnswers[inp.id]=el.value;
+    });
+    // Validate required
+    const missing=(s.inputs||[]).find(inp=>inp.required&&!qAnswers[inp.id]);
+    if(missing){toast('Please fill in: '+missing.label);return;}
+    if(qStep<Q_STEPS.length-1){qStep++;renderQStep();}
+    else await completeQuestionnaire();
+  }else{
+    await _origQNext();
+  }
+};
+
+// Extend completeQuestionnaire to save weight data
+const _origCompleteQ=completeQuestionnaire;
+completeQuestionnaire=async function(){
+  // Save weight targets before completing
+  if(qAnswers.goal_weight)localStorage.setItem('tgt_weight_'+PROFILE.id,qAnswers.goal_weight);
+  if(qAnswers.cur_weight)localStorage.setItem('start_weight_'+PROFILE.id,qAnswers.cur_weight);
+  // Log starting weight as first entry
+  if(qAnswers.cur_weight){
+    await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:+qAnswers.cur_weight}).then(()=>{}).catch(()=>{});
+  }
+  await _origCompleteQ();
+};
+
+// ── EDIT EXISTING HABITS ─────────────────────────────────────────
+let _editingHabit=null; // {si, hi}
+const _origConfirmAddHabit=confirmAddHabit;
+confirmAddHabit=function(){
+  const label=document.getElementById('ah-label')?.value.trim();
+  if(!label){toast('Enter a habit name');return;}
+  if(_editingHabit){
+    const secs=getUserHabitSecs();
+    secs[_editingHabit.si].habits[_editingHabit.hi].label=label;
+    saveUserHabitSecs(secs);_editingHabit=null;
+    const btn=document.querySelector('#add-habit-modal .btn-r');if(btn)btn.textContent='Add Habit';
+    closeModal('add-habit-modal');renderHabits();toast('Habit updated!');
+  }else{
+    _origConfirmAddHabit();
+  }
+};
+function editHabit(si,hi){
+  const secs=getUserHabitSecs();const h=secs[si].habits[hi];
+  const lbl=document.getElementById('ah-label');if(lbl)lbl.value=h.label;
+  const cat=document.getElementById('ah-cat');if(cat)cat.value=secs[si].cat;
+  _editingHabit={si,hi};
+  const btn=document.querySelector('#add-habit-modal .btn-r');if(btn)btn.textContent='Update Habit';
+  openModal('add-habit-modal');
+}
+
+// Override habit render to add edit button
+const _prevRenderHabits=renderHabits;
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');if(lbl)lbl.textContent=D7L[d.getDay()].toUpperCase()+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){const diff=Math.round((new Date(todayStr())-new Date(habitDate))/86400000);rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';}
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>`
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
+        ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+      </div>
+      ${sec.habits.map((h,hi)=>`
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'v':''}</div>
+          <div class="hl">${h.label}</div>
+          <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
+          ${habitEditMode?`<div style="display:flex;gap:3px;margin-left:5px">
+            <button onclick="event.stopPropagation();editHabit(${si},${hi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+            <button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+          </div>`:''}
+        </div>`).join('')}
+      ${habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add to ${sec.label}</button>`:''}
+    </div>`).join('')
+    +(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  renderCatProg();renderStreakBar();
+};
+
+// ── EDIT EXISTING GOALS ──────────────────────────────────────────
+let _editingGoal=null;
+const _origConfirmAddGoal=confirmAddGoal;
+confirmAddGoal=function(){
+  const g=document.getElementById('ag-label')?.value.trim();
+  if(!g){toast('Enter a goal description');return;}
+  const freq=document.getElementById('ag-freq')?.value;
+  const p=document.getElementById('ag-priority')?.value;
+  const secVal=document.getElementById('ag-sec')?.value;
+  const data=getUserGoalData();
+  if(_editingGoal){
+    const goal=data[_editingGoal.si]?.goals?.[_editingGoal.gi];
+    if(goal){goal.g=g;goal.freq=freq;goal.p=p;}
+    saveUserGoalData(data);_editingGoal=null;
+    const btn=document.querySelector('#add-goal-modal .btn-r');if(btn)btn.textContent='Add Goal';
+    closeModal('add-goal-modal');renderGoals();toast('Goal updated!');
+  }else{
+    _origConfirmAddGoal();
+  }
+};
+function editGoal(si,gi){
+  const data=getUserGoalData();const goal=data[si]?.goals?.[gi];
+  if(!goal)return;
+  const lbl=document.getElementById('ag-label');if(lbl)lbl.value=goal.g;
+  const freq=document.getElementById('ag-freq');if(freq)freq.value=goal.freq||'Daily';
+  const pri=document.getElementById('ag-priority');if(pri)pri.value=goal.p||'High';
+  const sec=document.getElementById('ag-sec');if(sec)sec.value=data[si].sec||'CUSTOM';
+  _editingGoal={si,gi};
+  const btn=document.querySelector('#add-goal-modal .btn-r');if(btn)btn.textContent='Update Goal';
+  openModal('add-goal-modal');
+}
+// Override renderGoals with edit button
+renderGoals=function(){
+  const el=document.getElementById('goals-list');if(!el)return;
+  const data=getUserGoalData();
+  el.innerHTML=data.map((gs,si)=>`
+    <div class="sh">${gs.sec}</div>
+    ${gs.goals.map((g,gi)=>`
+      <div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
+        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span>
+        <span style="flex:1;font-size:13px">${g.g}</span>
+        <span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span>
+        ${goalEditMode?`<div style="display:flex;gap:3px">
+          <button onclick="editGoal(${si},${gi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+        </div>`:''}
+      </div>`).join('')}
+    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
+    <div style="height:4px"></div>`).join('')
+    +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
+};
 
 </script>
 </body>
