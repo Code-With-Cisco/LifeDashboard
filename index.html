@@ -14,7 +14,7 @@
 :root{
   --bg:#09090A;--s1:#111113;--s2:#18181B;--s3:#222226;--s4:#2C2C31;
   --b1:#2A2A2F;--b2:#3A3A40;--b3:#505058;
-  --t1:#F2F0EC;--t2:#A8A5A0;--t3:#686570;
+  --t1:#F2F0EC;--t2:#C4B5FD;--t3:#9580CC;
   --red:#E84040;--red-d:#B83030;--red-l:rgba(232,64,64,0.14);--red-ll:rgba(232,64,64,0.07);
   --grn:#22C97A;--grn-d:#17A362;--grn-l:rgba(34,201,122,0.14);--grn-ll:rgba(34,201,122,0.07);
   --amb:#F5A623;--amb-l:rgba(245,166,35,0.14);--amb-ll:rgba(245,166,35,0.07);
@@ -355,10 +355,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <!-- DASHBOARD -->
     <div class="page" id="page-dash">
       <div class="g4" style="margin-bottom:16px">
-        <div class="stat"><div class="stat-l">CURRENT</div><div class="stat-v" style="color:var(--red)" id="d-cur-wt">—</div><div class="stat-s">lbs</div></div>
-        <div class="stat"><div class="stat-l">TARGET</div><div class="stat-v" style="color:var(--grn)" id="d-tgt-wt">165</div><div class="stat-s">lbs</div></div>
-        <div class="stat"><div class="stat-l">CALORIES</div><div class="stat-v" style="color:var(--amb)" id="d-cal-tgt">1,900</div><div class="stat-s">per day</div></div>
-        <div class="stat"><div class="stat-l">PROTEIN</div><div class="stat-v" style="color:var(--blu)" id="d-pro-tgt">185g</div><div class="stat-s">per day</div></div>
+        <div class="stat"><div class="stat-l">CURRENT WEIGHT</div><div class="stat-v" style="color:var(--red)" id="d-cur-wt">—</div><div class="stat-s">lbs</div></div>
+        <div class="stat" style="cursor:pointer" title="Click to edit" onclick="editStat('d-tgt-wt','tgt_weight',165,'lbs')"><div class="stat-l">TARGET WEIGHT ✏️</div><div class="stat-v" style="color:var(--grn)" id="d-tgt-wt">165</div><div class="stat-s">lbs — tap to edit</div></div>
+        <div class="stat" style="cursor:pointer" title="Click to edit" onclick="editStat('d-cal-tgt','cal_target',1900,'cal')"><div class="stat-l">CALORIES ✏️</div><div class="stat-v" style="color:var(--amb)" id="d-cal-tgt">1,900</div><div class="stat-s">per day — tap to edit</div></div>
+        <div class="stat" style="cursor:pointer" title="Click to edit" onclick="editStat('d-pro-tgt','pro_target',185,'g')"><div class="stat-l">PROTEIN ✏️</div><div class="stat-v" style="color:var(--blu)" id="d-pro-tgt">185g</div><div class="stat-s">per day — tap to edit</div></div>
       </div>
       <div class="g2" style="margin-bottom:16px">
         <div class="card">
@@ -380,6 +380,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
         <button class="btn btn-o btn-sm" onclick="chDay(-1)">← Prev</button>
         <div style="flex:1;text-align:center"><div style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px" id="h-date-lbl"></div><div style="font-size:11px;color:var(--t3)" id="h-date-rel"></div></div>
         <button class="btn btn-o btn-sm" onclick="chDay(1)">Next →</button>
+        <button class="btn btn-o btn-sm" id="habit-edit-btn" onclick="toggleHabitEdit()">✏️ Edit</button>
       </div>
       <div class="g4" style="margin-bottom:16px" id="h-cat-prog"></div>
       <div id="h-habits-list"></div>
@@ -457,10 +458,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <!-- FINANCIAL -->
     <div class="page" id="page-financial">
       <div class="g4" style="margin-bottom:14px">
-        <div class="stat"><div class="stat-l">TAKE-HOME</div><div class="stat-v" style="color:var(--grn)">$3,370</div><div class="stat-s">monthly net</div></div>
-        <div class="stat"><div class="stat-l">EXPENSES</div><div class="stat-v" style="color:var(--red)">$2,163</div><div class="stat-s">monthly bills</div></div>
-        <div class="stat"><div class="stat-l">FREE CASH</div><div class="stat-v" style="color:var(--amb)">$1,207</div><div class="stat-s">to allocate</div></div>
-        <div class="stat"><div class="stat-l">CC DEBT</div><div class="stat-v" style="color:var(--red)" id="d-cc-bal">$800</div><div class="stat-s">Costco card</div></div>
+        <div class="stat"><div class="stat-l">TOTAL DEBT</div><div class="stat-v" style="color:var(--red)" id="fin-total-debt">$0</div><div class="stat-s" id="fin-debt-ct">0 accounts</div></div>
+        <div class="stat"><div class="stat-l">MONTHLY PAYMENTS</div><div class="stat-v" style="color:var(--amb)" id="fin-monthly-pay">$0</div><div class="stat-s">debt payments</div></div>
+        <div class="stat"><div class="stat-l">MONTHLY SUBS</div><div class="stat-v" style="color:var(--blu)" id="fin-monthly-subs">$0</div><div class="stat-s" id="fin-subs-ct">0 subscriptions</div></div>
+        <div class="stat"><div class="stat-l">TOTAL MONTHLY</div><div class="stat-v" style="color:var(--red)" id="fin-total-monthly">$0</div><div class="stat-s">all obligations</div></div>
       </div>
       <div class="g2" style="margin-bottom:14px">
         <div class="card">
@@ -483,12 +484,16 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
     <!-- GOALS -->
     <div class="page" id="page-goals">
-      <div class="tab-bar" id="goals-tabs">
-        <button class="tb on" onclick="filterGoals('All',this)">All</button>
-        <button class="tb" onclick="filterGoals('Daily',this)">Daily</button>
-        <button class="tb" onclick="filterGoals('Weekly',this)">Weekly</button>
-        <button class="tb" onclick="filterGoals('Monthly',this)">Monthly</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap">
+        <div class="tab-bar" id="goals-tabs" style="flex:1;margin-bottom:0">
+          <button class="tb on" onclick="filterGoals('All',this)">All</button>
+          <button class="tb" onclick="filterGoals('Daily',this)">Daily</button>
+          <button class="tb" onclick="filterGoals('Weekly',this)">Weekly</button>
+          <button class="tb" onclick="filterGoals('Monthly',this)">Monthly</button>
+        </div>
+        <button class="btn btn-o btn-sm" id="goals-edit-btn" onclick="toggleGoalEdit()">✏️ Edit Goals</button>
       </div>
+      <div style="height:10px"></div>
       <div id="goals-list"></div>
     </div>
 
@@ -518,7 +523,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
         <div class="stat card-g"><div class="stat-l">SAVED THIS MONTH</div><div class="stat-v" style="color:var(--grn)" id="wit-saved">$0</div><div class="stat-s" id="wit-saved-sub">0 items passed</div></div>
         <div class="stat card-r"><div class="stat-l">SPENT THIS MONTH</div><div class="stat-v" style="color:var(--red)" id="wit-spent">$0</div><div class="stat-s" id="wit-spent-sub">0 items bought</div></div>
         <div class="stat"><div class="stat-l">WIN RATE</div><div class="stat-v" style="color:var(--amb)" id="wit-winrate">0%</div><div class="stat-s">of decisions saved</div></div>
-        <div class="stat card-b"><div class="stat-l">WORK HRS SAVED</div><div class="stat-v" style="color:var(--blu)" id="wit-hrs-saved">0h</div><div class="stat-s">at your hourly rate</div></div>
+        <div class="stat" id="wit-net-card"><div class="stat-l">NET POSITION</div><div class="stat-v" id="wit-net" style="color:var(--grn)">$0.00</div><div class="stat-s" id="wit-net-sub">breakeven</div></div>
       </div>
       <div class="g2" style="margin-bottom:16px">
         <div class="card">
@@ -527,7 +532,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
           <div style="display:flex;gap:8px;align-items:center">
             <span style="font-size:16px;color:var(--t3);font-weight:700">$</span>
             <input class="inp" id="wit-rate" type="number" step="0.01" placeholder="23.00" style="flex:1">
-            <span style="font-size:12px;color:var(--t2);white-space:nowrap">/ hr after tax</span>
+            <span style="font-size:12px;color:var(--t2);white-space:nowrap">/ hr (base rate)</span>
             <button class="btn btn-o btn-sm" onclick="saveWitRate()">Save</button>
           </div>
         </div>
@@ -579,7 +584,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     </div>
     <div id="mm-preset">
       <select class="inp sel" id="mm-cat" onchange="updateMealList()" style="margin-bottom:10px">
-        <option>breakfast_options</option><option>lunch_options</option><option>snack_options</option><option>dinner_options</option>
+        <option value="breakfast_options">Breakfast</option><option value="lunch_options">Lunch</option><option value="snack_options">Snack</option><option value="dinner_options">Dinner</option>
       </select>
       <div id="mm-list"></div>
     </div>
@@ -609,7 +614,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
 <div class="modal-bg" id="event-modal">
   <div class="modal">
-    <div class="modal-title">ADD EVENT</div>
+    <div class="modal-title" id="ev-modal-title">ADD EVENT</div>
     <input type="hidden" id="ev-id">
     <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Title</div><input class="inp" id="ev-title" placeholder="Event title"></div>
     <div class="g2" style="gap:8px;margin-bottom:10px">
@@ -699,6 +704,38 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   </div>
 </div>
 
+
+<div class="modal-bg" id="add-habit-modal">
+  <div class="modal">
+    <div class="modal-title">ADD HABIT</div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Habit Label</div><input class="inp" id="ah-label" placeholder="e.g. Drink green tea"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Category</div>
+    <select class="inp sel" id="ah-cat">
+      <option value="morning">Morning</option>
+      <option value="fitness">Fitness</option>
+      <option value="nutrition">Nutrition</option>
+      <option value="mindset">Mindset</option>
+      <option value="custom">Custom (new)</option>
+    </select></div>
+    <div id="ah-custom-cat-wrap" style="display:none;margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">New Category Name</div><input class="inp" id="ah-custom-cat" placeholder="e.g. Recovery"></div>
+    <div class="modal-footer"><button class="btn btn-r" onclick="confirmAddHabit()">Add Habit</button><button class="btn btn-o" onclick="closeModal('add-habit-modal')">Cancel</button></div>
+  </div>
+</div>
+<div class="modal-bg" id="add-goal-modal">
+  <div class="modal">
+    <div class="modal-title">ADD GOAL</div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Goal</div><input class="inp" id="ag-label" placeholder="e.g. Read 10 pages before bed"></div>
+    <div class="g2" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Frequency</div>
+      <select class="inp sel" id="ag-freq"><option>Daily</option><option>Weekly</option><option>Monthly</option></select></div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Priority</div>
+      <select class="inp sel" id="ag-priority"><option>Critical</option><option>High</option><option>Medium</option></select></div>
+    </div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Category</div>
+    <select class="inp sel" id="ag-sec"><option value="FITNESS">FITNESS</option><option value="NUTRITION">NUTRITION</option><option value="READING">READING</option><option value="FINANCIAL">FINANCIAL</option><option value="MINDSET">MINDSET</option><option value="CUSTOM">CUSTOM</option></select></div>
+    <div class="modal-footer"><button class="btn btn-r" onclick="confirmAddGoal()">Add Goal</button><button class="btn btn-o" onclick="closeModal('add-goal-modal')">Cancel</button></div>
+  </div>
+</div>
 <div id="toast"></div>
 <script>
 
@@ -1928,6 +1965,268 @@ window.addEventListener('DOMContentLoaded',async()=>{
   const{data:{session}}=await sb.auth.getSession();
   if(!session)show('s-choose');
 });
+
+
+// ── EDITABLE DASHBOARD STATS ────────────────────────────────────
+function editStat(elId, key, defaultVal, unit){
+  const el=document.getElementById(elId); if(!el)return;
+  const cur=parseFloat(localStorage.getItem(key+'_'+PROFILE.id))||defaultVal;
+  el.innerHTML=`<input type="number" value="${cur}" step="any" style="width:80px;background:none;border:none;border-bottom:2px solid var(--red);color:inherit;font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveStat('${elId}','${key}','${unit}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  el.querySelector('input').select();
+}
+function saveStat(elId,key,unit,value){
+  const v=parseFloat(value);
+  if(!isNaN(v)&&v>0)localStorage.setItem(key+'_'+PROFILE.id,v);
+  const stored=parseFloat(localStorage.getItem(key+'_'+PROFILE.id));
+  const display=stored||(key==='tgt_weight'?165:key==='cal_target'?1900:185);
+  const el=document.getElementById(elId);
+  if(el)el.textContent=display.toLocaleString()+(unit==='g'?'g':'');
+  toast('Saved: '+display+(unit==='g'?'g':' '+unit));
+}
+function loadDashStats(){
+  const tgt=parseFloat(localStorage.getItem('tgt_weight_'+PROFILE.id))||165;
+  const cal=parseFloat(localStorage.getItem('cal_target_'+PROFILE.id))||1900;
+  const pro=parseFloat(localStorage.getItem('pro_target_'+PROFILE.id))||185;
+  const te=document.getElementById('d-tgt-wt'); if(te)te.textContent=tgt;
+  const ce=document.getElementById('d-cal-tgt'); if(ce)ce.textContent=cal.toLocaleString();
+  const pe=document.getElementById('d-pro-tgt'); if(pe)pe.textContent=pro+'g';
+  const ne=document.getElementById('nut-tgt-cal'); if(ne)ne.textContent=cal+'/day';
+  const npe=document.getElementById('nut-tgt-pro'); if(npe)npe.textContent=pro+'g/day';
+}
+
+// ── FINANCIAL DYNAMIC BOXES ─────────────────────────────────────
+async function updateFinancialBoxes(){
+  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
+  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(d.balance||0),0);
+  const totalPay=(debts||[]).reduce((s,d)=>s+(d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(s2.monthly_cost||0),0);
+  const totalMonthly=totalPay+totalSubs;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-total-debt','$'+totalDebt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+  set('fin-debt-ct',(debts||[]).length+' account'+(debts?.length!==1?'s':''));
+  set('fin-monthly-pay','$'+totalPay.toFixed(2));
+  set('fin-monthly-subs','$'+totalSubs.toFixed(2));
+  set('fin-subs-ct',(subs||[]).length+' subscription'+(subs?.length!==1?'s':''));
+  set('fin-total-monthly','$'+totalMonthly.toFixed(2));
+}
+
+// ── HABITS ADD/EDIT/REMOVE ──────────────────────────────────────
+let habitEditMode=false;
+const HABIT_COLORS={morning:'a',fitness:'r',nutrition:'g',mindset:'b',custom:'p'};
+
+function getUserHabitSecs(){
+  if(!PROFILE)return JSON.parse(JSON.stringify(HABIT_SECS));
+  const k='habits_'+PROFILE.id;
+  try{const s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}
+  return JSON.parse(JSON.stringify(HABIT_SECS));
+}
+function saveUserHabitSecs(secs){
+  localStorage.setItem('habits_'+PROFILE.id,JSON.stringify(secs));
+}
+function toggleHabitEdit(){
+  habitEditMode=!habitEditMode;
+  const btn=document.getElementById('habit-edit-btn');
+  if(btn)btn.textContent=habitEditMode?'✅ Done':'✏️ Edit';
+  renderHabits();
+}
+function openAddHabit(cat){
+  document.getElementById('ah-label').value='';
+  document.getElementById('ah-cat').value=cat||'morning';
+  document.getElementById('ah-custom-cat-wrap').style.display='none';
+  document.getElementById('ah-cat').onchange=function(){
+    document.getElementById('ah-custom-cat-wrap').style.display=this.value==='custom'?'block':'none';
+  };
+  openModal('add-habit-modal');
+}
+function confirmAddHabit(){
+  const label=document.getElementById('ah-label').value.trim();
+  if(!label){toast('Enter a habit name');return;}
+  let cat=document.getElementById('ah-cat').value;
+  let catLabel=cat.charAt(0).toUpperCase()+cat.slice(1);
+  let catCol='b';
+  if(cat==='custom'){
+    cat=document.getElementById('ah-custom-cat').value.trim().toLowerCase().replace(/\s+/g,'-')||'custom';
+    catLabel=document.getElementById('ah-custom-cat').value.trim()||'Custom';
+  }else{
+    catCol=HABIT_COLORS[cat]||'b';
+  }
+  const secs=getUserHabitSecs();
+  let sec=secs.find(s=>s.cat===cat);
+  if(!sec){sec={cat,label:catLabel,col:catCol,habits:[]};secs.push(sec);}
+  sec.habits.push({id:'h_'+Date.now(),label});
+  saveUserHabitSecs(secs);
+  closeModal('add-habit-modal');
+  renderHabits();
+  toast('Habit added: '+label);
+}
+function removeHabit(catIdx,habitIdx){
+  if(!confirm('Remove this habit?'))return;
+  const secs=getUserHabitSecs();
+  secs[catIdx].habits.splice(habitIdx,1);
+  if(secs[catIdx].habits.length===0)secs.splice(catIdx,1);
+  saveUserHabitSecs(secs);
+  renderHabits();toast('Habit removed');
+}
+
+// Override renderHabits to use getUserHabitSecs + edit mode
+const _origRenderHabits=renderHabits;
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');if(lbl)lbl.textContent=D7L[d.getDay()].toUpperCase()+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){const diff=Math.round((new Date(todayStr())-new Date(habitDate))/86400000);rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';}
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');
+  if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>`
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
+        ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+      </div>
+      ${sec.habits.map((h,hi)=>`
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" style="position:relative" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'v':''}</div>
+          <div class="hl${habitEditMode?' ':''}${habitCache[h.id]?' done':''}">${h.label}</div>
+          <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0">${sec.cat}</span>
+          ${habitEditMode?`<button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:11px;font-weight:700;margin-left:5px;flex-shrink:0">✕</button>`:''}
+        </div>`).join('')}
+      ${habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add Habit to ${sec.label}</button>`:''}
+    </div>`).join('')
+    +(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  renderCatProg();renderStreakBar();
+}
+
+// ── GOALS ADD/EDIT/REMOVE ────────────────────────────────────────
+let goalEditMode=false;
+function getUserGoalData(){
+  if(!PROFILE)return JSON.parse(JSON.stringify(GOALS_DATA));
+  const k='goals_'+PROFILE.id;
+  try{const s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}
+  return JSON.parse(JSON.stringify(GOALS_DATA));
+}
+function saveUserGoalData(data){localStorage.setItem('goals_'+PROFILE.id,JSON.stringify(data));}
+function toggleGoalEdit(){
+  goalEditMode=!goalEditMode;
+  const btn=document.getElementById('goals-edit-btn');
+  if(btn)btn.textContent=goalEditMode?'✅ Done':'✏️ Edit Goals';
+  renderGoals();
+}
+function openAddGoal(){
+  document.getElementById('ag-label').value='';
+  openModal('add-goal-modal');
+}
+function confirmAddGoal(){
+  const g=document.getElementById('ag-label').value.trim();
+  if(!g){toast('Enter a goal description');return;}
+  const freq=document.getElementById('ag-freq').value;
+  const p=document.getElementById('ag-priority').value;
+  const sec=document.getElementById('ag-sec').value;
+  const data=getUserGoalData();
+  let s=data.find(d=>d.sec===sec);
+  if(!s){s={sec,col:'t2',goals:[]};data.push(s);}
+  s.goals.push({freq,g,p,id:'g_'+Date.now()});
+  saveUserGoalData(data);
+  closeModal('add-goal-modal');
+  renderGoals();
+  toast('Goal added!');
+}
+function removeGoal(secIdx,goalIdx){
+  if(!confirm('Remove this goal?'))return;
+  const data=getUserGoalData();
+  data[secIdx].goals.splice(goalIdx,1);
+  if(data[secIdx].goals.length===0)data.splice(secIdx,1);
+  saveUserGoalData(data);
+  renderGoals();toast('Goal removed');
+}
+
+// Override renderGoals to support edit mode
+renderGoals=function(){
+  const el=document.getElementById('goals-list');if(!el)return;
+  const data=getUserGoalData();
+  el.innerHTML=data.map((gs,si)=>`
+    <div class="sh">${gs.sec}</div>
+    ${gs.goals.map((g,gi)=>`
+      <div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
+        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span>
+        <span style="flex:1;font-size:13px">${g.g}</span>
+        <span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span>
+        ${goalEditMode?`<button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0">✕</button>`:''}
+      </div>`).join('')}
+    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
+    <div style="height:4px"></div>`).join('')
+    +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
+}
+
+// ── WIT NET POSITION UPDATE ──────────────────────────────────────
+const _origRenderWit=renderWit;
+renderWit=function(){
+  _origRenderWit();
+  // Add net position calc
+  const key='wit_'+PROFILE.id+'_'+yearMonth();
+  const items=JSON.parse(localStorage.getItem(key)||'[]');
+  const bought=items.filter(i=>i.decision==='buy');
+  const passed=items.filter(i=>i.decision==='pass');
+  const totalBought=bought.reduce((s,i)=>s+i.cost,0);
+  const totalSaved=passed.reduce((s,i)=>s+i.cost,0);
+  const net=totalSaved-totalBought;
+  const netEl=document.getElementById('wit-net');
+  const netSub=document.getElementById('wit-net-sub');
+  const netCard=document.getElementById('wit-net-card');
+  if(netEl){
+    netEl.textContent=(net>=0?'+':'')+net.toFixed(2).replace(/^-/,'-$').replace(/^\+/,'+$');
+    if(!netEl.textContent.includes('$'))netEl.textContent=(net>=0?'+$':'-$')+Math.abs(net).toFixed(2);
+    netEl.style.color=net>0?'var(--grn)':net<0?'var(--red)':'var(--t2)';
+  }
+  if(netSub)netSub.textContent=net>0?'you are UP':net<0?'you are DOWN':'breakeven';
+  if(netCard)netCard.className='stat '+(net>0?'card-g':net<0?'card-r':'');
+}
+
+// ── ADMIN – REPLACE BROKEN CREATE USER WITH INVITE FLOW ─────────
+adminCreateUser=async function(){
+  const errEl=document.getElementById('nu-err');errEl.style.display='none';
+  const email=document.getElementById('nu-email').value.trim();
+  if(!email){errEl.textContent='Enter the email to invite.';errEl.style.display='block';return;}
+  // Copy invite info to clipboard
+  const msg='You have been invited to the Life Dashboard!\n\nURL: https://code-with-cisco.github.io/LifeDashboard/\nInvite Code: Memento Mori\n\nClick Create Account, enter the invite code when prompted, then register with your email ('+email+').';
+  try{await navigator.clipboard.writeText(msg);toast('Invite message copied to clipboard!');}
+  catch(e){toast('Invite URL: code-with-cisco.github.io/LifeDashboard — Code: Memento Mori');}
+  closeModal('add-user-modal');
+}
+
+// Patch the add user modal HTML dynamically
+const addUserModal=document.getElementById('add-user-modal');
+if(addUserModal){
+  const title=addUserModal.querySelector('.modal-title');
+  if(title)title.textContent='INVITE USER';
+  const body=addUserModal.querySelector('div[style*="font-size:12px"]');
+  if(body)body.innerHTML='Enter the email you want to invite. The invite message will be copied to your clipboard — paste it to them directly.';
+}
+
+// ── PATCH renderFinancial to call updateFinancialBoxes ───────────
+const _origRenderFinancial=renderFinancial;
+renderFinancial=async function(){
+  await _origRenderFinancial();
+  await updateFinancialBoxes();
+}
+const _origSaveDebt=saveDebt;
+saveDebt=async function(){await _origSaveDebt();await updateFinancialBoxes();}
+const _origRemoveDebt=removeDebt;
+removeDebt=async function(id){await _origRemoveDebt(id);await updateFinancialBoxes();}
+const _origSaveSub=saveSub;
+saveSub=async function(){await _origSaveSub();await updateFinancialBoxes();}
+const _origRemoveSub=removeSub;
+removeSub=async function(id){await _origRemoveSub(id);await updateFinancialBoxes();}
+
+// ── PATCH enterApp to load dash stats ───────────────────────────
+const _origEnterApp=enterApp;
+enterApp=async function(){
+  await _origEnterApp();
+  setTimeout(loadDashStats,200);
+}
 
 </script>
 </body>
