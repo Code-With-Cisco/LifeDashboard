@@ -305,7 +305,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   <div class="nav-user">
     <div class="nav-av" id="nav-av">C</div>
     <div class="nav-uname" id="nav-uname">Loading...</div>
-    <button class="nav-out" onclick="logout()" title="Sign out">↩</button>
+    <button class="nav-out" onclick="logout()" title="Sign out" style="font-size:11px;padding:3px 8px;font-weight:600;letter-spacing:.3px">Sign Out</button>
   </div>
   <div class="nav-scroll" id="nav-items"></div>
   <div class="nav-foot">Shred Protocol · Week <span class="mono" id="wk-num">1</span></div>
@@ -794,16 +794,27 @@ let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toISOString(
     debtEditId=null,subEditId=null,evEditId=null,habitCache={};
 const CACHE_TTL=86400000;
 async function fetchContent(file){
-  const key='cc_'+file;
+  // Bump version to clear any stale null-caches from old failed fetches
+  const key='cc_v4_'+file;
   const cached=JSON.parse(localStorage.getItem(key)||'null');
   if(cached&&Date.now()-cached.ts<CACHE_TTL)return cached.data;
-  try{
-    const r=await fetch('./Data/'+file+'.json?v='+Date.now());
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    localStorage.setItem(key,JSON.stringify({data,ts:Date.now()}));
-    return data;
-  }catch(e){console.warn('fetchContent failed:',file,e);return cached?.data||null;}
+  // Try both cases of folder name (GitHub is case-sensitive)
+  const attempts=['./Data/','./data/'];
+  for(const base of attempts){
+    try{
+      const url=base+file+'.json?t='+Date.now();
+      const r=await fetch(url);
+      if(r.ok){
+        const data=await r.json();
+        localStorage.setItem(key,JSON.stringify({data,ts:Date.now()}));
+        console.log('[content] loaded from',url);
+        return data;
+      }
+      console.warn('[content]',url,'returned',r.status);
+    }catch(e){console.warn('[content] fetch error for',base+file,e.message);}
+  }
+  console.error('[content] FAILED to load',file,'- check your Data/ folder on GitHub');
+  return cached?.data||null;
 }
 async function loadAllContent(){
   const[w,m,b,s,sc]=await Promise.all([
@@ -911,7 +922,16 @@ async function doFPR(){
     else{show('s-login');toast('Please sign in with your new password.');}
   }
 }
-function logout(){sb.auth.signOut();}
+async function logout(){
+  try{await sb.auth.signOut();}
+  catch(e){
+    console.warn('signOut error, forcing UI reset:',e);
+    PROFILE=null;
+    document.getElementById('app').classList.remove('show');
+    document.getElementById('q-screen').classList.remove('show');
+    show('s-choose');
+  }
+}
 const ADMIN_UUID='81dbcc87-60dc-4969-874b-588a8dd861b7';
 
 async function loadProfile(session){
@@ -2010,6 +2030,13 @@ async function adminCreateUser(){
   renderAdmin();
 }
 window.addEventListener('DOMContentLoaded',async()=>{
+  // Clear old cache versions so stale null-data doesn't block fresh fetches
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_')){
+      localStorage.removeItem(k);i--;
+    }
+  }
   const{data:{session}}=await sb.auth.getSession();
   if(!session)show('s-choose');
 });
