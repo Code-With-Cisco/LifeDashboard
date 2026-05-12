@@ -418,6 +418,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
           <button class="tb" onclick="setCalView('day')">Day</button>
         </div>
         <button class="btn btn-r btn-sm" onclick="openEventModal()">+ Event</button>
+        <label class="btn btn-o btn-sm" style="cursor:pointer" title="Import .ics calendar file">
+          &#x1F4C5; Import .ics
+          <input type="file" accept=".ics,.ICS" style="display:none" onchange="importICS(this)">
+        </label>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div style="display:flex;gap:6px"><button class="btn btn-o btn-sm" onclick="calNav(-1)">←</button><button class="btn btn-o btn-sm" onclick="calNav(0)">Today</button></div>
@@ -579,8 +583,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <div class="modal-title">LOG A MEAL</div>
     <div class="tab-bar" id="mm-tabs">
       <button class="tb on" onclick="setMealTab('preset',this)">Quick Select</button>
-      <button class="tb" onclick="setMealTab('custom',this)">Build Custom</button>
-      <button class="tb" onclick="setMealTab('manual',this)">Manual Entry</button>
+      <button class="tb" onclick="setMealTab('custom',this)">Custom Entry</button>
     </div>
     <div id="mm-preset">
       <select class="inp sel" id="mm-cat" onchange="updateMealList()" style="margin-bottom:10px">
@@ -589,25 +592,67 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       <div id="mm-list"></div>
     </div>
     <div id="mm-custom" style="display:none">
-      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Protein</div><select class="inp sel" id="c-prot-sel"></select></div>
-      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Side</div><select class="inp sel" id="c-side-sel"></select></div>
-      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Seasoning</div><select class="inp sel" id="c-season-sel"></select></div>
-      <div class="g2" style="gap:8px">
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Calories</div><input class="inp" id="c-cal" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Protein (g)</div><input class="inp" id="c-pro" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Carbs (g)</div><input class="inp" id="c-car" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Fat (g)</div><input class="inp" id="c-fati" type="number"></div>
+      <div style="margin-bottom:11px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:6px">Protein Source</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="inp sel" id="c-prot-sel" style="flex:1" onchange="calcCustomMacros()">
+            <option value="">Select protein...</option>
+            <option value="chicken_breast">Chicken Breast</option>
+            <option value="chicken_thighs">Chicken Thighs</option>
+            <option value="ground_beef">Ground Beef 90/10</option>
+            <option value="ground_turkey">Ground Turkey 93/7</option>
+            <option value="ribeye">Ribeye Steak</option>
+            <option value="sirloin">Sirloin Steak</option>
+            <option value="eggs">Eggs (whole)</option>
+            <option value="egg_whites">Egg Whites</option>
+          </select>
+          <input class="inp" id="c-prot-amt" type="number" value="6" min="0" step="0.5" style="width:64px;text-align:center" oninput="calcCustomMacros()">
+          <span style="font-size:12px;color:var(--t3);white-space:nowrap" id="c-prot-unit">oz</span>
+        </div>
+      </div>
+      <div style="margin-bottom:11px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:6px">Side / Carb Source</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="inp sel" id="c-side-sel" style="flex:1" onchange="calcCustomMacros()">
+            <option value="">No side</option>
+            <option value="basmati_rice">Basmati Rice</option>
+            <option value="protein_pasta">Protein Pasta</option>
+            <option value="thin_bagel">Thin Bagel</option>
+            <option value="5grain_bread">5-Grain Bread</option>
+            <option value="sweet_potato">Sweet Potato</option>
+            <option value="oats">Oats</option>
+          </select>
+          <input class="inp" id="c-side-amt" type="number" value="0.75" min="0" step="0.25" style="width:64px;text-align:center" oninput="calcCustomMacros()">
+          <span style="font-size:12px;color:var(--t3);white-space:nowrap" id="c-side-unit">cups</span>
+        </div>
+      </div>
+      <div style="margin-bottom:11px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:6px">Flavor Profile</div>
+        <select class="inp sel" id="c-season-sel">
+          <option>Default (S+P+Garlic)</option>
+          <option>Japanese BBQ Sauce</option>
+          <option>Shawarma Blend</option>
+          <option>Taco Seasoning</option>
+          <option>Italian Herb Rub</option>
+          <option>BBQ Dry Rub</option>
+          <option>Mediterranean</option>
+        </select>
+      </div>
+      <div style="margin-bottom:11px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:6px">Meal Name (optional)</div>
+        <input class="inp" id="c-meal-name" placeholder="Auto-generated from selections">
+      </div>
+      <div style="background:var(--s3);border-radius:var(--r);padding:12px;margin-bottom:4px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:8px">CALCULATED MACROS (tap any to override)</div>
+        <div class="g4" style="gap:8px">
+          <div><div style="font-size:10px;color:var(--red);margin-bottom:3px;font-weight:600">CAL</div><input class="inp" id="c-cal" type="number" style="text-align:center;font-family:DM Mono,monospace;font-weight:600;padding:8px 6px"></div>
+          <div><div style="font-size:10px;color:var(--grn);margin-bottom:3px;font-weight:600">PROTEIN (g)</div><input class="inp" id="c-pro" type="number" style="text-align:center;font-family:DM Mono,monospace;font-weight:600;padding:8px 6px"></div>
+          <div><div style="font-size:10px;color:var(--amb);margin-bottom:3px;font-weight:600">CARBS (g)</div><input class="inp" id="c-car" type="number" style="text-align:center;font-family:DM Mono,monospace;font-weight:600;padding:8px 6px"></div>
+          <div><div style="font-size:10px;color:var(--blu);margin-bottom:3px;font-weight:600">FAT (g)</div><input class="inp" id="c-fati" type="number" style="text-align:center;font-family:DM Mono,monospace;font-weight:600;padding:8px 6px"></div>
+        </div>
       </div>
     </div>
-    <div id="mm-manual" style="display:none">
-      <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Meal Name</div><input class="inp" id="m-name" placeholder="e.g. Post-workout shake"></div>
-      <div class="g2" style="gap:8px">
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Calories</div><input class="inp" id="m-cal" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Protein (g)</div><input class="inp" id="m-pro" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Carbs (g)</div><input class="inp" id="m-car" type="number"></div>
-        <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Fat (g)</div><input class="inp" id="m-fat" type="number"></div>
-      </div>
-    </div>
+    <div id="mm-manual" style="display:none"></div>
     <div class="modal-footer"><button class="btn btn-r" onclick="submitMeal()">Log Meal</button><button class="btn btn-o" onclick="closeModal('meal-modal')">Cancel</button></div>
   </div>
 </div>
@@ -753,7 +798,7 @@ async function fetchContent(file){
   const cached=JSON.parse(localStorage.getItem(key)||'null');
   if(cached&&Date.now()-cached.ts<CACHE_TTL)return cached.data;
   try{
-    const r=await fetch('./data/'+file+'.json?v='+Date.now());
+    const r=await fetch('./Data/'+file+'.json?v='+Date.now());
     if(!r.ok)throw new Error('HTTP '+r.status);
     const data=await r.json();
     localStorage.setItem(key,JSON.stringify({data,ts:Date.now()}));
@@ -2502,6 +2547,221 @@ renderGoals=function(){
     ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
     <div style="height:4px"></div>`).join('')
     +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
+};
+
+
+// ── MACRO DATABASE (per-unit nutritional data) ──────────────────
+const MACRO_PROT={
+  chicken_breast:{cal:47,pro:8.8,car:0,fat:1.0,label:'Chicken Breast',unit:'oz'},
+  chicken_thighs:{cal:55,pro:6.4,car:0,fat:2.9,label:'Chicken Thighs',unit:'oz'},
+  ground_beef:{cal:63,pro:8.0,car:0,fat:3.0,label:'Ground Beef 90/10',unit:'oz'},
+  ground_turkey:{cal:56,pro:8.0,car:0,fat:2.7,label:'Ground Turkey 93/7',unit:'oz'},
+  ribeye:{cal:70,pro:6.5,car:0,fat:4.8,label:'Ribeye Steak',unit:'oz'},
+  sirloin:{cal:55,pro:8.5,car:0,fat:2.2,label:'Sirloin Steak',unit:'oz'},
+  eggs:{cal:70,pro:6,car:0.4,fat:5,label:'Eggs',unit:'egg'},
+  egg_whites:{cal:17,pro:3.6,car:0.2,fat:0,label:'Egg Whites',unit:'white'},
+};
+const MACRO_SIDE={
+  basmati_rice:{cal:200,pro:4,car:45,fat:0.4,label:'Basmati Rice',unit:'cup'},
+  protein_pasta:{cal:170,pro:28,car:26,fat:2,label:'Protein Pasta',unit:'cup'},
+  thin_bagel:{cal:110,pro:5,car:22,fat:1,label:'Thin Bagel',unit:'each'},
+  '5grain_bread':{cal:70,pro:3,car:12,fat:1,label:'5-Grain Bread',unit:'slice'},
+  sweet_potato:{cal:103,pro:2,car:24,fat:0.1,label:'Sweet Potato',unit:'medium'},
+  oats:{cal:150,pro:5,car:27,fat:3,label:'Oats',unit:'cup'},
+};
+
+function calcCustomMacros(){
+  const pk=document.getElementById('c-prot-sel')?.value;
+  const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+  const sk=document.getElementById('c-side-sel')?.value;
+  const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+  const prow=MACRO_PROT[pk]||{cal:0,pro:0,car:0,fat:0};
+  const sidew=MACRO_SIDE[sk]||{cal:0,pro:0,car:0,fat:0};
+  const tc=Math.round(prow.cal*pa+sidew.cal*sa);
+  const tp=Math.round((prow.pro*pa+sidew.pro*sa)*10)/10;
+  const tcar=Math.round((prow.car*pa+sidew.car*sa)*10)/10;
+  const tf=Math.round((prow.fat*pa+sidew.fat*sa)*10)/10;
+  const setV=(id,v)=>{const el=document.getElementById(id);if(el&&!el.dataset.manual)el.value=v;};
+  setV('c-cal',tc);setV('c-pro',tp);setV('c-car',tcar);setV('c-fati',tf);
+  // Update side unit label
+  const su=document.getElementById('c-side-unit');
+  if(su)su.textContent=MACRO_SIDE[sk]?.unit||'cups';
+  // Auto-name
+  const ne=document.getElementById('c-meal-name');
+  if(ne&&!ne.value){
+    const parts=[];
+    if(pa&&prow.label)parts.push(pa+(prow.unit==='oz'?'oz ':'x ')+prow.label);
+    if(sa&&sidew.label)parts.push(sa+(sidew.unit==='cup'?'c ':'x ')+sidew.label);
+    const s=document.getElementById('c-season-sel')?.value;
+    if(s&&s!=='Default (S+P+Garlic)')parts.push('('+s+')');
+    ne.placeholder=parts.join(' + ')||'Auto-generated from selections';
+  }
+}
+// Mark manually-edited macro fields so auto-calc doesn't overwrite
+['c-cal','c-pro','c-car','c-fati'].forEach(id=>{
+  document.addEventListener('DOMContentLoaded',()=>{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener('input',()=>{el.dataset.manual='1';});
+  });
+});
+
+// ── PATCH submitMeal for new custom tab ─────────────────────────
+submitMeal=async function(){
+  if(mealTab==='preset'){toast('Click a meal card or its + Log button to log it');return;}
+  if(mealTab==='manual'){toast('Use Custom Entry tab');return;}
+  if(mealTab==='custom'){
+    const pk=document.getElementById('c-prot-sel')?.value;
+    const customName=document.getElementById('c-meal-name')?.value.trim();
+    const prow=MACRO_PROT[pk]||{};
+    const sk=document.getElementById('c-side-sel')?.value;
+    const sidew=MACRO_SIDE[sk]||{};
+    const season=document.getElementById('c-season-sel')?.value||'';
+    const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+    const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+    const name=customName||(
+      [pa&&prow.label?pa+'oz '+prow.label:'',sa&&sidew.label?sa+(sidew.unit==='cup'?'c ':'x ')+sidew.label:'',season&&season!=='Default (S+P+Garlic)'?'('+season+')':''].filter(Boolean).join(' + ')||'Custom Meal'
+    );
+    const cal=+document.getElementById('c-cal')?.value||0;
+    const pro=+document.getElementById('c-pro')?.value||0;
+    const car=+document.getElementById('c-car')?.value||0;
+    const fat=+document.getElementById('c-fati')?.value||0;
+    if(!cal&&!pro){toast('Select ingredients or enter macros manually');return;}
+    // Clear manual flags on close
+    ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
+    await addMealEntry(name,cal,pro,car,fat);closeModal('meal-modal');toast('Logged: '+name);
+    return;
+  }
+};
+
+// ── PATCH openMealModal to reset custom form ─────────────────────
+const _origOpenMealModal=openMealModal;
+openMealModal=function(){
+  _origOpenMealModal();
+  // Reset custom form state
+  ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.manual;}});
+  const cn=document.getElementById('c-meal-name');if(cn)cn.value='';
+};
+
+// ── NUTRITION PAGE — FRACTION-STYLE PROGRESS BOXES ──────────────
+renderNutrition=async function(){
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  if(!mPlan)return;
+  const tgt=mPlan.targets;
+  // Fetch consumed meals first
+  const{data:meals2}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const tot={cal:0,pro:0,car:0,fat:0};
+  (meals2||[]).forEach(m=>{tot.cal+=m.calories||0;tot.pro+=m.protein_g||0;tot.car+=m.carbs_g||0;tot.fat+=m.fat_g||0;});
+  // Fraction-style progress boxes
+  const tgtEl=document.getElementById('nut-targets');
+  if(tgtEl){
+    const macros=[
+      {l:'CALORIES',cur:Math.round(tot.cal),tgt:tgt.calories,unit:'cal',c:'red'},
+      {l:'PROTEIN',cur:Math.round(tot.pro),tgt:tgt.protein_g,unit:'g',c:'grn'},
+      {l:'CARBS',cur:Math.round(tot.car),tgt:tgt.carbs_g,unit:'g',c:'amb'},
+      {l:'FAT',cur:Math.round(tot.fat),tgt:tgt.fat_g,unit:'g',c:'blu'},
+    ];
+    tgtEl.innerHTML=macros.map(m=>{
+      const pct=Math.min(100,Math.round(m.cur/m.tgt*100));
+      const over=m.cur>m.tgt;
+      const rem=m.tgt-m.cur;
+      return`<div class="stat" style="padding:14px 16px">
+        <div class="stat-l" style="margin-bottom:6px">${m.l}</div>
+        <div style="display:flex;align-items:baseline;gap:4px;line-height:1;margin-bottom:6px">
+          <span style="font-family:Bebas Neue,sans-serif;font-size:30px;letter-spacing:1px;color:${over?'var(--red)':'var(--'+m.c+')'}">${m.cur.toLocaleString()}</span>
+          <span style="font-size:12px;color:var(--t3)">/ ${m.tgt.toLocaleString()}${m.unit}</span>
+        </div>
+        <div class="pb" style="height:8px;margin-bottom:5px"><div class="pbf" style="width:${pct}%;background:${over?'var(--red)':'var(--'+m.c+')'}"></div></div>
+        <div style="font-size:11px;font-family:DM Mono,monospace;color:${over?'var(--red)':pct>=95?'var(--grn)':'var(--t3)'}">
+          ${over?'+'+(m.cur-m.tgt)+m.unit+' over target':pct>=100?'Target reached!':rem+m.unit+' remaining ('+pct+'%)'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+  // Clear the duplicate bars (now in boxes above)
+  const barsEl=document.getElementById('nut-bars');if(barsEl)barsEl.innerHTML='';
+  const remEl=document.getElementById('nut-remaining');if(remEl)remEl.innerHTML='';
+  // Meal entries list
+  const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
+  const mEl=document.getElementById('meal-entries');
+  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>`<div class="meal-entry"><div class="meal-entry-name">${m.meal_name}</div><div class="meal-macros">${m.calories}cal - ${m.protein_g}P - ${m.carbs_g}C - ${m.fat_g}F</div><button class="meal-del" onclick="deleteMeal('${m.id}')">x</button></div>`).join('')
+    ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today.</div>':'');
+  // Reference meal tabs
+  const tabsEl=document.getElementById('nut-ref-tabs');const panelsEl=document.getElementById('nut-ref-panels');
+  if(tabsEl&&!tabsEl.children.length){
+    const cats=['breakfast_options','lunch_options','snack_options','dinner_options'];
+    const labels=['Breakfast','Lunch','Snack','Dinner'];
+    tabsEl.innerHTML=cats.map((c2,i)=>`<button class="tb${i===0?' on':''}" onclick="setNutTab(this,'nrp-${i}')">${labels[i]}</button>`).join('');
+    panelsEl.innerHTML=cats.map((cat,i)=>{
+      const items=(mPlan[cat]||FALLBACK_MEALS[cat]||[]);
+      return`<div class="nut-panel" id="nrp-${i}" style="display:${i===0?'block':'none'}">${
+        items.map(m=>{
+          const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+          return`<div class="card-sm" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})" onmouseover="this.style.borderColor='var(--grn)'" onmouseout="this.style.borderColor='transparent'">
+            <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${m.instructions||''}</div></div>
+            <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})">+Log</button>
+          </div>`;
+        }).join('')||'<div style="color:var(--t3);font-size:12px">No meals in plan.</div>'
+      }</div>`;
+    }).join('');
+  }
+};
+
+// ── ICS CALENDAR IMPORT ─────────────────────────────────────────
+async function importICS(input){
+  const file=input.files?.[0];if(!file){return;}
+  toast('Reading '+file.name+'...');
+  const text=await file.text();
+  const events=parseICS(text);
+  if(!events.length){toast('No events found in file.');input.value='';return;}
+  let imported=0,skipped=0;
+  for(const ev of events){
+    if(!ev.date||!ev.title)continue;
+    const{error}=await sb.from('calendar_events').insert({
+      user_id:PROFILE.id,
+      event_date:ev.date,
+      event_time:ev.time||'09:00',
+      title:ev.title.slice(0,100),
+      event_type:'b',
+    });
+    if(!error)imported++;else skipped++;
+  }
+  toast(`Imported ${imported} event${imported!==1?'s':''} from ${file.name}${skipped?' ('+skipped+' skipped)':''}`);
+  input.value='';
+  renderCal();
+}
+function parseICS(text){
+  const events=[];let cur=null;
+  const lines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  for(let i=0;i<lines.length;i++){
+    let line=lines[i];
+    // Handle line folding (lines starting with space/tab are continuations)
+    while(i+1<lines.length&&(lines[i+1].startsWith(' ')||lines[i+1].startsWith('\t'))){
+      i++;line+=lines[i].slice(1);
+    }
+    if(line==='BEGIN:VEVENT'){cur={};}
+    else if(line==='END:VEVENT'){if(cur&&cur.date&&cur.title)events.push(cur);cur=null;}
+    else if(cur){
+      const colon=line.indexOf(':');if(colon<0)continue;
+      const key=line.slice(0,colon).split(';')[0].toUpperCase();
+      const val=line.slice(colon+1);
+      if(key==='SUMMARY')cur.title=val.replace(/\\n/g,' ').replace(/\\,/g,',').trim();
+      else if(key==='DTSTART'||key==='DTSTART'){
+        const clean=val.replace(/[TZ]/g,'').replace(/-/g,'');
+        if(clean.length>=8){
+          cur.date=clean.slice(0,4)+'-'+clean.slice(4,6)+'-'+clean.slice(6,8);
+          if(clean.length>=12)cur.time=clean.slice(8,10)+':'+clean.slice(10,12);
+        }
+      }
+    }
+  }
+  return events;
+}
+
+// ── PATCH setMealTab to handle removed manual tab ────────────────
+const _origSetMealTab=setMealTab;
+setMealTab=function(tab,btn){
+  if(tab==='manual')tab='custom'; // redirect legacy manual to custom
+  _origSetMealTab(tab,btn);
 };
 
 </script>
