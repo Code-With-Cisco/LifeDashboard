@@ -793,43 +793,40 @@ async function doFPR(){
   const cur=(document.getElementById('fpr-cur')?.value||'').trim();
   const pass=document.getElementById('fpr-pass').value;
   const pass2=document.getElementById('fpr-pass2').value;
-  if(!cur){showErr('fpr-err','Enter your current password.');return;}
   if(!pass){showErr('fpr-err','Enter a new password.');return;}
   if(pass!==pass2){showErr('fpr-err',"Passwords don't match.");return;}
   if(pass.length<8){showErr('fpr-err','New password must be at least 8 characters.');return;}
-  if(cur===pass){showErr('fpr-err','New password must be different from your current password.');return;}
-  btn.disabled=true;btn.textContent='Verifying...';
-  // Step 1: Re-authenticate with current password (Supabase requires this for security)
-  const{data:{user:curUser}}=await sb.auth.getUser();
-  if(!curUser?.email){
-    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-    showErr('fpr-err','Session expired. Please sign in again.');show('s-login');return;
+  btn.disabled=true;btn.textContent='Updating...';
+  // Attempt direct password update (works when Secure Password Change is OFF in Supabase)
+  let{error:updateErr}=await sb.auth.updateUser({password:pass});
+  // If that fails and we have current password, try re-auth first then update
+  if(updateErr&&cur){
+    const{data:{user:u}}=await sb.auth.getUser();
+    if(u?.email){
+      const{error:reErr}=await sb.auth.signInWithPassword({email:u.email,password:cur});
+      if(!reErr){
+        const res=await sb.auth.updateUser({password:pass});
+        updateErr=res.error;
+      }
+    }
   }
-  const{error:reAuthErr}=await sb.auth.signInWithPassword({email:curUser.email,password:cur});
-  if(reAuthErr){
-    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-    showErr('fpr-err','Current password is incorrect. Try again.');return;
-  }
-  // Step 2: Set the new password
-  btn.textContent='Updating...';
-  const{error:updateErr}=await sb.auth.updateUser({password:pass});
   if(updateErr){
     btn.disabled=false;btn.textContent='SET NEW PASSWORD';
     showErr('fpr-err',updateErr.message);return;
   }
-  // Step 3: Clear the forced reset flag in profiles
+  // Clear the forced reset flag
   const{data:{user}}=await sb.auth.getUser();
   if(user){
     await sb.from('profiles').update({force_password_reset:false}).eq('id',user.id);
     if(PROFILE)PROFILE.force_password_reset=false;
   }
   btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-  toast('Password updated! Entering your dashboard...');
+  toast('Password updated! Loading your dashboard...');
   if(PROFILE){await loadAllContent();enterApp();return;}
   if(user){
     const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
     if(profile){PROFILE=profile;await loadAllContent();enterApp();}
-    else{show('s-choose');}
+    else{show('s-login');toast('Please sign in with your new password.');}
   }
 }
 function logout(){sb.auth.signOut();}
@@ -875,7 +872,7 @@ async function createProfile(session){
     display_name:meta.display_name||meta.username||session.user.email?.split('@')[0]||'User',
     role:isAdmin?'admin':'standard',
     signup_complete:isAdmin,
-    force_password_reset:isAdmin,
+    force_password_reset:false,
     assigned_workout_plan:'shred-advanced',
     assigned_meal_plan:'high-protein-deficit',
     assigned_reading_list:'self-improvement-first',
