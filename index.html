@@ -433,7 +433,11 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
     <!-- SPICE GUIDE -->
     <div class="page" id="page-spice">
-      <div class="tab-bar" id="spice-tabs"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div class="tab-bar" id="spice-tabs" style="flex:1;margin-bottom:0"></div>
+        <button class="btn btn-o btn-sm" id="spice-edit-btn" onclick="toggleSpiceEdit()">&#x270F;&#xFE0F; Edit</button>
+        <button class="btn btn-r btn-sm" id="spice-add-btn" style="display:none" onclick="openSpiceModal()">+ Add Recipe</button>
+      </div>
       <div id="spice-panels"></div>
     </div>
 
@@ -471,7 +475,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="sh" style="margin-bottom:0">DEBTS</div><button class="btn btn-o btn-sm" onclick="openDebtModal()">+ Add</button></div>
           <div id="debt-list"></div>
-          <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px"><span>Costco CC to $0</span><span id="cc-pct" class="mono">0%</span></div><div class="pb"><div class="pbf" id="cc-bar" style="background:var(--grn);width:0%"></div></div></div>
+          <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px"><span>Credit Card to $0</span><span id="cc-pct" class="mono">0%</span></div><div class="pb"><div class="pbf" id="cc-bar" style="background:var(--grn);width:0%"></div></div></div>
         </div>
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="sh" style="margin-bottom:0">SUBSCRIPTIONS</div><button class="btn btn-o btn-sm" onclick="openSubModal()">+ Add</button></div>
@@ -501,6 +505,21 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       <div id="goals-list"></div>
     </div>
 
+    <!-- TO DO LIST -->
+    <div class="page" id="page-todo">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div class="tab-bar" id="todo-filter-tabs" style="margin-bottom:0;flex:1">
+          <button class="tb on" onclick="filterTodos('All',this)">All</button>
+          <button class="tb" onclick="filterTodos('Urgent',this)">Urgent</button>
+          <button class="tb" onclick="filterTodos('In Progress',this)">In Progress</button>
+          <button class="tb" onclick="filterTodos('Important',this)">Important</button>
+          <button class="tb" onclick="filterTodos('On Hold',this)">On Hold</button>
+          <button class="tb" onclick="filterTodos('Done',this)">Done</button>
+        </div>
+        <button class="btn btn-r btn-sm" onclick="openTodoModal()">+ Add Task</button>
+      </div>
+      <div id="todo-list"></div>
+    </div>
     <!-- ADMIN PANEL -->
     <div class="page" id="page-admin">
       <div class="card card-r" style="margin-bottom:16px">
@@ -781,6 +800,71 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <div class="modal-footer"><button class="btn btn-r" onclick="confirmAddGoal()">Add Goal</button><button class="btn btn-o" onclick="closeModal('add-goal-modal')">Cancel</button></div>
   </div>
 </div>
+
+<div class="modal-bg" id="todo-modal">
+  <div class="modal">
+    <div class="modal-title" id="todo-modal-title">ADD TASK</div>
+    <input type="hidden" id="todo-edit-id">
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Task Title *</div><input class="inp" id="todo-title" placeholder="e.g. Call the bank about the fee"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Description (optional)</div><textarea class="inp" id="todo-desc" rows="2" placeholder="Notes, context, links..." style="resize:vertical"></textarea></div>
+    <div class="g2" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Status</div>
+        <select class="inp sel" id="todo-status">
+          <option>Not Started</option><option>In Progress</option><option>On Hold</option>
+          <option>Urgent</option><option>Important</option><option>Not Urgent</option><option>Done</option>
+        </select>
+      </div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Due Date (optional)</div>
+        <input class="inp" id="todo-due" type="date">
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-r" onclick="saveTodo()">Save Task</button><button class="btn btn-o" onclick="closeModal('todo-modal')">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="spice-modal">
+  <div class="modal modal-lg">
+    <div class="modal-title" id="spice-modal-title">ADD RECIPE</div>
+    <input type="hidden" id="spice-edit-key">
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Recipe Name *</div><input class="inp" id="sm-name" placeholder="e.g. Garlic Herb Chicken"></div>
+    <div class="g2" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Profile (tab)</div>
+        <select class="inp sel" id="sm-profile">
+          <option value="japanese">Japanese</option><option value="mexican">Mexican</option>
+          <option value="italian">Italian</option><option value="bbq">BBQ</option>
+          <option value="mediterranean">Mediterranean</option><option value="basics">Basics</option>
+        </select>
+      </div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Color Tag</div>
+        <select class="inp sel" id="sm-color">
+          <option value="red">Red</option><option value="green">Green</option>
+          <option value="amber">Amber</option><option value="blue">Blue</option><option value="dim">Neutral</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Dry Rub / Spices</div><input class="inp" id="sm-dryrub" placeholder="Salt 1 tsp · Pepper · Garlic powder 1 tsp"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Sauce / Liquid</div><input class="inp" id="sm-sauce" placeholder="Olive oil 1 tbsp · Lemon juice 1 tbsp"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Method / Notes</div><textarea class="inp" id="sm-method" rows="3" placeholder="How to cook it. Tips, timing, what to pair with." style="resize:vertical"></textarea></div>
+    <div class="modal-footer"><button class="btn btn-r" onclick="saveSpiceRecipe()">Save Recipe</button><button class="btn btn-o" onclick="closeModal('spice-modal')">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="custom-protein-modal">
+  <div class="modal">
+    <div class="modal-title" id="cp-modal-title">ADD CUSTOM PROTEIN</div>
+    <input type="hidden" id="cp-type">
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Name *</div><input class="inp" id="cp-name" placeholder="e.g. Salmon, Tuna, Tempeh..."></div>
+    <div style="margin-bottom:6px;font-size:11px;color:var(--t3)">Macros per oz (estimate)</div>
+    <div class="g4" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:10px;color:var(--red);margin-bottom:3px">Cal/oz</div><input class="inp" id="cp-cal" type="number" placeholder="50"></div>
+      <div><div style="font-size:10px;color:var(--grn);margin-bottom:3px">Pro/oz</div><input class="inp" id="cp-pro" type="number" placeholder="7"></div>
+      <div><div style="font-size:10px;color:var(--amb);margin-bottom:3px">Carb/oz</div><input class="inp" id="cp-car" type="number" placeholder="0"></div>
+      <div><div style="font-size:10px;color:var(--blu);margin-bottom:3px">Fat/oz</div><input class="inp" id="cp-fat" type="number" placeholder="2"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-r" onclick="saveCustomProtein()">Add Option</button><button class="btn btn-o" onclick="closeModal('custom-protein-modal')">Cancel</button></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script>
 
@@ -1266,7 +1350,7 @@ async function renderDash(){
   const ALL_H=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
   const wdEl=document.getElementById('dash-week');if(!wdEl)return;
   const hdrs='<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px"><div style="width:130px;flex-shrink:0"></div>'+wdays.map(({k,d})=>`<div style="width:26px;text-align:center;font-size:10px;font-weight:${k===todayStr()?700:400};color:${k===todayStr()?'var(--red)':'var(--t3)'}">${D7[d.getDay()]}</div>`).join('')+'</div>';
-  const rows=ALL_H.map(id=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+id+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'v':''}</div>`;}).join('')+'</div>');
+  const rows=ALL_H.map(id=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+id+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'✓':''}</div>`;}).join('')+'</div>');
   wdEl.innerHTML=hdrs+rows.join('');
   const{data:ms}=await sb.from('milestone_status').select('*').eq('user_id',PROFILE.id);
   const msMap={};(ms||[]).forEach(m=>msMap[m.milestone_name]=m.status);
@@ -1287,7 +1371,7 @@ const ALL_H_IDS=['wake','hydrate','mobility','workout','hiit','kneerehab','walk'
 async function toggleHabit(id){
   const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
   const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
-  if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'v':'';}
+  if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
   await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal});
   renderCatProg();renderStreakBar();
 }
@@ -1310,7 +1394,7 @@ async function renderHabits(){
   ALL_H_IDS.forEach(id=>{
     const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
     if(!hc)return;const done=!!habitCache[id];
-    hc.classList.toggle('done',done);if(hb)hb.textContent=done?'v':'';
+    hc.classList.toggle('done',done);if(hb)hb.textContent=done?'✓':'';
   });
   renderCatProg();renderStreakBar();
 }
@@ -1432,7 +1516,7 @@ async function openLogModal(i){
   logDayIdx=i;
   const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   document.getElementById('log-title').textContent='LOG '+days[i].toUpperCase()+' SESSION';
-  const{data:log}=await sb.from('workout_logs').select('notes').eq('user_id',PROFILE.id).eq('log_date',todayStr()).eq('day_index',i).single();
+  const{data:log}=await sb.from('workout_logs').select('notes').eq('user_id',PROFILE.id).eq('log_date',todayStr()).eq('day_index',i).maybeSingle();
   document.getElementById('log-text').value=log?.notes||'';
   openModal('log-modal');
 }
@@ -1783,7 +1867,7 @@ async function renderDebtList(){
     const mos=d.monthly_payment>mo?Math.ceil(d.balance/(d.monthly_payment-mo)):'?';
     return`<div class="fin-row"><div><div class="fin-name">${d.debt_name}</div><div class="fin-note">$${d.monthly_payment}/mo - ${d.interest_rate}% APR${typeof mos==='number'?' - ~'+mos+'mo payoff':''}</div></div><div style="display:flex;gap:5px;align-items:center"><div class="fin-amt" style="color:var(--red)">$${(d.balance||0).toLocaleString()}</div><button class="btn btn-o btn-xs" onclick="editDebt('${d.id}')">Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeDebt('${d.id}')">X</button></div></div>`;
   }).join('')||'<div style="color:var(--t3);font-size:12px">No debts tracked.</div>';
-  const cc=(debts||[]).find(d=>d.debt_name?.toLowerCase().includes('costco'))||{balance:800};
+  const cc=(debts||[]).find(d=>d.debt_name?.toLowerCase().includes('HIGHINTEREST_CC'))||{balance:800};
   const pct=Math.round(Math.max(0,(800-cc.balance)/800*100));
   const pe=document.getElementById('cc-pct');const pb=document.getElementById('cc-bar');const cb=document.getElementById('d-cc-bal');
   if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';if(cb)cb.textContent='$'+(cc.balance||0);
@@ -2164,7 +2248,7 @@ renderHabits=async function(){
       </div>
       ${sec.habits.map((h,hi)=>`
         <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" style="position:relative" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
-          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'v':''}</div>
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
           <div class="hl${habitEditMode?' ':''}${habitCache[h.id]?' done':''}">${h.label}</div>
           <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0">${sec.cat}</span>
           ${habitEditMode?`<button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:11px;font-weight:700;margin-left:5px;flex-shrink:0">✕</button>`:''}
@@ -2510,7 +2594,7 @@ renderHabits=async function(){
       </div>
       ${sec.habits.map((h,hi)=>`
         <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
-          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'v':''}</div>
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
           <div class="hl">${h.label}</div>
           <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
           ${habitEditMode?`<div style="display:flex;gap:3px;margin-left:5px">
@@ -2789,6 +2873,354 @@ const _origSetMealTab=setMealTab;
 setMealTab=function(tab,btn){
   if(tab==='manual')tab='custom'; // redirect legacy manual to custom
   _origSetMealTab(tab,btn);
+};
+
+
+// ── HABIT LABEL LOOKUP (clean names for dashboard heatmap) ──────
+function getHabitLabel(id){
+  const secs=typeof getUserHabitSecs==='function'?getUserHabitSecs():(typeof HABIT_SECS!=='undefined'?HABIT_SECS:[]);
+  for(const sec of secs){
+    const h=(sec.habits||[]).find(h=>h.id===id);
+    if(h)return h.label;
+  }
+  const FB={wake:'Wake Up 6AM',hydrate:'16oz Water',mobility:'Mobility 15min',
+    workout:'Workout',hiit:'HIIT',kneerehab:'Knee Rehab',walk:'Evening Walk',
+    logged:'Log Meals',protein:'Hit Protein',calories:'Calorie Target',
+    noprocessed:'No Processed Food',water:'120+ oz Water',nolateeat:'No Eating 9PM+',
+    read:'Read 30min',prep:'Prep Tomorrow',screens:'Screens Off 10PM',sleep:'Bed 11:30PM'};
+  return FB[id]||(id.charAt(0).toUpperCase()+id.slice(1));
+}
+
+// ── PATCH renderDash to show proper habit labels in heatmap ──────
+const _origRenderDash=renderDash;
+renderDash=async function(){
+  await _origRenderDash();
+  // Re-render the habit heatmap with clean labels
+  const wdEl=document.getElementById('dash-week');if(!wdEl)return;
+  // The heatmap was already rendered in _origRenderDash, but with raw IDs.
+  // Patch labels by reading the current DOM and replacing the label cells
+  const rows=wdEl.querySelectorAll('div[style*="width:130px"]');
+  rows.forEach(el=>{
+    const id=el.textContent.trim();
+    const label=getHabitLabel(id);
+    if(label!==id){el.textContent=label;el.title=id;}
+  });
+};
+
+// ── ADD TODO TO NAV ──────────────────────────────────────────────
+// Insert todo before admin in NAV_ITEMS
+(function(){
+  const adminIdx=NAV_ITEMS.findIndex(n=>n.id==='admin');
+  const alreadyHas=NAV_ITEMS.some(n=>n.id==='todo');
+  if(!alreadyHas&&adminIdx>=0){
+    NAV_ITEMS.splice(adminIdx,0,{id:'todo',icon:'&#x1F4CB;',label:'To Do List'});
+  }
+  PT['todo']='TO DO LIST';
+  // Register render function
+  const origGoto=goto;
+  goto=function(pid){
+    origGoto(pid);
+    // renderTodo is registered in R map inside goto — patch it here
+  };
+})();
+// Register renderTodo in the routing map by patching goto
+const _origGoto=goto;
+goto=function(pid){
+  _origGoto(pid);
+  if(pid==='todo')renderTodo();
+};
+
+// ── TO DO LIST ───────────────────────────────────────────────────
+let todoFilter='All';
+const TODO_STATUS_COLORS={
+  'Not Started':'d','In Progress':'b','On Hold':'a','Urgent':'r',
+  'Important':'p','Not Urgent':'g','Done':'d'
+};
+
+async function renderTodo(){
+  const el=document.getElementById('todo-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
+  let items=[];
+  try{
+    const{data,error}=await sb.from('todo_items').select('*').eq('user_id',PROFILE.id).order('created_at',{ascending:false});
+    if(error){
+      // Table might not exist yet
+      if(error.code==='42P01'){
+        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7"><strong>One-time setup needed:</strong><br>Run this SQL in Supabase SQL Editor to enable the To Do List:<br><br><code style="background:var(--s3);padding:4px 8px;border-radius:4px;font-family:DM Mono,monospace;font-size:11px;display:block;margin-top:6px">CREATE TABLE IF NOT EXISTS public.todo_items (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT DEFAULT \'Not Started\', due_date DATE, completed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE public.todo_items ENABLE ROW LEVEL SECURITY; CREATE POLICY "Users own todos" ON public.todo_items FOR ALL USING (auth.uid() = user_id);</code></div>';
+        return;
+      }
+      throw error;
+    }
+    items=data||[];
+  }catch(e){console.error('todo error:',e);el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks. Check console.</div>';return;}
+
+  const filtered=todoFilter==='All'?items:items.filter(i=>i.status===todoFilter);
+  const pending=items.filter(i=>i.status!=='Done').length;
+  const done=items.filter(i=>i.status==='Done').length;
+
+  if(!filtered.length){
+    el.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--t3)">
+      <div style="font-size:32px;margin-bottom:10px">${todoFilter==='Done'?'&#x1F389;':'&#x1F4CB;'}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${todoFilter==='All'?'No tasks yet':'No '+todoFilter+' tasks'}</div>
+      <div style="font-size:12px">${todoFilter==='All'?'Hit + Add Task to get started.':'Change the filter to see other tasks.'}</div>
+    </div>`;
+    return;
+  }
+
+  // Stats row
+  let html=`<div class="g4" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v" style="color:var(--t1)">${items.length}</div><div class="stat-s">tasks</div></div>
+    <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+    <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+    <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${done}</div><div class="stat-s">completed</div></div>
+  </div>`;
+
+  filtered.forEach(item=>{
+    const sc=TODO_STATUS_COLORS[item.status]||'d';
+    const isDone=item.status==='Done';
+    const today=new Date();today.setHours(0,0,0,0);
+    let dueHtml='';
+    if(item.due_date){
+      const due=new Date(item.due_date+'T12:00:00');
+      const diff=Math.round((due-today)/86400000);
+      const dueStr=diff===0?'Due Today':diff<0?Math.abs(diff)+'d overdue':diff===1?'Due Tomorrow':'Due in '+diff+'d';
+      const dueCol=diff<0?'var(--red)':diff===0?'var(--amb)':'var(--t3)';
+      dueHtml=`<span style="font-size:11px;color:${dueCol};font-family:DM Mono,monospace;font-weight:${diff<=0?600:400}">${dueStr}</span>`;
+    }
+    html+=`<div class="card" style="margin-bottom:8px;border-left:3px solid var(--${sc});${isDone?'opacity:0.6':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
+            <span class="badge b-${sc}">${item.status}</span>
+            ${dueHtml}
+          </div>
+          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;align-items:center">
+          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:'<button class="btn btn-o btn-xs" onclick="markTodoUndone(\''+item.id+'\')">Undo</button>'}
+          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML=html;
+}
+
+function filterTodos(f,btn){
+  todoFilter=f;
+  document.querySelectorAll('#todo-filter-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  renderTodo();
+}
+
+function openTodoModal(id){
+  document.getElementById('todo-modal-title').textContent=id?'EDIT TASK':'ADD TASK';
+  document.getElementById('todo-edit-id').value=id||'';
+  if(!id){document.getElementById('todo-title').value='';document.getElementById('todo-desc').value='';document.getElementById('todo-status').value='Not Started';document.getElementById('todo-due').value='';}
+  openModal('todo-modal');
+}
+async function editTodo(id){
+  const{data}=await sb.from('todo_items').select('*').eq('id',id).single();
+  if(!data)return;
+  document.getElementById('todo-modal-title').textContent='EDIT TASK';
+  document.getElementById('todo-edit-id').value=id;
+  document.getElementById('todo-title').value=data.title||'';
+  document.getElementById('todo-desc').value=data.description||'';
+  document.getElementById('todo-status').value=data.status||'Not Started';
+  document.getElementById('todo-due').value=data.due_date||'';
+  openModal('todo-modal');
+}
+async function saveTodo(){
+  const title=document.getElementById('todo-title').value.trim();
+  if(!title){toast('Enter a task title');return;}
+  const id=document.getElementById('todo-edit-id').value;
+  const payload={user_id:PROFILE.id,title,description:document.getElementById('todo-desc').value.trim()||null,status:document.getElementById('todo-status').value,due_date:document.getElementById('todo-due').value||null};
+  if(id){await sb.from('todo_items').update(payload).eq('id',id);}
+  else{await sb.from('todo_items').insert(payload);}
+  closeModal('todo-modal');renderTodo();toast(id?'Task updated!':'Task added!');
+}
+async function markTodoDone(id){await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);renderTodo();toast('Task marked done!');}
+async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
+async function deleteTodo(id){if(!confirm('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
+
+// ── SPICE GUIDE — EDIT MODE ──────────────────────────────────────
+let spiceEditMode=false;
+function toggleSpiceEdit(){
+  spiceEditMode=!spiceEditMode;
+  const btn=document.getElementById('spice-edit-btn');if(btn)btn.textContent=spiceEditMode?'Done':'✏️ Edit';
+  const addBtn=document.getElementById('spice-add-btn');if(addBtn)addBtn.style.display=spiceEditMode?'inline-flex':'none';
+  renderSpice();
+}
+function getCustomSpice(){
+  try{return JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');}catch(e){return[];}
+}
+function saveCustomSpice(arr){localStorage.setItem('custom_spice_'+PROFILE.id,JSON.stringify(arr));}
+function openSpiceModal(profileId,editKey){
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  if(!editKey){
+    document.getElementById('sm-name').value='';document.getElementById('sm-profile').value=profileId||'basics';
+    document.getElementById('sm-color').value='green';document.getElementById('sm-dryrub').value='';
+    document.getElementById('sm-sauce').value='';document.getElementById('sm-method').value='';
+  }
+  openModal('spice-modal');
+}
+function saveSpiceRecipe(){
+  const name=document.getElementById('sm-name').value.trim();if(!name){toast('Enter a recipe name');return;}
+  const recipe={id:'sr_'+Date.now(),name,color:document.getElementById('sm-color').value,
+    rows:[],method:document.getElementById('sm-method').value.trim(),
+    profileId:document.getElementById('sm-profile').value};
+  const dryrub=document.getElementById('sm-dryrub').value.trim();
+  const sauce=document.getElementById('sm-sauce').value.trim();
+  if(dryrub)recipe.rows.push({label:'Dry Rub / Spices',spices:dryrub});
+  if(sauce)recipe.rows.push({label:'Sauce / Liquid',spices:sauce});
+  const editKey=document.getElementById('spice-edit-key').value;
+  const customs=getCustomSpice();
+  if(editKey){const idx=customs.findIndex(r=>r.id===editKey);if(idx>=0){recipe.id=editKey;customs[idx]=recipe;}else customs.push(recipe);}
+  else customs.push(recipe);
+  saveCustomSpice(customs);closeModal('spice-modal');spiceEditMode=true;renderSpice();toast('Recipe saved!');
+}
+function removeSpiceRecipe(id){
+  if(!confirm('Remove this recipe?'))return;
+  const customs=getCustomSpice().filter(r=>r.id!==id);
+  saveCustomSpice(customs);renderSpice();toast('Recipe removed');
+}
+// Override renderSpice to merge custom recipes and support edit mode
+renderSpice=function(){
+  const baseData=CONTENT.spice?.profiles;if(!baseData)return;
+  const customs=getCustomSpice();
+  // Deep clone base and add custom recipes to the right profile
+  const profiles=baseData.map(p=>({...p,recipes:[...(p.recipes||[]),...customs.filter(r=>r.profileId===p.id)]}));
+  const tabsEl=document.getElementById('spice-tabs');const panelsEl=document.getElementById('spice-panels');
+  tabsEl.innerHTML=profiles.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${p.label.split(' ').slice(0,2).join(' ')}</button>`).join('');
+  panelsEl.innerHTML=profiles.map((p,i)=>`
+    <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
+      ${spiceEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${p.id}')">+ Add Recipe to ${p.label.split(' ').slice(0,2).join(' ')}</button>`:''}
+      ${(p.recipes||[]).map(r=>{
+        const bc=r.color==='dim'?'d':r.color[0]||'d';
+        const isCustom=customs.some(c=>c.id===r.id);
+        return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:14px;font-weight:600">${r.name}</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              <span class="badge b-${bc}">${r.color}</span>
+              ${spiceEditMode&&isCustom?`<button onclick="openSpiceModal('${r.profileId}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x270F;&#xFE0F;</button>`:''}
+              ${spiceEditMode&&isCustom?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>`:''}
+            </div>
+          </div>
+          ${(r.rows||[]).map(row=>`<div style="margin-bottom:7px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').map(s=>{const isKey=/[0-9]|tsp|tbsp|min/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;}).join('')}</div>
+          </div>`).join('')}
+          <div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method||''}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+  setSpiceTab(0);
+};
+
+// ── CUSTOM PROTEIN/SIDE OPTIONS IN MEAL BUILDER ──────────────────
+function getCustomProteins(){try{return JSON.parse(localStorage.getItem('custom_proteins_'+PROFILE.id)||'{}');}catch(e){return{};}}
+function getCustomSides(){try{return JSON.parse(localStorage.getItem('custom_sides_'+PROFILE.id)||'{}');}catch(e){return{};}}
+function openCustomProteinModal(type){
+  document.getElementById('cp-type').value=type||'protein';
+  document.getElementById('cp-modal-title').textContent=type==='side'?'ADD CUSTOM SIDE':'ADD CUSTOM PROTEIN';
+  document.getElementById('cp-name').value='';
+  ['cp-cal','cp-pro','cp-car','cp-fat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  openModal('custom-protein-modal');
+}
+function saveCustomProtein(){
+  const name=document.getElementById('cp-name').value.trim();if(!name){toast('Enter a name');return;}
+  const type=document.getElementById('cp-type').value;
+  const cal=+document.getElementById('cp-cal').value||0;
+  const pro=+document.getElementById('cp-pro').value||0;
+  const car=+document.getElementById('cp-car').value||0;
+  const fat=+document.getElementById('cp-fat').value||0;
+  const key=name.toLowerCase().replace(/\s+/g,'_');
+  const entry={cal,pro,car,fat,label:name,unit:'oz'};
+  if(type==='side'){
+    const customs=getCustomSides();customs[key]=entry;
+    localStorage.setItem('custom_sides_'+PROFILE.id,JSON.stringify(customs));
+    // Add to MACRO_SIDE runtime
+    if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=entry;
+    // Refresh side dropdown
+    const sel=document.getElementById('c-side-sel');
+    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+      const opt=document.createElement('option');opt.value=key;opt.textContent=name;
+      sel.insertBefore(opt,sel.querySelector('option[value="add_custom_side"]')||null);
+    }
+  }else{
+    const customs=getCustomProteins();customs[key]=entry;
+    localStorage.setItem('custom_proteins_'+PROFILE.id,JSON.stringify(customs));
+    if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=entry;
+    const sel=document.getElementById('c-prot-sel');
+    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+      const opt=document.createElement('option');opt.value=key;opt.textContent=name;
+      sel.insertBefore(opt,sel.querySelector('option[value="add_custom"]')||null);
+    }
+  }
+  closeModal('custom-protein-modal');toast(name+' added to options!');
+}
+// Patch openMealModal to add custom options and "Add Custom" buttons to dropdowns
+const _prev_openMealModal=openMealModal;
+openMealModal=function(){
+  _prev_openMealModal();
+  setTimeout(()=>{
+    // Load custom proteins into selector
+    const protSel=document.getElementById('c-prot-sel');
+    if(protSel){
+      const cp=getCustomProteins();
+      Object.entries(cp).forEach(([key,val])=>{
+        if(!protSel.querySelector(`option[value="${key}"]`)){
+          const o=document.createElement('option');o.value=key;o.textContent=val.label;
+          if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=val;
+          protSel.appendChild(o);
+        }
+      });
+      if(!protSel.querySelector('option[value="add_custom"]')){
+        const div=document.createElement('option');div.value='add_custom';div.textContent='+ Add custom protein...';
+        div.style.color='var(--red)';protSel.appendChild(div);
+      }
+      protSel.onchange=function(){
+        if(this.value==='add_custom'){this.value='';openCustomProteinModal('protein');}
+        else calcCustomMacros();
+      };
+    }
+    // Load custom sides into selector
+    const sideSel=document.getElementById('c-side-sel');
+    if(sideSel){
+      const cs=getCustomSides();
+      Object.entries(cs).forEach(([key,val])=>{
+        if(!sideSel.querySelector(`option[value="${key}"]`)){
+          const o=document.createElement('option');o.value=key;o.textContent=val.label;
+          if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=val;
+          sideSel.appendChild(o);
+        }
+      });
+      if(!sideSel.querySelector('option[value="add_custom_side"]')){
+        const div=document.createElement('option');div.value='add_custom_side';div.textContent='+ Add custom side...';
+        sideSel.appendChild(div);
+      }
+      sideSel.onchange=function(){
+        if(this.value==='add_custom_side'){this.value='';openCustomProteinModal('side');}
+        else calcCustomMacros();
+      };
+    }
+  },50);
+};
+
+// ── PATCH buildNav to include Todo (rebuild after NAV_ITEMS update) ─
+const _prevBuildNav=buildNav;
+buildNav=function(){
+  // Make sure todo is in NAV_ITEMS
+  if(!NAV_ITEMS.some(n=>n.id==='todo')){
+    const adminIdx=NAV_ITEMS.findIndex(n=>n.id==='admin');
+    NAV_ITEMS.splice(adminIdx>=0?adminIdx:NAV_ITEMS.length-1,0,{id:'todo',icon:'&#x1F4CB;',label:'To Do List'});
+  }
+  PT['todo']='TO DO LIST';
+  _prevBuildNav();
 };
 
 </script>
