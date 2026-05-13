@@ -910,7 +910,12 @@ async function loadAllContent(){
 const M12=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const D7=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const D7L=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-function todayStr(){return new Date().toISOString().split('T')[0];}
+function todayStr(){
+  // Use user's stored timezone, falling back to browser timezone, then Eastern
+  const tz=(typeof PROFILE!=='undefined'&&PROFILE&&PROFILE.timezone)||
+    Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  return new Date().toLocaleDateString('en-CA',{timeZone:tz}); // always YYYY-MM-DD
+}
 function fmtD(d){return M12[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();}
 function fmtDs(d){return M12[d.getMonth()].slice(0,3)+' '+d.getDate();}
 function yearMonth(){return new Date().toISOString().slice(0,7);}
@@ -2113,16 +2118,24 @@ async function adminCreateUser(){
   ['nu-display','nu-email','nu-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   renderAdmin();
 }
-window.addEventListener('DOMContentLoaded',async()=>{
-  // Clear old cache versions so stale null-data doesn't block fresh fetches
-  for(let i=0;i<localStorage.length;i++){
+window.addEventListener('DOMContentLoaded',()=>{
+  // Clear stale content caches from old versions
+  for(let i=localStorage.length-1;i>=0;i--){
     const k=localStorage.key(i);
-    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_')){
-      localStorage.removeItem(k);i--;
-    }
+    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_'))localStorage.removeItem(k);
   }
-  const{data:{session}}=await sb.auth.getSession();
-  if(!session)show('s-choose');
+  // IMPORTANT: Do NOT call sb.auth.getSession() here.
+  // onAuthStateChange fires INITIAL_SESSION on every page load and handles all auth state.
+  // Calling getSession() here causes a race condition → blank screen on refresh.
+  // Safety net: if nothing has rendered after 5 seconds, show the login screen.
+  setTimeout(()=>{
+    const appVisible=document.getElementById('app')?.classList.contains('show');
+    const authVisible=[...document.querySelectorAll('.auth-screen')].some(e=>e.classList.contains('show'));
+    if(!appVisible&&!authVisible){
+      console.warn('[auth] 5s fallback triggered — showing login screen');
+      show('s-choose');
+    }
+  },5000);
 });
 
 
@@ -3221,6 +3234,188 @@ buildNav=function(){
   }
   PT['todo']='TO DO LIST';
   _prevBuildNav();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 1 — Timezone detection, Push-back logic, Refresh fix
+// ════════════════════════════════════════════════════════════════
+
+// ── ITEM 8: Detect & save timezone after profile loads ───────────
+async function detectAndSaveTimezone(){
+  if(!PROFILE)return;
+  if(PROFILE.timezone)return; // already saved
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if(!tz)return;
+  try{
+    await sb.from('profiles').update({timezone:tz}).eq('id',PROFILE.id);
+    PROFILE.timezone=tz;
+    console.log('[tz] detected and saved:',tz);
+  }catch(e){console.warn('[tz] could not save timezone:',e);}
+}
+
+// Patch enterApp to run timezone detection before rendering
+const _s1_origEnterApp=typeof enterApp==='function'?enterApp:null;
+enterApp=async function(){
+  if(_s1_origEnterApp)await _s1_origEnterApp();
+  await detectAndSaveTimezone();
+};
+
+// Also patch the onAuthStateChange profile load path to save timezone early
+// We do this by wrapping loadProfile
+const _s1_origLoadProfile=typeof loadProfile==='function'?loadProfile:null;
+if(_s1_origLoadProfile){
+  loadProfile=async function(session){
+    const profile=await _s1_origLoadProfile(session);
+    if(profile&&!profile.timezone){
+      const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if(tz){
+        try{
+          await sb.from('profiles').update({timezone:tz}).eq('id',profile.id);
+          profile.timezone=tz;
+        }catch(e){}
+      }
+    }
+    return profile;
+  };
+}
+
+// ── ITEM 4: Push-back logic with escalating responses ────────────
+async function pushBackTodo(id){
+  const{data:item}=await sb.from('todo_items')
+    .select('id,title,push_back_count,due_date,description,status')
+    .eq('id',id).maybeSingle();
+  if(!item)return;
+  const count=(item.push_back_count||0)+1;
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+
+  if(count===1){
+    // First push: move to tomorrow, no message of shame
+    const d=new Date();d.setDate(d.getDate()+1);
+    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
+    await sb.from('todo_items').update({due_date:dateStr,push_back_count:1}).eq('id',id);
+    toast('Pushed to tomorrow.');
+    renderTodo();
+    _refreshDashTodosIfVisible();
+  }else if(count===2){
+    // Second push: move to 2 days out, mild disappointment
+    const d=new Date();d.setDate(d.getDate()+2);
+    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
+    await sb.from('todo_items').update({due_date:dateStr,push_back_count:2}).eq('id',id);
+    toast("Seriously? Stop pushing this back.",4000);
+    renderTodo();
+    _refreshDashTodosIfVisible();
+  }else{
+    // Third+ push: force them to pick a real date
+    await sb.from('todo_items').update({push_back_count:count}).eq('id',id);
+    // Pre-fill the edit modal and add a warning banner
+    await editTodo(id);
+    setTimeout(()=>{
+      const titleEl=document.getElementById('todo-modal-title');
+      if(titleEl)titleEl.textContent='PICK A REAL DATE.';
+      const modal=document.querySelector('#todo-modal .modal');
+      if(modal&&!modal.querySelector('.pb-warning')){
+        const warn=document.createElement('div');
+        warn.className='pb-warning';
+        warn.style.cssText='background:var(--red-ll);border:1px solid rgba(232,64,64,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--red);font-weight:600;margin-bottom:12px;line-height:1.5';
+        warn.textContent="You've pushed this back too many times. Pick a date you'll actually do it and commit.";
+        modal.insertBefore(warn,modal.children[1]);
+      }
+    },60);
+  }
+}
+
+function _refreshDashTodosIfVisible(){
+  const dash=document.getElementById('page-dash');
+  if(dash&&(dash.classList.contains('active')||dash.style.display!=='none')){
+    if(typeof renderDashTodos==='function')renderDashTodos();
+  }
+}
+
+// ── REDEFINE renderTodo with Push Back button ────────────────────
+// (Replaces earlier definition — now includes push-back button)
+renderTodo=async function(){
+  const el=document.getElementById('todo-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
+  let items=[];
+  try{
+    const{data,error}=await sb.from('todo_items').select('*')
+      .eq('user_id',PROFILE.id).order('created_at',{ascending:false});
+    if(error){
+      if(error.code==='42P01'){
+        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7">Run <strong>todo_table.sql</strong> in Supabase SQL Editor to enable the To Do List.</div>';
+        return;
+      }
+      throw error;
+    }
+    items=data||[];
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks.</div>';
+    console.error('todo error:',e);return;
+  }
+
+  const filtered=todoFilter==='All'?items:items.filter(i=>i.status===todoFilter);
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  const todayLocal=new Date().toLocaleDateString('en-CA',{timeZone:tz});
+
+  if(!filtered.length){
+    const statsHtml=`<div class="g4" style="margin-bottom:14px">
+      <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v">${items.length}</div><div class="stat-s">tasks</div></div>
+      <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+      <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+      <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${items.filter(i=>i.status==='Done').length}</div><div class="stat-s">completed</div></div>
+    </div>`;
+    el.innerHTML=statsHtml+`<div style="text-align:center;padding:40px 20px;color:var(--t3)">
+      <div style="font-size:32px;margin-bottom:10px">${todoFilter==='Done'?'&#x1F389;':'&#x1F4CB;'}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${todoFilter==='All'?'No tasks yet':'No '+todoFilter+' tasks'}</div>
+      <div style="font-size:12px">${todoFilter==='All'?'Hit + Add Task to get started.':'Change the filter to see other tasks.'}</div>
+    </div>`;
+    return;
+  }
+
+  const STATUS_COL={'Not Started':'d','In Progress':'b','On Hold':'a','Urgent':'r','Important':'p','Not Urgent':'g','Done':'d'};
+  const STATUS_ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5,'Done':6};
+  const sorted=[...filtered].sort((a,b)=>(STATUS_ORDER[a.status]||9)-(STATUS_ORDER[b.status]||9));
+
+  let html=`<div class="g4" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v">${items.length}</div><div class="stat-s">tasks</div></div>
+    <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+    <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+    <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${items.filter(i=>i.status==='Done').length}</div><div class="stat-s">completed</div></div>
+  </div>`;
+
+  sorted.forEach(item=>{
+    const sc=STATUS_COL[item.status]||'d';
+    const isDone=item.status==='Done';
+    let dueHtml='';
+    if(item.due_date){
+      const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
+      const dueStr=diff===0?'Due Today':diff<0?Math.abs(diff)+'d overdue':diff===1?'Due Tomorrow':'Due in '+diff+'d';
+      const dueCol=diff<0?'var(--red)':diff===0?'var(--amb)':'var(--t3)';
+      dueHtml=`<span style="font-size:11px;color:${dueCol};font-family:DM Mono,monospace;font-weight:${diff<=0?600:400}">${dueStr}</span>`;
+    }
+    const pbCount=item.push_back_count||0;
+    html+=`<div class="card" style="margin-bottom:8px;border-left:3px solid var(--${sc});${isDone?'opacity:0.55':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
+            <span class="badge b-${sc}">${item.status}</span>
+            ${dueHtml}
+            ${pbCount>0&&!isDone?`<span style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace">(pushed ${pbCount}x)</span>`:''}
+          </div>
+          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${item.id}')">Undo</button>`}
+          ${!isDone?`<button class="btn btn-o btn-xs" onclick="pushBackTodo('${item.id}')" title="Push to later">&#x23E9; Push</button>`:''}
+          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML=html;
 };
 
 </script>
