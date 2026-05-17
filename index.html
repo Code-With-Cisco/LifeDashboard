@@ -471,20 +471,51 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
     <!-- FINANCIAL -->
     <div class="page" id="page-financial">
-      <div class="g4" style="margin-bottom:14px">
-        <div class="stat" style="cursor:pointer;border-left:2px solid var(--grn)" onclick="editTakeHome()" title="Click to update"><div class="stat-l">TAKE-HOME ✏️</div><div class="stat-v" style="color:var(--grn)" id="fin-take-home">$3,370</div><div class="stat-s">monthly net</div></div>
-        <div class="stat"><div class="stat-l">EXPENSES</div><div class="stat-v" style="color:var(--red)" id="fin-expenses">$0</div><div class="stat-s">payments + subs</div></div>
-        <div class="stat"><div class="stat-l">FREE CASH</div><div class="stat-v" style="color:var(--amb)" id="fin-free-cash">$0</div><div class="stat-s">to allocate</div></div>
-        <div class="stat"><div class="stat-l">TOTAL DEBT</div><div class="stat-v" style="color:var(--red)" id="fin-total-debt">$0</div><div class="stat-s" id="fin-debt-ct">0 accounts</div></div>
+      <!-- 5-box header row -->
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <div class="stat" style="flex:1;min-width:130px;cursor:pointer;border-left:2px solid var(--grn)" onclick="editTakeHome()" title="Click to update take-home pay">
+          <div class="stat-l">TAKE-HOME ✏️</div><div class="stat-v" style="color:var(--grn)" id="fin-take-home">$0</div><div class="stat-s">monthly net</div>
+        </div>
+        <div class="stat" style="flex:1;min-width:130px">
+          <div class="stat-l">BILLS</div><div class="stat-v" style="color:var(--amb)" id="fin-bills-total">$0</div><div class="stat-s" id="fin-bills-ct">0 bills</div>
+        </div>
+        <div class="stat" style="flex:1;min-width:130px">
+          <div class="stat-l">SUBSCRIPTIONS</div><div class="stat-v" style="color:var(--blu)" id="fin-subs-total">$0</div><div class="stat-s" id="fin-subs-ct2">0 subs</div>
+        </div>
+        <div class="stat" style="flex:1;min-width:130px">
+          <div class="stat-l">FREE CASH</div><div class="stat-v" style="color:var(--amb)" id="fin-free-cash">$0</div><div class="stat-s">after all obligations</div>
+        </div>
+        <div class="stat" style="flex:1;min-width:130px">
+          <div class="stat-l">TOTAL DEBT</div><div class="stat-v" style="color:var(--red)" id="fin-total-debt">$0</div><div class="stat-s" id="fin-debt-ct">0 accounts</div>
+        </div>
       </div>
-      <div class="g2" style="margin-bottom:14px">
+      <!-- 3-column: Debts | Bills | Subscriptions -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
         <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="sh" style="margin-bottom:0">DEBTS</div><button class="btn btn-o btn-sm" onclick="openDebtModal()">+ Add</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div class="sh" style="margin-bottom:0">DEBTS</div>
+            <button class="btn btn-o btn-sm" onclick="openDebtModal()">+ Add</button>
+          </div>
           <div id="debt-list"></div>
-          <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px"><span>Credit Card to $0</span><span id="cc-pct" class="mono">0%</span></div><div class="pb"><div class="pbf" id="cc-bar" style="background:var(--grn);width:0%"></div></div></div>
+          <div style="margin-top:10px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px">
+              <span id="cc-progress-label">Total Debt to $0</span><span id="cc-pct" class="mono">0%</span>
+            </div>
+            <div class="pb"><div class="pbf" id="cc-bar" style="background:var(--grn);width:0%"></div></div>
+          </div>
         </div>
         <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="sh" style="margin-bottom:0">SUBSCRIPTIONS</div><button class="btn btn-o btn-sm" onclick="openSubModal()">+ Add</button></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div class="sh" style="margin-bottom:0">BILLS</div>
+            <button class="btn btn-o btn-sm" onclick="openBillModal()">+ Add</button>
+          </div>
+          <div id="bill-list"></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div class="sh" style="margin-bottom:0">SUBSCRIPTIONS</div>
+            <button class="btn btn-o btn-sm" onclick="openSubModal()">+ Add</button>
+          </div>
           <div id="sub-list"></div>
         </div>
       </div>
@@ -786,6 +817,28 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   </div>
 </div>
 
+
+<div class="modal-bg" id="bill-modal">
+  <div class="modal">
+    <div class="modal-title" id="bill-modal-title">ADD BILL</div>
+    <input type="hidden" id="bill-edit-id">
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Bill Name *</div><input class="inp" id="bill-name" placeholder="e.g. Rent, Phone, Car Insurance"></div>
+    <div class="g2" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Amount ($)</div><input class="inp" id="bill-amount" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Due Day of Month</div><input class="inp" id="bill-due-day" type="number" min="1" max="31" placeholder="1"></div>
+    </div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Amount Type</div>
+      <select class="inp sel" id="bill-variable">
+        <option value="0">Fixed — same every month</option>
+        <option value="1">Variable — changes each month</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="saveBill()">Save Bill</button>
+      <button class="btn btn-o" onclick="closeModal('bill-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-bg" id="add-habit-modal">
   <div class="modal">
@@ -3608,6 +3661,175 @@ goto=function(pid){
   if(_s2_origGoto)_s2_origGoto(pid);
   if(pid==='dash')setTimeout(renderDashTodos,100);
 };
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 3 — Financial: Bills, 5-box header, updated calculations
+// ════════════════════════════════════════════════════════════════
+
+// ── BILLS CRUD ───────────────────────────────────────────────────
+async function renderBillsList(){
+  const{data:bills,error}=await sb.from('bills_tracker').select('*')
+    .eq('user_id',PROFILE.id).order('due_day',{ascending:true});
+  const el=document.getElementById('bill-list');if(!el)return;
+  if(!bills?.length){
+    el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:4px 0">No bills tracked.</div>';
+    return;
+  }
+  el.innerHTML=bills.map(b=>`
+    <div class="fin-row">
+      <div>
+        <div class="fin-name">${b.bill_name}</div>
+        <div class="fin-note">Due day ${b.due_day}${b.is_variable?' &middot; variable':' &middot; fixed'}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-size:15px;font-weight:700;color:var(--amb);font-family:DM Mono,monospace">$${(+b.amount).toFixed(2)}</div>
+        <button class="fin-edit" onclick="openBillModal('${b.id}')">&#x270F;&#xFE0F;</button>
+        <button class="fin-del" onclick="removeBill('${b.id}')">&#x2715;</button>
+      </div>
+    </div>`).join('');
+}
+
+function openBillModal(editId){
+  document.getElementById('bill-modal-title').textContent=editId?'EDIT BILL':'ADD BILL';
+  document.getElementById('bill-edit-id').value=editId||'';
+  if(!editId){
+    document.getElementById('bill-name').value='';
+    document.getElementById('bill-amount').value='';
+    document.getElementById('bill-due-day').value='1';
+    document.getElementById('bill-variable').value='0';
+  }else{
+    // Fetch and pre-fill
+    sb.from('bills_tracker').select('*').eq('id',editId).single().then(({data})=>{
+      if(!data)return;
+      document.getElementById('bill-name').value=data.bill_name||'';
+      document.getElementById('bill-amount').value=data.amount||'';
+      document.getElementById('bill-due-day').value=data.due_day||1;
+      document.getElementById('bill-variable').value=data.is_variable?'1':'0';
+    });
+  }
+  openModal('bill-modal');
+}
+
+async function saveBill(){
+  const name=document.getElementById('bill-name').value.trim();
+  if(!name){toast('Enter a bill name');return;}
+  const amount=+document.getElementById('bill-amount').value||0;
+  const dueDay=+document.getElementById('bill-due-day').value||1;
+  const isVariable=document.getElementById('bill-variable').value==='1';
+  const editId=document.getElementById('bill-edit-id').value;
+  const payload={user_id:PROFILE.id,bill_name:name,amount,due_day:dueDay,is_variable:isVariable};
+  if(editId){
+    await sb.from('bills_tracker').update(payload).eq('id',editId);
+    toast('Bill updated!');
+  }else{
+    await sb.from('bills_tracker').insert(payload);
+    toast('Bill added!');
+  }
+  closeModal('bill-modal');
+  await renderBillsList();
+  await updateFinancialBoxes();
+}
+
+async function removeBill(id){
+  if(!confirm('Remove this bill?'))return;
+  await sb.from('bills_tracker').delete().eq('id',id);
+  await renderBillsList();
+  await updateFinancialBoxes();
+  toast('Bill removed');
+}
+
+// ── UPDATED updateFinancialBoxes (5-box: includes bills) ─────────
+updateFinancialBoxes=async function(){
+  const[{data:debts},{data:subs},{data:bills}]=await Promise.all([
+    sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id),
+    sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id),
+    sb.from('bills_tracker').select('amount,due_day').eq('user_id',PROFILE.id),
+  ]);
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
+  const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
+  const totalBills=(bills||[]).reduce((s,b)=>s+(+b.amount||0),0);
+  const takeHome=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  // Free Cash = Take-Home - Bills - Subs - Debt Monthly Payments
+  const freeCash=takeHome-totalBills-totalSubs-totalDebtPay;
+  const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-take-home',fmt(takeHome));
+  set('fin-bills-total',fmt(totalBills));
+  set('fin-bills-ct',(bills||[]).length+' bill'+((bills||[]).length!==1?'s':''));
+  set('fin-subs-total',fmt(totalSubs));
+  set('fin-subs-ct2',(subs||[]).length+' sub'+((subs||[]).length!==1?'s':''));
+  set('fin-free-cash',(freeCash<0?'-':'')+fmt(freeCash));
+  const fcEl=document.getElementById('fin-free-cash');
+  if(fcEl)fcEl.style.color=freeCash>=0?'var(--amb)':'var(--red)';
+  set('fin-total-debt',fmt(totalDebt));
+  set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
+  // Update debt progress bar — use first debt as reference if exists
+  if(debts?.length){
+    const topDebt=debts.reduce((a,b)=>(+b.balance>+a.balance?b:a),debts[0]);
+    const startKey='debt_start_'+PROFILE.id;
+    const startBal=parseFloat(localStorage.getItem(startKey))||+topDebt.balance||1;
+    const pct=Math.round(Math.max(0,Math.min(100,(1-topDebt.balance/startBal)*100)));
+    const pctEl=document.getElementById('cc-pct');if(pctEl)pctEl.textContent=pct+'%';
+    const barEl=document.getElementById('cc-bar');if(barEl)barEl.style.width=pct+'%';
+    const lblEl=document.getElementById('cc-progress-label');
+    // Store starting balance on first load so progress is meaningful
+    if(!localStorage.getItem(startKey))localStorage.setItem(startKey,topDebt.balance);
+  }
+};
+
+// ── UPDATED renderFinancial to include bills ─────────────────────
+renderFinancial=async function(){
+  await renderDebtList();
+  await renderBillsList();
+  await renderSubList();
+  await renderFinCal();
+  await renderRoadmap();
+  await updateFinancialBoxes();
+};
+
+// ── UPDATED renderFinCal to include bills in calendar ────────────
+// Override to add bills to the payment calendar
+const _s3_origRenderFinCal=renderFinCal;
+renderFinCal=async function(){
+  await _s3_origRenderFinCal();
+  // After base render, add bills to the calendar
+  const{data:bills}=await sb.from('bills_tracker').select('bill_name,due_day,amount')
+    .eq('user_id',PROFILE.id);
+  if(!bills?.length)return;
+  const calEl=document.getElementById('fin-cal');if(!calEl)return;
+  const cells=calEl.querySelectorAll('.fin-cal-day');
+  cells.forEach(cell=>{
+    const dayNum=parseInt(cell.querySelector('.fin-cal-dn')?.textContent||'0');
+    if(!dayNum)return;
+    bills.filter(b=>b.due_day===dayNum).forEach(b=>{
+      const chip=document.createElement('div');
+      chip.className='cal-ev a';
+      chip.style.cssText='font-size:9px;padding:1px 4px;border-radius:3px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      chip.textContent=b.bill_name;
+      chip.title=b.bill_name+' — $'+b.amount;
+      cell.appendChild(chip);
+    });
+  });
+};
+
+// ── PATCH saveBill/removeDebt/removeSub hooks already in place ───
+// Wrap existing removeDebt and removeSub to also call updateFinancialBoxes
+const _s3_origRemoveDebt=typeof removeDebt==='function'?removeDebt:null;
+if(_s3_origRemoveDebt){
+  removeDebt=async function(id){
+    await _s3_origRemoveDebt(id);
+    await updateFinancialBoxes();
+  };
+}
+const _s3_origRemoveSub=typeof removeSub==='function'?removeSub:null;
+if(_s3_origRemoveSub){
+  removeSub=async function(id){
+    await _s3_origRemoveSub(id);
+    await updateFinancialBoxes();
+  };
+}
 
 </script>
 </body>
