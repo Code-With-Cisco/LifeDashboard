@@ -1003,9 +1003,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 </div>
 
 <div class="modal-bg" id="spice-modal">
-  <div class="modal modal-lg">
+  <div class="modal modal-lg" style="max-height:90vh;overflow-y:auto">
     <div class="modal-title" id="spice-modal-title">ADD RECIPE</div>
     <input type="hidden" id="spice-edit-key">
+    <input type="hidden" id="spice-edit-is-template">
     <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Recipe Name *</div><input class="inp" id="sm-name" placeholder="e.g. Garlic Herb Chicken"></div>
     <div class="g2" style="gap:8px;margin-bottom:10px">
       <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Profile (tab)</div>
@@ -1015,17 +1016,27 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
           <option value="mediterranean">Mediterranean</option><option value="basics">Basics</option>
         </select>
       </div>
-      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Color Tag</div>
-        <select class="inp sel" id="sm-color">
-          <option value="red">Red</option><option value="green">Green</option>
-          <option value="amber">Amber</option><option value="blue">Blue</option><option value="dim">Neutral</option>
-        </select>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Protein Source</div>
+        <input class="inp" id="sm-protein-src" placeholder="e.g. Chicken, Beef, Fish">
       </div>
     </div>
-    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Dry Rub / Spices</div><input class="inp" id="sm-dryrub" placeholder="Salt 1 tsp · Pepper · Garlic powder 1 tsp"></div>
-    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Sauce / Liquid</div><input class="inp" id="sm-sauce" placeholder="Olive oil 1 tbsp · Lemon juice 1 tbsp"></div>
-    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Method / Notes</div><textarea class="inp" id="sm-method" rows="3" placeholder="How to cook it. Tips, timing, what to pair with." style="resize:vertical"></textarea></div>
-    <div class="modal-footer"><button class="btn btn-r" onclick="saveSpiceRecipe()">Save Recipe</button><button class="btn btn-o" onclick="closeModal('spice-modal')">Cancel</button></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Dry Rub / Spices</div><input class="inp" id="sm-dryrub" placeholder="Salt 1 tsp · Pepper · Garlic powder 1 tsp · Cumin 1 tsp"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Sauce / Liquid</div><input class="inp" id="sm-sauce" placeholder="Olive oil 1 tbsp · Soy sauce 2 tbsp · Lemon juice 1 tbsp"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Method / Notes</div><textarea class="inp" id="sm-method" rows="3" placeholder="How to cook it. Temperature, timing, plating tips." style="resize:vertical"></textarea></div>
+    <div style="background:var(--s3);border-radius:var(--r);padding:12px;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:8px">MACROS PER SERVING (optional — enables nutritional rating)</div>
+      <div class="g4" style="gap:8px;margin-bottom:8px">
+        <div><div style="font-size:10px;color:var(--red);margin-bottom:3px;font-weight:600">CALORIES</div><input class="inp" id="sm-calories" type="number" min="0" placeholder="450" oninput="previewRecipeRating()"></div>
+        <div><div style="font-size:10px;color:var(--grn);margin-bottom:3px;font-weight:600">PROTEIN g</div><input class="inp" id="sm-protein-g" type="number" min="0" placeholder="40" oninput="previewRecipeRating()"></div>
+        <div><div style="font-size:10px;color:var(--amb);margin-bottom:3px;font-weight:600">CARBS g</div><input class="inp" id="sm-carbs" type="number" min="0" placeholder="35"></div>
+        <div><div style="font-size:10px;color:var(--blu);margin-bottom:3px;font-weight:600">FAT g</div><input class="inp" id="sm-fat-g" type="number" min="0" placeholder="14"></div>
+      </div>
+      <div id="sm-rating-preview" style="font-size:12px;color:var(--t3)">Enter macros to see nutritional rating</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="saveSpiceRecipe()">Save Recipe</button>
+      <button class="btn btn-o" onclick="closeModal('spice-modal')">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -5018,6 +5029,211 @@ const _s7_origGoto=typeof goto==='function'?goto:null;
 goto=function(pid){
   if(_s7_origGoto)_s7_origGoto(pid);
   if(pid==='workout')setTimeout(()=>{renderWorkout();},100);
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 8 — Recipes: Nutritional Rating, DB-backed CRUD
+// ════════════════════════════════════════════════════════════════
+
+// ── NUTRITIONAL RATING ENGINE ─────────────────────────────────────
+// Thresholds agreed in planning session:
+// Good:       protein ≥ 30g AND calories ≤ 600
+// So-So:      protein 15–29g OR calories 600–800
+// Needs Care: protein < 15g OR calories > 800
+function calcRecipeRating(cal, protein){
+  if(!cal && !protein) return null;
+  const c=+cal||0, p=+protein||0;
+  if(p>=30 && c<=600) return 'good';
+  if(p<15 || c>800) return 'needs-care';
+  return 'so-so';
+}
+const RATING_CONFIG={
+  'good':   {label:'Good',badge:'b-g',icon:'✅',desc:'High protein, lean calories'},
+  'so-so':  {label:'So-So',badge:'b-a',icon:'🟡',desc:'Moderate nutritional fit'},
+  'needs-care':{label:'Needs Care',badge:'b-r',icon:'⚠️',desc:'Low protein or high calorie'},
+};
+
+function previewRecipeRating(){
+  const cal=document.getElementById('sm-calories')?.value;
+  const pro=document.getElementById('sm-protein-g')?.value;
+  const rating=calcRecipeRating(cal,pro);
+  const el=document.getElementById('sm-rating-preview');if(!el)return;
+  if(!rating){el.style.color='var(--t3)';el.textContent='Enter macros to see nutritional rating';return;}
+  const cfg=RATING_CONFIG[rating];
+  el.style.color=rating==='good'?'var(--grn)':rating==='needs-care'?'var(--red)':'var(--amb)';
+  el.textContent=cfg.icon+' '+cfg.label+' — '+cfg.desc+(cal?' | '+cal+' cal':'')+(pro?' | '+pro+'g protein':'');
+}
+
+// ── DEFINITIVE renderSpice (DB + rating badges) ───────────────────
+renderSpice=function(){
+  const baseData=CONTENT.spice?.profiles;if(!baseData)return;
+  const tabsEl=document.getElementById('spice-tabs');
+  const panelsEl=document.getElementById('spice-panels');
+  if(!tabsEl||!panelsEl)return;
+  tabsEl.innerHTML=baseData.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`).join('');
+  panelsEl.innerHTML=baseData.map((p,i)=>`
+    <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
+      ${spiceEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${p.id||p.label}')">+ Add Recipe to ${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`:''}
+      ${(p.recipes||[]).map(r=>{
+        const rating=calcRecipeRating(r.calories_per_serving||r.cal,r.protein_g||r.pro);
+        const cfg=rating?RATING_CONFIG[rating]:null;
+        const isUserRecipe=!!(r.id&&!r._isTemplate);
+        const canDelete=isUserRecipe; // only user-created recipes can be deleted
+        const rows=r.rows||[];
+        if(r.dry_rub&&!rows.find(x=>x.spices===r.dry_rub))rows.unshift({label:'Dry Rub / Spices',spices:r.dry_rub});
+        if(r.sauce&&!rows.find(x=>x.spices===r.sauce))rows.push({label:'Sauce / Liquid',spices:r.sauce});
+        return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600">${r.name}</div>
+              ${r.protein_src||r.proteinSrc?`<div style="font-size:11px;color:var(--t3);margin-top:2px">Protein: ${r.protein_src||r.proteinSrc}</div>`:''}
+            </div>
+            <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+              ${cfg?`<span class="badge ${cfg.badge}" style="font-size:10px;white-space:nowrap">${cfg.icon} ${cfg.label}</span>`:''}
+              ${r.calories_per_serving||r.cal?`<span class="mono" style="font-size:10px;color:var(--t3)">${r.calories_per_serving||r.cal}cal &middot; ${r.protein_g||r.pro||0}gP</span>`:''}
+              ${spiceEditMode?`<button onclick="openSpiceModal('${r.profile_id||r.profileId||p.id}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
+              ${spiceEditMode&&canDelete?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
+            </div>
+          </div>
+          ${rows.map(row=>`<div style="margin-bottom:7px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').filter(s=>s.trim()).map(s=>{const isKey=/[0-9]|tsp|tbsp/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;}).join('')}</div>
+          </div>`).join('')}
+          ${r.method?`<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method}</div>`:''}
+        </div>`;
+      }).join('')||`<div style="color:var(--t3);font-size:12px;padding:12px">No recipes in this profile.</div>`}
+    </div>`).join('');
+  setSpiceTab(0);
+};
+
+// ── UPDATED openSpiceModal (loads full DB recipe data) ────────────
+openSpiceModal=async function(profileId,editKey){
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  document.getElementById('spice-edit-is-template').value='';
+  // Clear all fields
+  ['sm-name','sm-dryrub','sm-sauce','sm-method','sm-protein-src','sm-calories','sm-protein-g','sm-carbs','sm-fat-g'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  const pr=document.getElementById('sm-rating-preview');if(pr){pr.textContent='Enter macros to see nutritional rating';pr.style.color='var(--t3)';}
+  const spEl=document.getElementById('sm-profile');if(spEl)spEl.value=profileId||'basics';
+  if(editKey){
+    // Try to load from DB first
+    const{data:rec}=await sb.from('recipes').select('*').eq('id',editKey).maybeSingle();
+    if(rec){
+      const n=document.getElementById('sm-name');if(n)n.value=rec.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=rec.profile_id||profileId||'basics';
+      const ps=document.getElementById('sm-protein-src');if(ps)ps.value=rec.protein_src||'';
+      const dr=document.getElementById('sm-dryrub');if(dr)dr.value=rec.dry_rub||'';
+      const sa=document.getElementById('sm-sauce');if(sa)sa.value=rec.sauce||'';
+      const me=document.getElementById('sm-method');if(me)me.value=rec.method||'';
+      const ca=document.getElementById('sm-calories');if(ca)ca.value=rec.calories_per_serving||'';
+      const pg=document.getElementById('sm-protein-g');if(pg)pg.value=rec.protein_g||'';
+      const cr=document.getElementById('sm-carbs');if(cr)cr.value=rec.carbs_g||'';
+      const fa=document.getElementById('sm-fat-g');if(fa)fa.value=rec.fat_g||'';
+      document.getElementById('spice-edit-is-template').value=rec.is_template?'1':'';
+      previewRecipeRating();
+      openModal('spice-modal');
+      return;
+    }
+    // Fall back to localStorage custom recipes
+    const customs=getCustomSpice();
+    const found=customs.find(r=>r.id===editKey);
+    if(found){
+      const n=document.getElementById('sm-name');if(n)n.value=found.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=found.profileId||profileId||'basics';
+      const rows=found.rows||[];
+      const dry=rows.find(r=>r.label?.toLowerCase().includes('dry')||r.label?.toLowerCase().includes('spice'));
+      const sauce=rows.find(r=>r.label?.toLowerCase().includes('sauce')||r.label?.toLowerCase().includes('liquid'));
+      const dr=document.getElementById('sm-dryrub');if(dr)dr.value=dry?.spices||'';
+      const sa=document.getElementById('sm-sauce');if(sa)sa.value=sauce?.spices||'';
+      const me=document.getElementById('sm-method');if(me)me.value=found.method||'';
+    }
+  }
+  openModal('spice-modal');
+};
+
+// ── UPDATED saveSpiceRecipe (writes to DB) ────────────────────────
+saveSpiceRecipe=async function(){
+  const name=document.getElementById('sm-name')?.value.trim();
+  if(!name){toast('Enter a recipe name');return;}
+  const editKey=document.getElementById('spice-edit-key')?.value;
+  const isTemplate=document.getElementById('spice-edit-is-template')?.value==='1';
+  const profileId=document.getElementById('sm-profile')?.value||'basics';
+  const dryrub=document.getElementById('sm-dryrub')?.value.trim()||null;
+  const sauce=document.getElementById('sm-sauce')?.value.trim()||null;
+  const method=document.getElementById('sm-method')?.value.trim()||null;
+  const proteinSrc=document.getElementById('sm-protein-src')?.value.trim()||null;
+  const cal=parseInt(document.getElementById('sm-calories')?.value)||null;
+  const pro=parseFloat(document.getElementById('sm-protein-g')?.value)||null;
+  const car=parseFloat(document.getElementById('sm-carbs')?.value)||null;
+  const fat=parseFloat(document.getElementById('sm-fat-g')?.value)||null;
+  const rating=calcRecipeRating(cal,pro)||'so-so';
+  const payload={
+    name,profile_id:profileId,profile_label:profileId.charAt(0).toUpperCase()+profileId.slice(1),
+    dry_rub:dryrub,sauce,method,protein_src:proteinSrc,
+    calories_per_serving:cal,protein_g:pro,carbs_g:car,fat_g:fat,
+    rating,color_tag:rating==='good'?'green':rating==='needs-care'?'red':'amber',
+    is_template:false,created_by:PROFILE.id
+  };
+  let error;
+  if(editKey&&!isTemplate){
+    // Update existing user recipe in DB
+    ({error}=await sb.from('recipes').update(payload).eq('id',editKey).eq('created_by',PROFILE.id));
+  }else if(editKey&&isTemplate){
+    // Template recipe — save as NEW custom version (don't modify template)
+    payload.name=name+(name.includes('(Custom)')?'':'');
+    ({error}=await sb.from('recipes').insert(payload));
+    toast('Saved as your custom version');
+  }else{
+    // New recipe
+    ({error}=await sb.from('recipes').insert(payload));
+  }
+  if(error){toast('Error saving: '+error.message);console.error(error);return;}
+  // Refresh content from DB
+  const fresh=await loadRecipesFromDB();
+  if(fresh)CONTENT.spice=fresh;
+  closeModal('spice-modal');
+  spiceEditMode=true;
+  renderSpice();
+  toast(editKey&&!isTemplate?'Recipe updated!':'Recipe saved!');
+};
+
+// ── UPDATED removeSpiceRecipe (DB delete, user recipes only) ──────
+removeSpiceRecipe=async function(id){
+  // Check if it's a user recipe
+  const{data:rec}=await sb.from('recipes').select('is_template,created_by').eq('id',id).maybeSingle();
+  if(rec&&rec.is_template){toast("Library recipes can't be deleted — you can edit them instead");return;}
+  if(rec&&rec.created_by!==PROFILE.id){toast("Can only delete your own recipes");return;}
+  if(!confirm('Delete this recipe?'))return;
+  await sb.from('recipes').delete().eq('id',id);
+  const fresh=await loadRecipesFromDB();
+  if(fresh)CONTENT.spice=fresh;
+  renderSpice();
+  toast('Recipe deleted');
+};
+
+// ── UPDATED loadRecipesFromDB (marks template vs user recipes) ────
+loadRecipesFromDB=async function(){
+  const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
+  if(error||!recs?.length)return null;
+  const profileMap={};
+  recs.forEach(r=>{
+    if(!profileMap[r.profile_id]){
+      profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+    }
+    const rows=[];
+    if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+    if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+    profileMap[r.profile_id].recipes.push({
+      ...r,rows,
+      profileId:r.profile_id,
+      _isTemplate:r.is_template,
+      _isUserRecipe:r.created_by===PROFILE?.id&&!r.is_template
+    });
+  });
+  return{profiles:Object.values(profileMap)};
 };
 
 </script>
