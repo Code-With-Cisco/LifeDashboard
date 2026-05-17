@@ -369,7 +369,13 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
         </div>
         <div class="card"><div class="sh">TODAY'S WORKOUT</div><div id="dash-wk"></div></div>
       </div>
-      <div class="card" style="margin-bottom:16px"><div class="sh">THIS WEEK'S HABITS</div><div id="dash-week" style="overflow-x:auto"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;margin-bottom:16px;align-items:start">
+        <div class="card"><div class="sh">THIS WEEK'S HABITS</div><div id="dash-week" style="overflow-x:auto"></div></div>
+        <div class="card" id="dash-todos-panel">
+          <div class="sh">TODAY'S TO-DOS</div>
+          <div id="dash-todos-list"><div style="color:var(--t3);font-size:12px">Loading...</div></div>
+        </div>
+      </div>
       <div class="sh">MONTHLY MILESTONES</div>
       <div class="g2" style="margin-bottom:16px" id="milestone-grid"></div>
     </div>
@@ -680,14 +686,26 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   <div class="modal">
     <div class="modal-title" id="ev-modal-title">ADD EVENT</div>
     <input type="hidden" id="ev-id">
-    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Title</div><input class="inp" id="ev-title" placeholder="Event title"></div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Title</div><input class="inp" id="ev-title" placeholder="e.g. Dentist appointment"></div>
     <div class="g2" style="gap:8px;margin-bottom:10px">
-      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Date</div><input class="inp" id="ev-date" type="date"></div>
-      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Time</div><input class="inp" id="ev-time" type="time"></div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Start Date</div><input class="inp" id="ev-date" type="date"></div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Start Time (optional)</div><input class="inp" id="ev-time" type="time"></div>
+    </div>
+    <div class="g2" style="gap:8px;margin-bottom:10px">
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">End Date (multi-day events)</div><input class="inp" id="ev-end-date" type="date"></div>
+      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">All Day?</div><select class="inp sel" id="ev-allday"><option value="0">No — has a specific time</option><option value="1">Yes — all day event</option></select></div>
     </div>
     <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Type</div>
-    <select class="inp sel" id="ev-type"><option value="r">Workout</option><option value="g">Nutrition</option><option value="a">Finance</option><option value="b">Personal</option></select></div>
-    <div class="modal-footer"><button class="btn btn-r" onclick="saveEvent()">Save</button><button class="btn btn-o" onclick="closeModal('event-modal')">Cancel</button></div>
+      <select class="inp sel" id="ev-type">
+        <option value="b">Personal</option><option value="r">Workout</option>
+        <option value="g">Nutrition</option><option value="a">Finance</option><option value="p">Other</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="saveEvent()">Save Event</button>
+      <button class="btn" id="ev-delete-btn" style="display:none;background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.3)" onclick="deleteEvent()">Delete</button>
+      <button class="btn btn-o" onclick="closeModal('event-modal')">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -1664,8 +1682,25 @@ async function renderMonth(){
   const first=new Date(y,m,1);const last=new Date(y,m+1,0);
   const mS=y+'-'+String(m+1).padStart(2,'0')+'-01';
   const mE=y+'-'+String(m+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).gte('event_date',mS).lte('event_date',mE);
-  const ebd={};(uEvs||[]).forEach(e=>{if(!ebd[e.event_date])ebd[e.event_date]=[];ebd[e.event_date].push(e);});
+  // Fetch events that START in this month OR span into this month
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+    .or(`event_date.gte.${mS},end_date.gte.${mS}`)
+    .lte('event_date',mE);
+  const ebd={};
+  (uEvs||[]).forEach(e=>{
+    // Add event to every day it spans
+    const start=new Date(e.event_date+'T12:00:00');
+    const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
+    const end=new Date(endStr+'T12:00:00');
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const ds=d.toLocaleDateString('en-CA');
+      if(ds>=mS&&ds<=mE){
+        if(!ebd[ds])ebd[ds]=[];
+        // Mark continuation days for visual distinction
+        ebd[ds].push({...e,_isStart:ds===e.event_date,_isEnd:ds===endStr,_isCont:ds!==e.event_date});
+      }
+    }
+  });
   const wkP={1:'Workout',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
   let html='<div class="cal-grid">';
   D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
@@ -1679,7 +1714,11 @@ async function renderMonth(){
     if(dow===0)evs.push({title:'Meal Prep',event_type:'g'});
     (ebd[ds]||[]).forEach(e=>evs.push(e));
     html+=`<div class="cal-day${isToday?' today':''}" onclick="openEventModal('${ds}')"><div class="cal-dn">${day}</div>`;
-    evs.slice(0,3).forEach(e=>html+=`<div class="cal-ev ${e.event_type||'b'}">${e.title}</div>`);
+    evs.slice(0,3).forEach(e=>{
+      const isUserEv=!!e.id;
+      const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${e.id}')`:'';
+      html+=`<div class="cal-ev ${e.event_type||'b'}" ${isUserEv?`onclick="${clickHandler}" style="cursor:pointer" title="Click to edit"`:''}>${e.title}</div>`;
+    });
     if(evs.length>3)html+=`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`;
     html+='</div>';
   }
@@ -1695,7 +1734,21 @@ async function renderWeek(){
   const wkP={1:'Upper Push',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
   const hours=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
   const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).in('event_date',dates.map(d=>d.toISOString().split('T')[0]));
-  const ebd={};(uEvs||[]).forEach(e=>{if(!ebd[e.event_date])ebd[e.event_date]=[];ebd[e.event_date].push(e);});
+  const ebd={};
+  (uEvs||[]).forEach(e=>{
+    // Add event to every day it spans
+    const start=new Date(e.event_date+'T12:00:00');
+    const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
+    const end=new Date(endStr+'T12:00:00');
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const ds=d.toLocaleDateString('en-CA');
+      if(ds>=mS&&ds<=mE){
+        if(!ebd[ds])ebd[ds]=[];
+        // Mark continuation days for visual distinction
+        ebd[ds].push({...e,_isStart:ds===e.event_date,_isEnd:ds===endStr,_isCont:ds!==e.event_date});
+      }
+    }
+  });
   let html='<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:48px repeat(7,1fr);gap:2px;min-width:500px">';
   html+='<div></div>'+dates.map(d=>{
     const k=d.toISOString().split('T')[0];const isT=k===todayStr();
@@ -1729,22 +1782,48 @@ async function renderDay(){
   const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',d:'var(--b2)'};
   el.innerHTML=all.map(e=>`<div class="ev-chip" style="margin-bottom:6px"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${e.time||e.event_time||''}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${e.title}</span></div>`).join('');
 }
-function openEventModal(dateStr){
-  evEditId=null;
-  document.getElementById('ev-modal-title').textContent='ADD EVENT';
-  document.getElementById('ev-id').value='';
-  document.getElementById('ev-title').value='';
-  document.getElementById('ev-date').value=dateStr||todayStr();
-  document.getElementById('ev-time').value='09:00';
-  document.getElementById('ev-type').value='b';
+function openEventModal(dateStr,editId,eventData){
+  evEditId=editId||null;
+  const isEdit=!!editId;
+  document.getElementById('ev-modal-title').textContent=isEdit?'EDIT EVENT':'ADD EVENT';
+  document.getElementById('ev-id').value=editId||'';
+  const delBtn=document.getElementById('ev-delete-btn');if(delBtn)delBtn.style.display=isEdit?'inline-flex':'none';
+  if(isEdit&&eventData){
+    document.getElementById('ev-title').value=eventData.title||'';
+    document.getElementById('ev-date').value=eventData.event_date||todayStr();
+    document.getElementById('ev-time').value=eventData.event_time||'';
+    document.getElementById('ev-end-date').value=eventData.end_date||'';
+    document.getElementById('ev-allday').value=eventData.all_day?'1':'0';
+    document.getElementById('ev-type').value=eventData.event_type||'b';
+  }else{
+    document.getElementById('ev-title').value='';
+    document.getElementById('ev-date').value=dateStr||todayStr();
+    document.getElementById('ev-time').value='09:00';
+    document.getElementById('ev-end-date').value='';
+    document.getElementById('ev-allday').value='0';
+    document.getElementById('ev-type').value='b';
+  }
   openModal('event-modal');
 }
 async function saveEvent(){
   const title=document.getElementById('ev-title').value.trim();if(!title){toast('Enter a title');return;}
-  const ev={user_id:PROFILE.id,event_date:document.getElementById('ev-date').value,event_time:document.getElementById('ev-time').value,title,event_type:document.getElementById('ev-type').value};
+  const startDate=document.getElementById('ev-date').value;if(!startDate){toast('Select a start date');return;}
+  const endDate=document.getElementById('ev-end-date').value;
+  const allDay=document.getElementById('ev-allday').value==='1';
+  const ev={
+    user_id:PROFILE.id,
+    event_date:startDate,
+    end_date:endDate&&endDate>startDate?endDate:null,
+    event_time:allDay?null:document.getElementById('ev-time').value,
+    all_day:allDay,
+    title,
+    event_type:document.getElementById('ev-type').value
+  };
   if(evEditId){await sb.from('calendar_events').update(ev).eq('id',evEditId);}
   else{await sb.from('calendar_events').insert(ev);}
-  closeModal('event-modal');toast('Event saved!');renderCal();
+  closeModal('event-modal');
+  toast(evEditId?'Event updated!':'Event added!');
+  renderCal();
 }
 
 // SPICE GUIDE
@@ -3416,6 +3495,118 @@ renderTodo=async function(){
     </div>`;
   });
   el.innerHTML=html;
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 2 — Schedule edit/delete/multi-day + Dashboard Todos panel
+// ════════════════════════════════════════════════════════════════
+
+// ── Open a user event for editing (called from calendar chip) ────
+async function openUserEvent(eventId){
+  if(!eventId)return;
+  const{data:ev,error}=await sb.from('calendar_events').select('*').eq('id',eventId).single();
+  if(error||!ev){toast('Could not load event');return;}
+  openEventModal(null,eventId,ev);
+}
+
+// ── Delete current event being edited ───────────────────────────
+async function deleteEvent(){
+  if(!evEditId){toast('No event selected');return;}
+  if(!confirm('Delete this event?'))return;
+  await sb.from('calendar_events').delete().eq('id',evEditId);
+  closeModal('event-modal');
+  toast('Event deleted');
+  renderCal();
+}
+
+// ── Multi-day event chip style override ─────────────────────────
+// Patch renderMonth to show continuation chips differently
+const _s2_origRenderMonth=renderMonth;
+renderMonth=async function(){
+  await _s2_origRenderMonth();
+  // After render, style continuation chips
+  document.querySelectorAll('.cal-ev[data-cont="1"]').forEach(el=>{
+    el.style.opacity='0.7';
+    el.style.borderLeft='3px solid rgba(255,255,255,.3)';
+  });
+};
+
+// ── DASHBOARD — Today's Todos Panel ─────────────────────────────
+async function renderDashTodos(){
+  const el=document.getElementById('dash-todos-list');if(!el)return;
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  const todayLocal=new Date().toLocaleDateString('en-CA',{timeZone:tz});
+
+  let items=[];
+  try{
+    // Fetch todos that are due today or overdue, not Done
+    const{data,error}=await sb.from('todo_items').select('*')
+      .eq('user_id',PROFILE.id)
+      .neq('status','Done')
+      .lte('due_date',todayLocal)
+      .order('status');
+    if(error&&error.code==='42P01'){
+      el.innerHTML='<div style="font-size:11px;color:var(--t3)">Set up To Do List tab first.</div>';
+      return;
+    }
+    if(error)throw error;
+    items=data||[];
+  }catch(e){el.innerHTML='<div style="font-size:11px;color:var(--t3)">—</div>';return;}
+
+  if(!items.length){
+    el.innerHTML=`<div style="text-align:center;padding:24px 10px">
+      <div style="font-size:24px;margin-bottom:8px">&#x1F389;</div>
+      <div style="font-size:13px;font-weight:600;color:var(--grn)">Nothing To Do.</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px">All done — good work.</div>
+    </div>`;
+    return;
+  }
+
+  // Sort: Urgent → Important → In Progress → Not Started → On Hold → Not Urgent
+  const ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5};
+  const STATUS_COL={'Urgent':'r','Important':'p','In Progress':'b','Not Started':'d','On Hold':'a','Not Urgent':'g'};
+  items.sort((a,b)=>(ORDER[a.status]||9)-(ORDER[b.status]||9));
+
+  el.innerHTML=items.map(item=>{
+    const sc=STATUS_COL[item.status]||'d';
+    const isOverdue=item.due_date<todayLocal;
+    const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
+    const dueLabel=diff===0?'Today':Math.abs(diff)+'d overdue';
+    return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--b1);min-width:0">
+      <span class="badge b-${sc}" style="flex-shrink:0;font-size:9px;padding:2px 5px">${item.status}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.title}</div>
+        <div style="font-size:10px;color:${isOverdue?'var(--red)':'var(--amb)'};font-family:DM Mono,monospace">${dueLabel}</div>
+      </div>
+      <div style="display:flex;gap:3px;flex-shrink:0">
+        <button onclick="dashMarkDone('${item.id}')" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700">&#x2713;</button>
+        <button onclick="pushBackTodo('${item.id}')" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow">&#x23E9;</button>
+      </div>
+    </div>`;
+  }).join('')+`<div style="margin-top:8px;text-align:center"><a href="#" onclick="goto('todo');return false" style="font-size:11px;color:var(--t3)">View all tasks →</a></div>`;
+}
+
+async function dashMarkDone(id){
+  await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);
+  renderDashTodos();
+  // Also refresh full todo list if visible
+  if(document.getElementById('page-todo')?.classList.contains('active'))renderTodo();
+  toast('Done! &#x1F4AA;');
+}
+
+// Patch renderDash to also render the todo panel
+const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
+renderDash=async function(){
+  if(_s2_origRenderDash)await _s2_origRenderDash();
+  await renderDashTodos();
+};
+
+// Patch goto to render todos when switching to dash
+const _s2_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s2_origGoto)_s2_origGoto(pid);
+  if(pid==='dash')setTimeout(renderDashTodos,100);
 };
 
 </script>
