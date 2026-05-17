@@ -944,7 +944,7 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 const SIGNUP_CODE='Memento Mori';
 const {createClient}=supabase;
 const sb=createClient(SUPABASE_URL,SUPABASE_KEY);
-let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toISOString().split('T')[0],
+let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toLocaleDateString('en-CA',{timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York'}),
     calView='month',calDate=new Date(),bookEditMode=false,logDayIdx=0,mealTab='preset',
     debtEditId=null,subEditId=null,evEditId=null,habitCache={};
 const CACHE_TTL=86400000;
@@ -1448,14 +1448,14 @@ async function toggleHabit(id){
   const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
   const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
   if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
-  await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal});
+  await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal},{onConflict:'user_id,log_date,habit_id'});
   renderCatProg();renderStreakBar();
 }
 async function chDay(d){
   const nd=new Date(habitDate+'T12:00:00');nd.setDate(nd.getDate()+d);
   const tmrw=new Date();tmrw.setDate(tmrw.getDate()+1);
   if(nd>=tmrw){toast("Can't log future habits");return;}
-  habitDate=nd.toISOString().split('T')[0];await renderHabits();
+  const _tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';habitDate=nd.toLocaleDateString('en-CA',{timeZone:_tz});await renderHabits();
 }
 async function renderHabits(){
   const d=new Date(habitDate+'T12:00:00');
@@ -1963,7 +1963,7 @@ async function toggleFormat(id){
   const nf=data?.format==='Audiobook'?'Physical':'Audiobook';
   await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,format:nf});renderBooks();
 }
-async function setBookStatus(id,s){await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,status:s});toast('Status: '+s);}
+async function setBookStatus(id,s){await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,status:s},{onConflict:'user_id,book_id'});toast('Status updated: '+s);await renderBooks();}
 function toggleBookEdit(){
   bookEditMode=!bookEditMode;
   const btn=document.getElementById('edit-books-btn');if(btn)btn.textContent=bookEditMode?'Done Editing':'Edit List';
@@ -1976,13 +1976,19 @@ function moveBook(id,dir){
   const i=books.findIndex(b=>b.id===id);if(i<0)return;
   const ni=i+dir;if(ni<0||ni>=books.length)return;
   [books[i],books[ni]]=[books[ni],books[i]];
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));renderBooks();
+  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));
+  // Force renderBooks to pick up the new localStorage order
+  CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
+  renderBooks();
 }
 function removeBook(id){
   if(!confirm('Remove this book?'))return;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const books=(JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||CONTENT.books?.lists?.[listId]?.books||[]).filter(b=>b.id!==id);
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));renderBooks();toast('Book removed');
+  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));
+  // Force renderBooks to pick up the new localStorage order
+  CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
+  renderBooks();toast('Book removed');
 }
 function addBook(){
   const title=document.getElementById('bk-title').value.trim();if(!title){toast('Enter a title');return;}
