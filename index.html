@@ -3831,6 +3831,123 @@ if(_s3_origRemoveSub){
   };
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 4 — DB-powered content loading (JSON fallback retained)
+// ════════════════════════════════════════════════════════════════
+
+async function loadMealsFromDB(){
+  const{data:meals,error}=await sb.from('meals').select('*').eq('is_template',true).order('meal_type').order('name');
+  if(error||!meals?.length)return null;
+  const grouped={};
+  const targets={calories:1900,protein_g:185,carbs_g:175,fat_g:55,sugar_max_g:35,water_oz:120};
+  meals.forEach(m=>{
+    const key=m.meal_type+'_options';
+    if(!grouped[key])grouped[key]=[];
+    grouped[key].push({name:m.name,cal:m.calories,protein:m.protein_g,carbs:m.carbs_g,fat:m.fat_g,instructions:m.instructions||'',tags:m.tags||[],id:m.id});
+  });
+  // Also include user-specific meals
+  if(PROFILE){
+    const{data:userMeals}=await sb.from('meals').select('*').eq('created_by',PROFILE.id).eq('is_template',false);
+    (userMeals||[]).forEach(m=>{
+      const key=m.meal_type+'_options';
+      if(!grouped[key])grouped[key]=[];
+      grouped[key].push({name:m.name,cal:m.calories,protein:m.protein_g,carbs:m.carbs_g,fat:m.fat_g,instructions:m.instructions||'',tags:m.tags||[],id:m.id,isCustom:true});
+    });
+  }
+  return{plans:{'high-protein-deficit':{id:'high-protein-deficit',name:'High Protein Deficit',targets,...grouped},'balanced-deficit':{id:'balanced-deficit',name:'Balanced Deficit',targets:{calories:1800,protein_g:160,carbs_g:180,fat_g:55},...grouped},'maintenance-muscle':{id:'maintenance-muscle',name:'Maintenance + Muscle',targets:{calories:2400,protein_g:200,carbs_g:250,fat_g:70},...grouped}}};
+}
+
+async function loadBooksFromDB(){
+  const{data:bks,error}=await sb.from('books').select('*').eq('is_template',true).order('title');
+  if(error||!bks?.length)return null;
+  const allBooks=bks.map(b=>({id:b.id,title:b.title,author:b.author,pages:b.page_count,genres:b.genres,difficulty:b.difficulty,description:b.description}));
+  return{lists:[{id:'self-improvement-first',name:'Personal Growth & Wisdom',description:'Sequenced reading list',books:allBooks}]};
+}
+
+async function loadWorkoutPlansFromDB(){
+  const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
+  if(error||!plans?.length)return null;
+  const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
+  return{
+    plans:plans.map(p=>({
+      id:p.plan_key,plan_key:p.plan_key,name:p.name,description:p.description,
+      level:p.level,goal:p.goal,days_per_week:p.days_per_week,
+      days:(p.workout_plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(d=>({
+        day:d.day_number,day_name:d.day_name,focus:d.focus,
+        muscles:d.muscles||[],color:d.color||'b',
+        has_hiit:d.has_hiit,
+        exercises:typeof d.exercises==='string'?JSON.parse(d.exercises):d.exercises||[],
+        hiit_finisher:typeof d.hiit_finisher==='string'?JSON.parse(d.hiit_finisher):d.hiit_finisher
+      }))
+    })),
+    knee_rehab:knee
+  };
+}
+
+async function loadRecipesFromDB(){
+  const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
+  if(error||!recs?.length)return null;
+  // Group by profile
+  const profileMap={};
+  recs.forEach(r=>{
+    if(!profileMap[r.profile_id]){
+      profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+    }
+    const rows=[];
+    if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+    if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+    profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
+  });
+  // Include user custom recipes
+  if(PROFILE){
+    const customs=JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');
+    customs.forEach(r=>{
+      if(!profileMap[r.profileId]){profileMap[r.profileId]={id:r.profileId,label:r.profileId,recipes:[]};}
+      profileMap[r.profileId].recipes.push(r);
+    });
+  }
+  return{profiles:Object.values(profileMap)};
+}
+
+// Override loadAllContent to use Supabase DB with JSON fallback
+loadAllContent=async function(){
+  // Try loading from DB
+  let dbOk=false;
+  try{
+    const[mealsData,booksData,workoutsData,recipesData]=await Promise.all([
+      loadMealsFromDB(),
+      loadBooksFromDB(),
+      loadWorkoutPlansFromDB(),
+      loadRecipesFromDB()
+    ]);
+    // Schedule/roadmap still comes from JSON file
+    const scheduleData=await fetchContent('schedule');
+    if(mealsData&&booksData&&workoutsData&&recipesData){
+      CONTENT={workouts:workoutsData,meals:mealsData,books:booksData,spice:recipesData,schedule:scheduleData};
+      dbOk=true;
+      console.log('[content] loaded from Supabase DB ✓');
+    }
+  }catch(e){
+    console.warn('[content] DB load error:',e.message);
+  }
+  if(!dbOk){
+    // Fallback to JSON files
+    console.log('[content] falling back to JSON files');
+    const[w,m,b,s,sc]=await Promise.all([
+      fetchContent('workouts'),fetchContent('meals'),fetchContent('books'),
+      fetchContent('spice-guide'),fetchContent('schedule')
+    ]);
+    CONTENT={workouts:w,meals:m,books:b,spice:s,schedule:sc};
+  }
+};
+
+// Helper: quick check whether DB content is available
+async function isDBContentReady(){
+  try{const{count}=await sb.from('meals').select('*',{count:'exact',head:true});return(count||0)>0;}
+  catch(e){return false;}
+}
+
 </script>
 </body>
 </html>
