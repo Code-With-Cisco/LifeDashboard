@@ -453,24 +453,55 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
     <!-- READING -->
     <div class="page" id="page-reading">
-      <div class="card card-r" style="margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
-          <div style="flex:1"><div style="font-size:10px;font-weight:700;letter-spacing:2px;color:var(--red);margin-bottom:5px">CURRENTLY READING — MONTH 1</div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px" id="cur-book-title">Atomic Habits</div>
-          <div style="font-size:12px;color:var(--t3);margin-bottom:8px" id="cur-book-author">James Clear · ~320 pages</div>
-          <div style="font-size:12px;color:var(--t2);line-height:1.5">30 min/night = done in 3–4 weeks. Commute audiobook counts.</div></div>
-          <div style="text-align:center;min-width:80px">
-            <div style="font-family:'Bebas Neue',sans-serif;font-size:46px;color:var(--red);line-height:1" id="read-pct">0%</div>
-            <div style="font-size:10px;color:var(--t3);margin-bottom:8px">complete</div>
-            <div style="display:flex;gap:5px;justify-content:center"><button class="btn btn-o btn-sm" onclick="updReadPct(-10)">−10%</button><button class="btn btn-r btn-sm" onclick="updReadPct(10)">+10%</button></div>
+      <!-- Tab bar: Shelf vs Library -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div class="tab-bar" id="books-view-tabs" style="margin-bottom:0;flex:1">
+          <button class="tb on" onclick="setBookView('shelf',this)">&#x1F4DA; My Shelf</button>
+          <button class="tb" onclick="setBookView('library',this)">&#x1F50E; Browse Library</button>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-o btn-sm" id="edit-books-btn" onclick="toggleBookEdit()">&#x270F;&#xFE0F; Edit List</button>
+          <button class="btn btn-r btn-sm" id="add-book-btn" style="display:none" onclick="openAddCustomBook()">+ Custom Book</button>
+        </div>
+      </div>
+      <!-- Library search + genre filter (shown only in library view) -->
+      <div id="lib-controls" style="display:none;margin-bottom:12px">
+        <input class="inp" id="lib-search" type="search" placeholder="&#x1F50D; Search 36+ books..." oninput="renderLibrary()" style="margin-bottom:8px">
+        <div style="display:flex;gap:5px;flex-wrap:wrap" id="lib-genre-tags">
+          <button class="mm-tag-btn on" onclick="setLibGenre('',this)">All</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('self-improvement',this)">&#x1F4AA; Self-Help</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('philosophy',this)">&#x1F4DC; Philosophy</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('stoicism',this)">&#x1F5FF; Stoicism</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('fiction',this)">&#x1F4D6; Fiction</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('fantasy',this)">&#x2728; Fantasy</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('sci-fi',this)">&#x1F680; Sci-Fi</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('business',this)">&#x1F4BC; Business</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('psychology',this)">&#x1F9E0; Psychology</button>
+          <button class="mm-tag-btn" onclick="setLibGenre('biography',this)">&#x1F464; Biography</button>
+        </div>
+      </div>
+      <!-- Currently reading card (shelf view only) -->
+      <div id="cur-book-wrap">
+        <div class="card card-r" style="margin-bottom:14px" id="cur-book-card">
+          <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:var(--red);margin-bottom:6px" id="cur-book-label">CURRENTLY READING</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">
+            <div style="flex:1">
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px" id="cur-book-title">—</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:8px" id="cur-book-author"></div>
+              <div style="font-size:12px;color:var(--t2);line-height:1.5" id="cur-book-desc"></div>
+            </div>
+            <div style="text-align:center;min-width:90px" id="cur-book-progress">
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:46px;color:var(--red);line-height:1" id="read-pct">0%</div>
+              <div style="font-size:10px;color:var(--t3);margin-bottom:6px">complete</div>
+              <input type="number" id="cur-page-input" min="0" placeholder="page #" class="inp" style="text-align:center;font-size:12px;padding:4px 6px;margin-bottom:4px" onchange="saveCurrentPage(this.value)">
+              <div style="font-size:10px;color:var(--t3)" id="cur-page-label"></div>
+            </div>
           </div>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div class="sh" style="margin-bottom:0;flex:1">READING PLAN</div>
-        <div style="display:flex;gap:8px"><button class="btn btn-o btn-sm" id="edit-books-btn" onclick="toggleBookEdit()">✏️ Edit List</button><button class="btn btn-r btn-sm" id="add-book-btn" style="display:none" onclick="openModal('book-modal')">+ Add Book</button></div>
-      </div>
+      <div class="sh" id="reading-section-title" style="margin-bottom:10px">READING PLAN</div>
       <div id="book-list"></div>
+      <div id="lib-list" style="display:none"></div>
     </div>
 
     <!-- FINANCIAL -->
@@ -4391,6 +4422,301 @@ submitMeal=async function(){
     return;
   }
   if(_s5_origSubmitMeal)await _s5_origSubmitMeal();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 6 — Books & Reading: DB-driven shelf + library browser
+// ════════════════════════════════════════════════════════════════
+
+let bookView='shelf'; // 'shelf' or 'library'
+let libGenreFilter='';
+let _curBookId=null; // UUID of currently reading book
+let _curBookPages=0; // total pages of current book
+
+// ── LOAD BOOKS FROM DB (proper format for renderBooks) ───────────
+loadBooksFromDB=async function(){
+  if(!PROFILE)return null;
+  const{data:userList,error}=await sb.from('user_reading_list')
+    .select('*,books!inner(*)')
+    .eq('user_id',PROFILE.id)
+    .order('month_plan',{nullsLast:true})
+    .order('created_at');
+  if(error||!userList?.length)return null;
+  const booksArr=userList.map((ul,idx)=>({
+    id:ul.book_id,             // UUID — used for all DB operations
+    _url_id:ul.id,             // user_reading_list row UUID
+    title:ul.books.title,
+    author:ul.books.author,
+    pages:ul.books.page_count||0,
+    genres:ul.books.genres||[],
+    genre:(ul.books.genres||[])[0]||'general',
+    difficulty:ul.books.difficulty,
+    description:ul.books.description||'',
+    month:ul.month_plan||(idx+1),
+    _position:idx+1,           // actual shelf position (not month)
+    status:ul.status||'To Be Read',
+    current_page:ul.current_page||0,
+    rating:ul.rating||0,
+    format:ul.format||'Physical',
+    started_at:ul.started_at,
+    finished_at:ul.finished_at,
+  }));
+  return{lists:{'self-improvement-first':{id:'self-improvement-first',name:'My Reading List',books:booksArr}}};
+};
+
+// ── SET BOOK VIEW (shelf vs library) ─────────────────────────────
+function setBookView(view,btn){
+  bookView=view;
+  document.querySelectorAll('#books-view-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  const libCtrl=document.getElementById('lib-controls');
+  const shelfTitle=document.getElementById('reading-section-title');
+  const curWrap=document.getElementById('cur-book-wrap');
+  const editBtn=document.getElementById('edit-books-btn');
+  const addBtn=document.getElementById('add-book-btn');
+  const libList=document.getElementById('lib-list');
+  const bookList=document.getElementById('book-list');
+  if(view==='library'){
+    if(libCtrl)libCtrl.style.display='block';
+    if(curWrap)curWrap.style.display='none';
+    if(shelfTitle)shelfTitle.textContent='BOOK LIBRARY — 36+ TITLES';
+    if(editBtn)editBtn.style.display='none';
+    if(addBtn)addBtn.style.display='none';
+    if(bookList)bookList.style.display='none';
+    if(libList)libList.style.display='block';
+    renderLibrary();
+  }else{
+    if(libCtrl)libCtrl.style.display='none';
+    if(curWrap)curWrap.style.display='block';
+    if(shelfTitle)shelfTitle.textContent='READING PLAN';
+    if(editBtn)editBtn.style.display='';
+    if(bookList)bookList.style.display='block';
+    if(libList)libList.style.display='none';
+    renderBooks();
+  }
+}
+
+// ── SET LIBRARY GENRE FILTER ─────────────────────────────────────
+function setLibGenre(genre,btn){
+  libGenreFilter=genre;
+  document.querySelectorAll('#lib-genre-tags .mm-tag-btn').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  renderLibrary();
+}
+
+// ── RENDER LIBRARY BROWSER ───────────────────────────────────────
+async function renderLibrary(){
+  const el=document.getElementById('lib-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);text-align:center;padding:20px">Loading library...</div>';
+  const search=(document.getElementById('lib-search')?.value||'').toLowerCase().trim();
+  // Fetch all template books
+  const{data:allBooks}=await sb.from('books').select('*').eq('is_template',true).order('title');
+  // Get user's shelf for "already added" check
+  const{data:userList}=await sb.from('user_reading_list').select('book_id').eq('user_id',PROFILE.id);
+  const onShelf=new Set((userList||[]).map(u=>u.book_id));
+  // Apply filters
+  let filtered=(allBooks||[]);
+  if(libGenreFilter)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(libGenreFilter)));
+  if(search)filtered=filtered.filter(b=>b.title.toLowerCase().includes(search)||b.author.toLowerCase().includes(search)||(b.description||'').toLowerCase().includes(search));
+  if(!filtered.length){el.innerHTML='<div style="color:var(--t3);text-align:center;padding:30px">No books match your filters.</div>';return;}
+  const DIFF_COL={light:'grn',medium:'amb',dense:'red'};
+  el.innerHTML=`<div style="font-size:11px;color:var(--t3);margin-bottom:10px">${filtered.length} book${filtered.length!==1?'s':''} in library</div>`+
+  filtered.map(b=>{
+    const added=onShelf.has(b.id);
+    const dcol=DIFF_COL[b.difficulty]||'d';
+    const genres=(b.genres||[]).slice(0,3).map(g=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${g}</span>`).join('');
+    return`<div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px">${b.title}</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:5px">${b.author} &middot; ${b.page_count||'?'} pages</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px">
+          <span class="badge b-${dcol}" style="font-size:9px">${b.difficulty||'medium'}</span>
+          ${genres}
+        </div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.5">${b.description||''}</div>
+      </div>
+      <div style="flex-shrink:0">
+        ${added?`<button class="btn btn-o btn-sm" disabled style="opacity:0.5;cursor:default">On Shelf</button>`:
+        `<button class="btn btn-r btn-sm" onclick="addToShelf('${b.id}','${b.title.replace(/'/g,"\\'")}')">+ Add</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ADD TO SHELF ──────────────────────────────────────────────────
+async function addToShelf(bookId,title){
+  const{data:existing}=await sb.from('user_reading_list').select('id').eq('user_id',PROFILE.id).eq('book_id',bookId).maybeSingle();
+  if(existing){toast('Already on your shelf!');return;}
+  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:bookId,status:'To Be Read',format:'Physical'});
+  toast('Added: '+title);
+  renderLibrary(); // refresh "On Shelf" buttons
+}
+
+// ── UPDATED renderBooks (uses user_reading_list via CONTENT) ──────
+renderBooks=async function(){
+  // Refresh from DB
+  const fresh=await loadBooksFromDB();
+  if(fresh)CONTENT.books=fresh;
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const listData=CONTENT.books?.lists?.[listId];
+  if(!listData){
+    document.getElementById('book-list').innerHTML='<div style="color:var(--t3);padding:20px;text-align:center">No books on your shelf yet. Browse the Library tab to add some.</div>';
+    return;
+  }
+  const storedOrder=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
+  let bks=listData.books||[];
+  if(storedOrder?.length){
+    const orderMap=Object.fromEntries(storedOrder.map((b,i)=>[b.id,i]));
+    bks=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
+  }
+  // Update CONTENT with sorted order
+  if(CONTENT.books?.lists?.[listId])CONTENT.books.lists[listId].books=bks;
+  // Update currently reading card
+  const reading=bks.find(b=>b.status==='Reading')||bks[0];
+  if(reading){
+    _curBookId=reading.id;_curBookPages=reading.pages||0;
+    const pct=reading.pages>0?Math.round((reading.current_page||0)/reading.pages*100):0;
+    const ct=document.getElementById('cur-book-title');if(ct)ct.textContent=reading.title;
+    const ca=document.getElementById('cur-book-author');if(ca)ca.textContent=reading.author+' \u00b7 ~'+reading.pages+' pages';
+    const cl=document.getElementById('cur-book-label');if(cl)cl.textContent='CURRENTLY READING — POSITION '+reading._position;
+    const cd=document.getElementById('cur-book-desc');if(cd)cd.textContent=reading.description||'';
+    const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
+    const pi=document.getElementById('cur-page-input');if(pi)pi.value=reading.current_page||'';
+    const pl=document.getElementById('cur-page-label');if(pl)pl.textContent='of '+reading.pages+' pages';
+  }
+  // Render book list
+  const el=document.getElementById('book-list');if(!el)return;
+  const GCOLS2={fiction:'p',fantasy:'p','sci-fi':'blu','self-improvement':'grn',business:'amb',philosophy:'amb',stoicism:'amb',psychology:'blu',biography:'d',general:'d',health:'grn',productivity:'grn',memoir:'d'};
+  const statuses=['To Be Read','Reading','Read','Dropped'];
+  el.innerHTML=bks.map((bk,idx)=>{
+    const gcol=GCOLS2[bk.genre]||'d';
+    const stars=Array.from({length:5},(_,si)=>`<span class="star${si<bk.rating?' on':''}" onclick="setRating('${bk.id}',${si+1})" style="cursor:pointer">\u2605</span>`).join('');
+    const statSel=`<select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:118px" onchange="setBookStatus('${bk.id}',this.value)">${statuses.map(s=>`<option${bk.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
+    const fmtBtns=['Physical','Audiobook','Ebook'].map(f=>`<button class="btn btn-xs" style="background:${bk.format===f?'var(--blu-l)':'var(--s3)'};color:${bk.format===f?'var(--blu)':'var(--t3)'};border:1px solid ${bk.format===f?'rgba(77,159,236,.3)':'var(--b2)'}" onclick="toggleFormat('${bk.id}','${f}')">${f}</button>`).join('');
+    const pageRow=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <input type="number" value="${bk.current_page||0}" min="0" max="${bk.pages||9999}" class="inp" style="width:70px;text-align:center;font-size:12px;padding:4px" onchange="savePageProgress('${bk.id}',${bk.pages||0},this.value)" placeholder="page">
+      <span style="font-size:11px;color:var(--t3)">of ${bk.pages} pages</span>
+      ${bk.pages>0?`<div class="pb" style="flex:1;height:6px"><div class="pbf" style="width:${Math.min(100,Math.round((bk.current_page||0)/bk.pages*100))}%;background:var(--grn)"></div></div>`:''}
+    </div>`;
+    const editCtrl=bookEditMode?`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px">
+      <button onclick="moveBook('${bk.id}',-1)" class="btn btn-o btn-xs">&uarr;</button>
+      <button onclick="moveBook('${bk.id}',1)" class="btn btn-o btn-xs">&darr;</button>
+      <button onclick="removeFromShelf('${bk.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px">&#x2715;</button>
+    </div>`:'';
+    return`<div style="display:flex;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:10px;overflow:hidden">
+      <div style="width:4px;background:var(--${gcol});flex-shrink:0"></div>
+      <div style="padding:14px;flex:1;min-width:0">
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--${bk.status==='Reading'?'red':'t3'});line-height:1;min-width:28px;text-align:center">${idx+1}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;margin-bottom:2px">${bk.title}</div>
+            <div style="font-size:12px;color:var(--t3);margin-bottom:6px">${bk.author} &middot; ~${bk.pages} pages</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              ${statSel}${fmtBtns}
+            </div>
+            <div style="display:flex;gap:4px;margin-top:4px">${stars}</div>
+            ${pageRow}
+            ${bk.description?`<div style="font-size:11px;color:var(--t3);margin-top:6px;line-height:1.5">${bk.description}</div>`:''}
+          </div>
+          ${editCtrl}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+};
+
+// ── UPDATED interaction functions (write to user_reading_list) ────
+setBookStatus=async function(bookId,status){
+  await sb.from('user_reading_list').update({status}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  toast('Status: '+status);
+  await renderBooks();
+};
+setRating=async function(bookId,rating){
+  await sb.from('user_reading_list').update({rating}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  await renderBooks();
+};
+toggleFormat=async function(bookId,format){
+  await sb.from('user_reading_list').update({format}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  await renderBooks();
+};
+
+// ── PAGE PROGRESS ─────────────────────────────────────────────────
+async function savePageProgress(bookId,totalPages,currentPage){
+  const cp=parseInt(currentPage)||0;
+  const updates={current_page:cp};
+  if(cp>0)updates.started_at=updates.started_at||new Date().toLocaleDateString('en-CA',{timeZone:PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone});
+  if(totalPages>0&&cp>=totalPages){updates.finished_at=new Date().toLocaleDateString('en-CA',{timeZone:PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone});updates.status='Read';}
+  await sb.from('user_reading_list').update(updates).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(bookId===_curBookId){
+    const pct=totalPages>0?Math.round(cp/totalPages*100):0;
+    const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
+  }
+}
+async function saveCurrentPage(val){
+  if(_curBookId)await savePageProgress(_curBookId,_curBookPages,val);
+}
+
+// ── REMOVE FROM SHELF ─────────────────────────────────────────────
+async function removeFromShelf(bookId){
+  if(!confirm('Remove this book from your shelf?'))return;
+  await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
+  // Clear from localStorage order
+  const stored=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
+  if(stored){
+    localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(stored.filter(b=>b.id!==bookId)));
+  }
+  toast('Removed from shelf');
+  await renderBooks();
+}
+
+// ── ADD CUSTOM BOOK ───────────────────────────────────────────────
+function openAddCustomBook(){
+  openModal('book-modal');
+}
+// Patch saveBook to write to DB
+const _origSaveBook=typeof saveBook==='function'?saveBook:null;
+saveBook=async function(){
+  const title=document.getElementById('bk-title')?.value.trim();
+  const author=document.getElementById('bk-author')?.value.trim();
+  if(!title||!author){toast('Enter title and author');return;}
+  const pages=parseInt(document.getElementById('bk-pages')?.value)||0;
+  const genre=document.getElementById('bk-genre')?.value||'general';
+  const{data:newBook,error}=await sb.from('books').insert({title,author,genres:[genre],page_count:pages,is_template:false,created_by:PROFILE.id}).select().single();
+  if(error){toast('Error saving book');return;}
+  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:newBook.id,status:'To Be Read',format:'Physical'});
+  closeModal('book-modal');
+  toast('Book added to shelf!');
+  await renderBooks();
+};
+
+// ── PATCH goto to render library or shelf ─────────────────────────
+const _s6_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s6_origGoto)_s6_origGoto(pid);
+  if(pid==='reading'){
+    bookView='shelf';
+    setTimeout(()=>renderBooks(),100);
+  }
+};
+
+// ── PATCH moveBook to use position index not month ────────────────
+moveBook=function(id,dir){
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const bks=CONTENT.books?.lists?.[listId]?.books||[];
+  const stored=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||bks.map(b=>({id:b.id}));
+  const i=stored.findIndex(b=>b.id===id);
+  if(i<0)return;
+  const ni=i+dir;
+  if(ni<0||ni>=stored.length)return;
+  [stored[i],stored[ni]]=[stored[ni],stored[i]];
+  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(stored));
+  // Also update CONTENT order
+  if(CONTENT.books?.lists?.[listId]){
+    const orderMap=Object.fromEntries(stored.map((b,idx)=>[b.id,idx]));
+    CONTENT.books.lists[listId].books=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
+  }
+  renderBooks();
 };
 
 </script>
