@@ -399,8 +399,21 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
     <!-- WORKOUT -->
     <div class="page" id="page-workout">
+      <!-- Plan selector row -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex:1">
+          <span style="font-size:10px;font-weight:700;color:var(--t3);letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap">Active Plan</span>
+          <select class="inp sel" id="wk-plan-sel" onchange="switchWorkoutPlan(this.value)" style="flex:1;max-width:260px;font-size:12px"></select>
+        </div>
+        <button class="btn btn-o btn-sm" onclick="openPlanBuilder()">&#x2B; Custom Plan</button>
+      </div>
       <div class="tab-bar" id="wk-tabs"></div>
       <div id="wk-panels"></div>
+      <!-- Recent sessions -->
+      <div style="margin-top:20px">
+        <div class="sh">RECENT SESSIONS</div>
+        <div id="wk-history"><div style="color:var(--t3);font-size:12px;padding:12px 0">Loading history...</div></div>
+      </div>
     </div>
 
     <!-- NUTRITION -->
@@ -441,7 +454,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       <div id="cal-month"></div><div id="cal-week" style="display:none"></div><div id="cal-day" style="display:none"></div>
     </div>
 
-    <!-- MARINADES -->
+    <!-- RECIPES -->
     <div class="page" id="page-spice">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <div class="tab-bar" id="spice-tabs" style="flex:1;margin-bottom:0"></div>
@@ -662,10 +675,23 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 <!-- ═══ MODALS ════════════════════════════════════════════ -->
 
 <div class="modal-bg" id="log-modal">
-  <div class="modal">
+  <div class="modal modal-lg" style="max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
     <div class="modal-title" id="log-title">LOG SESSION</div>
-    <textarea class="inp" id="log-text" rows="5" placeholder="Notes, weights used, how you felt..." style="resize:vertical;min-height:100px"></textarea>
-    <div class="modal-footer"><button class="btn btn-r" onclick="saveLog()">Save</button><button class="btn btn-o" onclick="closeModal('log-modal')">Cancel</button></div>
+    <div style="font-size:11px;color:var(--t3);margin-bottom:10px" id="log-day-info"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px">Duration</span>
+      <input type="number" class="inp" id="log-duration" placeholder="45" min="1" style="width:70px;text-align:center">
+      <span style="font-size:11px;color:var(--t3)">minutes</span>
+    </div>
+    <div id="log-exercises" style="overflow-y:auto;flex:1;margin-bottom:10px;padding-right:2px"></div>
+    <div style="margin-bottom:4px;flex-shrink:0">
+      <div style="font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Session Notes</div>
+      <textarea class="inp" id="log-text" rows="2" placeholder="Energy level, PRs hit, anything to note..." style="resize:none"></textarea>
+    </div>
+    <div class="modal-footer" style="flex-shrink:0">
+      <button class="btn btn-r" onclick="saveLog()">Save Session &#x1F4AA;</button>
+      <button class="btn btn-o" onclick="closeModal('log-modal')">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -902,6 +928,23 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     <div class="modal-footer">
       <button class="btn btn-r" onclick="saveBill()">Save Bill</button>
       <button class="btn btn-o" onclick="closeModal('bill-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="plan-builder-modal">
+  <div class="modal modal-lg" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-title" id="pb-title">CREATE CUSTOM PLAN</div>
+    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Plan Name *</div><input class="inp" id="pb-name" placeholder="e.g. My 5-Day Split"></div>
+    <div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Description</div><input class="inp" id="pb-desc" placeholder="e.g. Hypertrophy focus, moderate volume"></div>
+    <div class="sh" style="margin-bottom:8px">DAYS</div>
+    <div id="pb-days"></div>
+    <button class="btn btn-o btn-sm" style="width:100%;margin-bottom:14px" onclick="addPlanDay()">+ Add Day</button>
+    <div class="sh" style="margin-bottom:6px">OR IMPORT A TEMPLATE</div>
+    <div id="pb-templates" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="savePlan()">Save Plan</button>
+      <button class="btn btn-o" onclick="closeModal('plan-builder-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -1351,7 +1394,7 @@ const NAV_ITEMS=[
   {id:'workout',icon:'&#x1F4AA;',label:'Workout'},
   {id:'nutrition',icon:'&#x1F957;',label:'Nutrition'},
   {id:'schedule',icon:'&#x1F4C5;',label:'Schedule'},
-  {id:'spice',icon:'&#x1F336;&#xFE0F;',label:'Marinades'},
+  {id:'spice',icon:'&#x1F336;&#xFE0F;',label:'Recipes'},
   {id:'reading',icon:'&#x1F4DA;',label:'Reading'},
   {id:'financial',icon:'&#x1F4B0;',label:'Financial'},
   {id:'goals',icon:'&#x1F3AF;',label:'Goals'},
@@ -1359,7 +1402,7 @@ const NAV_ITEMS=[
   {id:'admin',icon:'&#x2699;&#xFE0F;',label:'Admin Panel',adminOnly:true},
 ];
 const PT={home:'HOME',dash:'DASHBOARD',habits:'HABITS',workout:'WORKOUT',nutrition:'NUTRITION',
-  schedule:'SCHEDULE',spice:'MARINADES',reading:'READING PLAN',financial:'FINANCIAL PLAN',
+  schedule:'SCHEDULE',spice:'RECIPES',reading:'READING PLAN',financial:'FINANCIAL PLAN',
   goals:'GOALS',wit:'IS IT WORTH IT?',admin:'ADMIN CONTROL PANEL'};
 function enterApp(){
   hideAuth();
@@ -1945,7 +1988,7 @@ async function saveEvent(){
   renderCal();
 }
 
-// MARINADES
+// RECIPES
 function renderSpice(){
   const data=CONTENT.spice?.profiles;if(!data)return;
   const tabsEl=document.getElementById('spice-tabs');const panelsEl=document.getElementById('spice-panels');
@@ -3262,7 +3305,7 @@ async function markTodoDone(id){await sb.from('todo_items').update({status:'Done
 async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
 async function deleteTodo(id){if(!confirm('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
 
-// ── MARINADES — EDIT MODE ──────────────────────────────────────
+// ── RECIPES — EDIT MODE ──────────────────────────────────────
 let spiceEditMode=false;
 function toggleSpiceEdit(){
   spiceEditMode=!spiceEditMode;
@@ -4717,6 +4760,264 @@ moveBook=function(id,dir){
     CONTENT.books.lists[listId].books=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
   }
   renderBooks();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 7 — Workout Session Logging, History, Plan Builder
+// ════════════════════════════════════════════════════════════════
+
+let _existingSessionId=null;
+let _pbDayCount=0;
+
+// ── POPULATE PLAN SELECTOR ────────────────────────────────────────
+function populatePlanSelector(){
+  const sel=document.getElementById('wk-plan-sel');if(!sel)return;
+  const plans=CONTENT.workouts?.plans;if(!plans)return;
+  const current=PROFILE.assigned_workout_plan||'shred-advanced';
+  sel.innerHTML=Object.entries(plans).map(([key,p])=>
+    `<option value="${key}"${key===current?' selected':''}>${p.name}</option>`
+  ).join('');
+}
+
+async function switchWorkoutPlan(planKey){
+  await sb.from('profiles').update({assigned_workout_plan:planKey}).eq('id',PROFILE.id);
+  PROFILE.assigned_workout_plan=planKey;
+  renderWorkout();
+  toast('Plan switched to '+CONTENT.workouts?.plans?.[planKey]?.name);
+}
+
+// Patch renderWorkout to also populate selector + history
+const _s7_origRW=typeof renderWorkout==='function'?renderWorkout:null;
+renderWorkout=function(){
+  if(_s7_origRW)_s7_origRW();
+  populatePlanSelector();
+  renderWorkoutHistory();
+};
+
+// ── UPDATED openLogModal (full sets/reps/weight) ──────────────────
+openLogModal=async function(i){
+  logDayIdx=i;
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  const day=wkData?.days?.[i];
+  const focus=day?.focus||'Day '+(i+1);
+  document.getElementById('log-title').textContent='LOG: '+focus.toUpperCase();
+  document.getElementById('log-day-info').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('log-duration').value='';
+  // Check for existing session today
+  const{data:existing}=await sb.from('workout_sessions')
+    .select('*,workout_exercise_logs(*)')
+    .eq('user_id',PROFILE.id).eq('session_date',todayStr()).eq('day_name',focus)
+    .maybeSingle();
+  _existingSessionId=existing?.id||null;
+  // Build prior-sets lookup
+  const prior={};
+  (existing?.workout_exercise_logs||[]).forEach(l=>{
+    if(!prior[l.exercise_name])prior[l.exercise_name]=[];
+    prior[l.exercise_name][l.set_number-1]={w:l.weight_lbs,r:l.reps_completed};
+  });
+  const exercises=day?.exercises||[];
+  const exEl=document.getElementById('log-exercises');
+  if(!exercises.length){
+    exEl.innerHTML='<div style="color:var(--t3);font-size:13px;text-align:center;padding:24px">&#x1F3C6; Rest day — log any notes below.</div>';
+  }else{
+    exEl.innerHTML=exercises.map((ex,ei)=>{
+      const sc=ex.sets||3;const tr=String(ex.reps||10);
+      const ps=prior[ex.name]||[];
+      const rows=Array.from({length:sc},(_,s)=>`
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+          <span style="font-size:11px;color:var(--t3);width:38px;flex-shrink:0">Set ${s+1}</span>
+          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${ps[s]?.w||''}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <span style="font-size:12px;color:var(--t3)">&#xD7;</span>
+          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${ps[s]?.r||tr}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+        </div>`).join('');
+      return`<div style="padding:12px;background:var(--s3);border-radius:var(--r);margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:13px;font-weight:700">${ex.name}</div>
+          <span class="mono" style="font-size:10px;color:var(--t3)">Target: ${sc} sets &#xD7; ${tr} reps</span>
+        </div>
+        ${ex.notes?`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;font-style:italic">${ex.notes}</div>`:''}
+        ${rows}
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('log-text').value=existing?.notes||'';
+  if(existing?.duration_minutes)document.getElementById('log-duration').value=existing.duration_minutes;
+  openModal('log-modal');
+};
+
+// ── UPDATED saveLog (sets/reps/weight + backward compat) ──────────
+saveLog=async function(){
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  const day=wkData?.days?.[logDayIdx];
+  const focus=day?.focus||'Day '+(logDayIdx+1);
+  const notes=document.getElementById('log-text')?.value.trim()||'';
+  const duration=parseInt(document.getElementById('log-duration')?.value)||null;
+  const btn=document.querySelector('#log-modal .btn-r');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  let sessionId=_existingSessionId;
+  if(sessionId){
+    await sb.from('workout_sessions').update({notes,duration_minutes:duration}).eq('id',sessionId);
+    await sb.from('workout_exercise_logs').delete().eq('session_id',sessionId);
+  }else{
+    const{data:s,error}=await sb.from('workout_sessions').insert({
+      user_id:PROFILE.id,session_date:todayStr(),day_name:focus,notes,duration_minutes:duration
+    }).select().single();
+    if(error||!s){if(btn){btn.disabled=false;btn.textContent='Save Session 💪';}toast('Error saving — check console');console.error(error);return;}
+    sessionId=s.id;
+  }
+  // Save exercise sets
+  const exercises=day?.exercises||[];
+  const logs=[];
+  exercises.forEach((ex,ei)=>{
+    for(let s=0;s<(ex.sets||3);s++){
+      const w=parseFloat(document.getElementById(`ex-${ei}-s${s}-w`)?.value)||null;
+      const r=parseInt(document.getElementById(`ex-${ei}-s${s}-r`)?.value)||null;
+      if(r||w)logs.push({session_id:sessionId,exercise_name:ex.name,set_number:s+1,reps_completed:r,weight_lbs:w});
+    }
+  });
+  if(logs.length)await sb.from('workout_exercise_logs').insert(logs);
+  // Backward compat: also update workout_logs
+  await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes},{onConflict:'user_id,log_date,day_index'});
+  closeModal('log-modal');
+  toast('Session saved! 💪');
+  renderWorkoutHistory();
+};
+
+// ── WORKOUT HISTORY ───────────────────────────────────────────────
+async function renderWorkoutHistory(){
+  const el=document.getElementById('wk-history');if(!el)return;
+  const{data:sessions,error}=await sb.from('workout_sessions')
+    .select('id,session_date,day_name,duration_minutes,notes,workout_exercise_logs(exercise_name,set_number,weight_lbs,reps_completed)')
+    .eq('user_id',PROFILE.id)
+    .order('session_date',{ascending:false})
+    .order('created_at',{ascending:false})
+    .limit(8);
+  if(error){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">Error loading history.</div>';return;}
+  if(!sessions?.length){
+    el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:12px 0;text-align:center">No sessions logged yet. Hit <strong>Log Session</strong> on any day to start tracking.</div>';
+    return;
+  }
+  el.innerHTML=sessions.map(s=>{
+    const date=new Date(s.session_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const exNames=[...new Set((s.workout_exercise_logs||[]).map(l=>l.exercise_name))];
+    const totalSets=(s.workout_exercise_logs||[]).length;
+    const topSets=exNames.slice(0,3).map(name=>{
+      const sets=(s.workout_exercise_logs||[]).filter(l=>l.exercise_name===name);
+      const bestSet=sets.reduce((best,l)=>(!best||l.weight_lbs>best.weight_lbs)?l:best,null);
+      return`<span style="font-size:10px;color:var(--t2)">${name}${bestSet?.weight_lbs?' @ '+bestSet.weight_lbs+'lbs':''}</span>`;
+    }).join(' &middot; ');
+    return`<div style="padding:10px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">
+            <span style="font-family:DM Mono,monospace;font-size:11px;color:var(--t3)">${date}</span>
+            <span style="font-size:13px;font-weight:700">${s.day_name||'Session'}</span>
+          </div>
+          <div style="font-size:11px;color:var(--t3)">${exNames.length} exercise${exNames.length!==1?'s':''} &middot; ${totalSets} set${totalSets!==1?'s':''}${s.duration_minutes?' &middot; '+s.duration_minutes+'min':''}</div>
+          ${topSets?`<div style="margin-top:4px;line-height:1.6">${topSets}</div>`:''}
+        </div>
+        ${s.notes?`<div style="font-size:11px;color:var(--t2);max-width:180px;font-style:italic;text-align:right">"${s.notes}"</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── PLAN BUILDER ──────────────────────────────────────────────────
+function openPlanBuilder(){
+  _pbDayCount=0;
+  document.getElementById('pb-name').value='';
+  document.getElementById('pb-desc').value='';
+  document.getElementById('pb-days').innerHTML='';
+  // Populate template options
+  const plans=CONTENT.workouts?.plans||{};
+  document.getElementById('pb-templates').innerHTML=Object.entries(plans).map(([key,p])=>
+    `<button class="btn btn-o btn-sm" onclick="importTemplate('${key}')">${p.name}</button>`
+  ).join('');
+  openModal('plan-builder-modal');
+}
+
+function addPlanDay(name='',focus='',exercises=''){
+  const i=_pbDayCount++;
+  const div=document.createElement('div');
+  div.id=`pb-day-${i}`;
+  div.style.cssText='background:var(--s3);border-radius:var(--r);padding:12px;margin-bottom:8px';
+  div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-size:12px;font-weight:600">Day ${i+1}</span>
+    <button onclick="this.closest('[id]').remove()" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>
+  </div>
+  <div class="g2" style="gap:8px;margin-bottom:8px">
+    <input class="inp" id="pb-day-${i}-name" placeholder="Day name (e.g. Monday)" value="${name}">
+    <input class="inp" id="pb-day-${i}-focus" placeholder="Focus (e.g. Upper Push)" value="${focus}">
+  </div>
+  <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Exercises (one per line, e.g. "Bench Press 4x8")</div>
+  <textarea class="inp" id="pb-day-${i}-ex" rows="4" placeholder="Incline DB Press 4x10\nOverhead Press 4x10\nLateral Raises 3x15" style="resize:vertical;font-family:DM Mono,monospace;font-size:11px">${exercises}</textarea>`;
+  document.getElementById('pb-days').appendChild(div);
+}
+
+async function importTemplate(planKey){
+  const plan=CONTENT.workouts?.plans?.[planKey];
+  if(!plan){toast('Plan not found');return;}
+  document.getElementById('pb-name').value=plan.name+' (Custom)';
+  document.getElementById('pb-desc').value=plan.description||'';
+  document.getElementById('pb-days').innerHTML='';
+  _pbDayCount=0;
+  (plan.days||[]).forEach(d=>{
+    const exStr=(d.exercises||[]).map(e=>`${e.name} ${e.sets||3}x${e.reps||10}`).join('\n');
+    addPlanDay(d.day_name||'',d.focus||'',exStr);
+  });
+  toast('Template imported — customize then save');
+}
+
+function parseExerciseLine(line){
+  // Parse "Bench Press 4x8" → {name:'Bench Press', sets:4, reps:'8'}
+  const match=line.match(/^(.+?)\s+(\d+)\s*[xX\u00d7]\s*(\d+(?:-\d+|[\+])?)\s*(?:@(.+))?$/);
+  if(match)return{name:match[1].trim(),sets:parseInt(match[2]),reps:match[3].trim(),notes:match[4]?.trim()||''};
+  return{name:line.trim(),sets:3,reps:'10',notes:''};
+}
+
+async function savePlan(){
+  const name=document.getElementById('pb-name').value.trim();
+  if(!name){toast('Enter a plan name');return;}
+  const desc=document.getElementById('pb-desc').value.trim();
+  const days=[];
+  document.querySelectorAll('[id^="pb-day-"]').forEach(div=>{
+    const i=div.id.split('-')[2];
+    if(!i||isNaN(i))return;
+    const dayName=document.getElementById(`pb-day-${i}-name`)?.value.trim()||`Day ${+i+1}`;
+    const focus=document.getElementById(`pb-day-${i}-focus`)?.value.trim()||'';
+    const exRaw=document.getElementById(`pb-day-${i}-ex`)?.value.trim()||'';
+    const exercises=exRaw.split('\n').filter(l=>l.trim()).map(parseExerciseLine);
+    days.push({day_name:dayName,focus,exercises,muscles:[],color:'b',has_hiit:false});
+  });
+  if(!days.length){toast('Add at least one day');return;}
+  const{error}=await sb.from('user_workout_plans').insert({
+    user_id:PROFILE.id,template_id:null,name,description:desc,is_active:false,
+    custom_days:JSON.stringify(days)
+  });
+  if(error){toast('Error saving plan: '+error.message);return;}
+  closeModal('plan-builder-modal');
+  toast('Plan "'+name+'" saved!');
+  // Ask if user wants to activate it
+  if(confirm('Activate "'+name+'" as your current plan?')){
+    // Store as custom plan key
+    PROFILE.assigned_workout_plan='custom_'+Date.now();
+    // For now load it into CONTENT
+    if(CONTENT.workouts?.plans){
+      CONTENT.workouts.plans[PROFILE.assigned_workout_plan]={name,description:desc,days,plan_key:PROFILE.assigned_workout_plan};
+    }
+    await sb.from('profiles').update({assigned_workout_plan:PROFILE.assigned_workout_plan}).eq('id',PROFILE.id);
+    renderWorkout();
+  }
+}
+
+// ── goto patch: render history on workout tab open ────────────────
+const _s7_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s7_origGoto)_s7_origGoto(pid);
+  if(pid==='workout')setTimeout(()=>{renderWorkout();},100);
 };
 
 </script>
