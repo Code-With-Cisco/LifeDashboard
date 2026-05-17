@@ -437,7 +437,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       <div id="cal-month"></div><div id="cal-week" style="display:none"></div><div id="cal-day" style="display:none"></div>
     </div>
 
-    <!-- SPICE GUIDE -->
+    <!-- MARINADES -->
     <div class="page" id="page-spice">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <div class="tab-bar" id="spice-tabs" style="flex:1;margin-bottom:0"></div>
@@ -1285,7 +1285,7 @@ const NAV_ITEMS=[
   {id:'workout',icon:'&#x1F4AA;',label:'Workout'},
   {id:'nutrition',icon:'&#x1F957;',label:'Nutrition'},
   {id:'schedule',icon:'&#x1F4C5;',label:'Schedule'},
-  {id:'spice',icon:'&#x1F336;&#xFE0F;',label:'Spice Guide'},
+  {id:'spice',icon:'&#x1F336;&#xFE0F;',label:'Marinades'},
   {id:'reading',icon:'&#x1F4DA;',label:'Reading'},
   {id:'financial',icon:'&#x1F4B0;',label:'Financial'},
   {id:'goals',icon:'&#x1F3AF;',label:'Goals'},
@@ -1293,7 +1293,7 @@ const NAV_ITEMS=[
   {id:'admin',icon:'&#x2699;&#xFE0F;',label:'Admin Panel',adminOnly:true},
 ];
 const PT={home:'HOME',dash:'DASHBOARD',habits:'HABITS',workout:'WORKOUT',nutrition:'NUTRITION',
-  schedule:'SCHEDULE',spice:'SPICE GUIDE',reading:'READING PLAN',financial:'FINANCIAL PLAN',
+  schedule:'SCHEDULE',spice:'MARINADES',reading:'READING PLAN',financial:'FINANCIAL PLAN',
   goals:'GOALS',wit:'IS IT WORTH IT?',admin:'ADMIN CONTROL PANEL'};
 function enterApp(){
   hideAuth();
@@ -1879,7 +1879,7 @@ async function saveEvent(){
   renderCal();
 }
 
-// SPICE GUIDE
+// MARINADES
 function renderSpice(){
   const data=CONTENT.spice?.profiles;if(!data)return;
   const tabsEl=document.getElementById('spice-tabs');const panelsEl=document.getElementById('spice-panels');
@@ -2392,7 +2392,7 @@ renderHabits=async function(){
         ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
       </div>
       ${sec.habits.map((h,hi)=>`
-        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" style="position:relative" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" style="position:relative" onclick="if(!habitEditMode)toggleHabit('${h.id}')">
           <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
           <div class="hl${habitEditMode?' ':''}${habitCache[h.id]?' done':''}">${h.label}</div>
           <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0">${sec.cat}</span>
@@ -2738,7 +2738,7 @@ renderHabits=async function(){
         ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
       </div>
       ${sec.habits.map((h,hi)=>`
-        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" onclick="${habitEditMode?'':'toggleHabit('+JSON.stringify(h.id)+')'}">
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" onclick="if(!${habitEditMode})toggleHabit('${h.id}')">
           <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
           <div class="hl">${h.label}</div>
           <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
@@ -3190,7 +3190,7 @@ async function markTodoDone(id){await sb.from('todo_items').update({status:'Done
 async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
 async function deleteTodo(id){if(!confirm('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
 
-// ── SPICE GUIDE — EDIT MODE ──────────────────────────────────────
+// ── MARINADES — EDIT MODE ──────────────────────────────────────
 let spiceEditMode=false;
 function toggleSpiceEdit(){
   spiceEditMode=!spiceEditMode;
@@ -3251,7 +3251,7 @@ renderSpice=function(){
             <div style="font-size:14px;font-weight:600">${r.name}</div>
             <div style="display:flex;gap:5px;align-items:center">
               <span class="badge b-${bc}">${r.color}</span>
-              ${spiceEditMode&&isCustom?`<button onclick="openSpiceModal('${r.profileId}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x270F;&#xFE0F;</button>`:''}
+              ${spiceEditMode?`<button onclick="openSpiceModal('${r.profileId||r.profile_id}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x270F;&#xFE0F;</button>`:''}
               ${spiceEditMode&&isCustom?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>`:''}
             </div>
           </div>
@@ -3645,7 +3645,7 @@ async function dashMarkDone(id){
   renderDashTodos();
   // Also refresh full todo list if visible
   if(document.getElementById('page-todo')?.classList.contains('active'))renderTodo();
-  toast('Done! &#x1F4AA;');
+  toast('Done! 💪');
 }
 
 // Patch renderDash to also render the todo panel
@@ -3781,12 +3781,13 @@ updateFinancialBoxes=async function(){
 
 // ── UPDATED renderFinancial to include bills ─────────────────────
 renderFinancial=async function(){
-  await renderDebtList();
-  await renderBillsList();
-  await renderSubList();
-  await renderFinCal();
-  await renderRoadmap();
-  await updateFinancialBoxes();
+  const safe=async(fn,name)=>{try{await fn();}catch(e){console.error('[fin] '+name+':',e);}};
+  await safe(renderDebtList,'renderDebtList');
+  await safe(renderBillsList,'renderBillsList');
+  await safe(renderSubList,'renderSubList');
+  await safe(renderFinCal,'renderFinCal');
+  await safe(renderRoadmap,'renderRoadmap');
+  await safe(updateFinancialBoxes,'updateFinancialBoxes');
 };
 
 // ── UPDATED renderFinCal to include bills in calendar ────────────
@@ -3859,30 +3860,30 @@ async function loadMealsFromDB(){
 }
 
 async function loadBooksFromDB(){
-  const{data:bks,error}=await sb.from('books').select('*').eq('is_template',true).order('title');
-  if(error||!bks?.length)return null;
-  const allBooks=bks.map(b=>({id:b.id,title:b.title,author:b.author,pages:b.page_count,genres:b.genres,difficulty:b.difficulty,description:b.description}));
-  return{lists:[{id:'self-improvement-first',name:'Personal Growth & Wisdom',description:'Sequenced reading list',books:allBooks}]};
+  // Stage 6 will migrate reading to DB. For now, use JSON so book_progress
+  // table (existing) continues to work correctly with the reading renderer.
+  return null;
 }
 
 async function loadWorkoutPlansFromDB(){
   const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
   if(error||!plans?.length)return null;
   const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
-  return{
-    plans:plans.map(p=>({
+  // Return as OBJECT keyed by plan_key (matches workouts.json format)
+  const plansObj={};
+  plans.forEach(p=>{
+    plansObj[p.plan_key]={
       id:p.plan_key,plan_key:p.plan_key,name:p.name,description:p.description,
       level:p.level,goal:p.goal,days_per_week:p.days_per_week,
       days:(p.workout_plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(d=>({
         day:d.day_number,day_name:d.day_name,focus:d.focus,
-        muscles:d.muscles||[],color:d.color||'b',
-        has_hiit:d.has_hiit,
-        exercises:typeof d.exercises==='string'?JSON.parse(d.exercises):d.exercises||[],
-        hiit_finisher:typeof d.hiit_finisher==='string'?JSON.parse(d.hiit_finisher):d.hiit_finisher
+        muscles:d.muscles||[],color:d.color||'b',has_hiit:d.has_hiit,
+        exercises:d.exercises||[],
+        hiit_finisher:d.hiit_finisher||null
       }))
-    })),
-    knee_rehab:knee
-  };
+    };
+  });
+  return{plans:plansObj,knee_rehab:knee};
 }
 
 async function loadRecipesFromDB(){
@@ -3923,8 +3924,21 @@ loadAllContent=async function(){
     ]);
     // Schedule/roadmap still comes from JSON file
     const scheduleData=await fetchContent('schedule');
-    if(mealsData&&booksData&&workoutsData&&recipesData){
-      CONTENT={workouts:workoutsData,meals:mealsData,books:booksData,spice:recipesData,schedule:scheduleData};
+    if(mealsData||workoutsData||recipesData){
+      // Load each from DB where available, fall back to JSON per-source
+      const[jsonW,jsonM,jsonB,jsonS]=await Promise.all([
+        workoutsData?null:fetchContent('workouts'),
+        mealsData?null:fetchContent('meals'),
+        fetchContent('books'),   // books always from JSON until Stage 6
+        recipesData?null:fetchContent('spice-guide')
+      ]);
+      CONTENT={
+        workouts:workoutsData||jsonW,
+        meals:mealsData||jsonM,
+        books:jsonB,
+        spice:recipesData||jsonS,
+        schedule:scheduleData
+      };
       dbOk=true;
       console.log('[content] loaded from Supabase DB ✓');
     }
@@ -3947,6 +3961,152 @@ async function isDBContentReady(){
   try{const{count}=await sb.from('meals').select('*',{count:'exact',head:true});return(count||0)>0;}
   catch(e){return false;}
 }
+
+
+// ════════════════════════════════════════════════════════════════
+// COMPREHENSIVE BUG FIXES — Habits, Financial, Spice, Reading
+// ════════════════════════════════════════════════════════════════
+
+// ── DEFINITIVE renderHabits (fixes onclick syntax error) ─────────
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');
+  if(lbl)lbl.textContent=(typeof D7L!=='undefined'?D7L[d.getDay()].toUpperCase():'DAY')+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){
+    const diff=Math.round((new Date(todayStr()+'T12:00:00')-new Date(habitDate+'T12:00:00'))/86400000);
+    rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';
+  }
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>{
+    const rows=sec.habits.map((h,hi)=>{
+      const done=!!habitCache[h.id];
+      // Build onclick safely using single-quoted JS args inside double-quoted HTML attr
+      const toggleClick=habitEditMode?'':"toggleHabit('"+h.id+"')";
+      const editBtns=habitEditMode?
+        `<div style="display:flex;gap:3px;margin-left:5px">
+          <button onclick="event.stopPropagation();editHabit(${si},${hi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+        </div>`:'';
+      return`<div class="hcheck${done?' done':''}" id="hc-${h.id}" onclick="${toggleClick}" style="cursor:${habitEditMode?'default':'pointer'}">
+        <div class="hbox" id="hb-${h.id}">${done?'✓':''}</div>
+        <div class="hl">${h.label}</div>
+        <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
+        ${editBtns}
+      </div>`;
+    }).join('');
+    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add to ${sec.label}</button>`:'';
+    const header=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
+      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+    </div>`;
+    return`<div style="margin-bottom:14px">${header}${rows}${addBtn}</div>`;
+  }).join('')+(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  if(typeof renderCatProg==='function')renderCatProg();
+  if(typeof renderStreakBar==='function')renderStreakBar();
+};
+
+// ── FIX toggleHabit to also update dashboard heatmap cell ────────
+const _fixOrigToggleHabit=typeof toggleHabit==='function'?toggleHabit:null;
+toggleHabit=async function(hid){
+  if(_fixOrigToggleHabit)await _fixOrigToggleHabit(hid);
+  // Update the hcheck div styling directly for instant feedback
+  const hc=document.getElementById('hc-'+hid);
+  const hb=document.getElementById('hb-'+hid);
+  if(hc&&hb){
+    const isDone=!!habitCache[hid];
+    hc.classList.toggle('done',isDone);
+    hb.textContent=isDone?'✓':'';
+  }
+};
+
+// ── FIX openSpiceModal to handle DB recipes (has profile_id not profileId) ──
+const _origOpenSpiceModal=typeof openSpiceModal==='function'?openSpiceModal:null;
+openSpiceModal=function(profileId,editKey){
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  if(editKey){
+    // Try to find the recipe in current content
+    const profiles=CONTENT.spice?.profiles||[];
+    let found=null;
+    for(const p of profiles){
+      found=(p.recipes||[]).find(r=>r.id===editKey);
+      if(found){profileId=p.id;break;}
+    }
+    // Also check localStorage customs
+    if(!found){
+      const customs=JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');
+      found=customs.find(r=>r.id===editKey);
+    }
+    if(found){
+      const sm=document.getElementById('sm-name');if(sm)sm.value=found.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=profileId||found.profileId||found.profile_id||'basics';
+      // Extract dry rub and sauce from rows
+      const rows=found.rows||[];
+      const dry=rows.find(r=>r.label&&r.label.toLowerCase().includes('dry')||r.label&&r.label.toLowerCase().includes('spice'));
+      const sauce=rows.find(r=>r.label&&r.label.toLowerCase().includes('sauce')||r.label&&r.label.toLowerCase().includes('liquid'));
+      const sd=document.getElementById('sm-dryrub');if(sd)sd.value=(dry&&dry.spices)||found.dry_rub||'';
+      const ss=document.getElementById('sm-sauce');if(ss)ss.value=(sauce&&sauce.spices)||found.sauce||'';
+      const sm2=document.getElementById('sm-method');if(sm2)sm2.value=found.method||'';
+      const sc=document.getElementById('sm-color');if(sc)sc.value=found.color||found.color_tag||'green';
+    }
+  }else{
+    const fields=['sm-name','sm-dryrub','sm-sauce','sm-method'];
+    fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    const sp=document.getElementById('sm-profile');if(sp)sp.value=profileId||'basics';
+    const sc=document.getElementById('sm-color');if(sc)sc.value='green';
+  }
+  openModal('spice-modal');
+};
+
+// ── FIX saveSpiceRecipe to handle editing DB recipes (save as custom override) ──
+saveSpiceRecipe=function(){
+  const name=document.getElementById('sm-name')?.value.trim();
+  if(!name){toast('Enter a recipe name');return;}
+  const recipe={
+    id:document.getElementById('spice-edit-key')?.value||'sr_'+Date.now(),
+    name,
+    color:document.getElementById('sm-color')?.value||'green',
+    rows:[],
+    method:document.getElementById('sm-method')?.value.trim()||'',
+    profileId:document.getElementById('sm-profile')?.value||'basics'
+  };
+  const dryrub=document.getElementById('sm-dryrub')?.value.trim();
+  const sauce=document.getElementById('sm-sauce')?.value.trim();
+  if(dryrub)recipe.rows.push({label:'Dry Rub / Spices',spices:dryrub});
+  if(sauce)recipe.rows.push({label:'Sauce / Liquid',spices:sauce});
+  const editKey=document.getElementById('spice-edit-key')?.value;
+  const customs=getCustomSpice();
+  if(editKey){
+    const idx=customs.findIndex(r=>r.id===editKey);
+    if(idx>=0){customs[idx]=recipe;}else{customs.push(recipe);}
+  }else{customs.push(recipe);}
+  saveCustomSpice(customs);
+  closeModal('spice-modal');
+  spiceEditMode=true;
+  if(typeof renderSpice==='function')renderSpice();
+  toast('Recipe saved!');
+};
+
+// ── FIX Financial modals — ensure they open correctly ────────────
+// Re-define to add defensive null checks
+const _fixOpenDebtModal=typeof openDebtModal==='function'?openDebtModal:null;
+openDebtModal=function(editId){
+  const title=document.getElementById('debt-modal-title');
+  if(!title){console.error('debt-modal not found in DOM');toast('Reload page to add debts');return;}
+  if(_fixOpenDebtModal){_fixOpenDebtModal(editId);}
+  else{openModal('debt-modal');}
+};
+const _fixOpenSubModal=typeof openSubModal==='function'?openSubModal:null;
+openSubModal=function(editId){
+  const title=document.getElementById('sub-modal-title');
+  if(!title){console.error('sub-modal not found in DOM');toast('Reload page to add subscriptions');return;}
+  if(_fixOpenSubModal){_fixOpenSubModal(editId);}
+  else{openModal('sub-modal');}
+};
 
 </script>
 </body>
