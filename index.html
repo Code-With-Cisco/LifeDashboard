@@ -204,6 +204,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   .page{padding:14px}.g2,.g4{grid-template-columns:1fr 1fr}
 }
 @media(max-width:480px){.g2,.g4{grid-template-columns:1fr}}
+
+.mm-tag-btn{background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:20px;padding:3px 10px;font-size:10px;cursor:pointer;white-space:nowrap;transition:all .15s;font-weight:500}
+.mm-tag-btn:hover{border-color:var(--red);color:var(--t1)}
+.mm-tag-btn.on{background:var(--red-ll);border-color:var(--red);color:var(--red)}
 </style>
 </head>
 <body>
@@ -642,10 +646,41 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       <button class="tb" onclick="setMealTab('custom',this)">Custom Entry</button>
     </div>
     <div id="mm-preset">
-      <select class="inp sel" id="mm-cat" onchange="updateMealList()" style="margin-bottom:10px">
-        <option value="breakfast_options">Breakfast</option><option value="lunch_options">Lunch</option><option value="snack_options">Snack</option><option value="dinner_options">Dinner</option>
-      </select>
-      <div id="mm-list"></div>
+      <!-- Search bar -->
+      <input class="inp" id="mm-search" type="search" placeholder="&#x1F50D; Search meals..." oninput="mmSearch=this.value;updateMealList()" style="margin-bottom:8px">
+      <!-- Macro filter banner -->
+      <div id="mm-macro-banner" style="display:flex;justify-content:space-between;align-items:center;background:var(--s3);border-radius:var(--r);padding:7px 12px;margin-bottom:8px;font-size:11px;gap:8px">
+        <div style="font-family:DM Mono,monospace;color:var(--t3)">
+          Remaining: <span id="mm-rem-cal" style="color:var(--red)">—</span> cal &nbsp;|&nbsp; <span id="mm-rem-pro" style="color:var(--grn)">—</span>g P
+        </div>
+        <button onclick="toggleMacroFilter()" id="mm-macro-btn" class="btn btn-o btn-xs" style="flex-shrink:0">Filter by macros</button>
+      </div>
+      <!-- Meal type row -->
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+        <select class="inp sel" id="mm-cat" onchange="mmMealType=this.value;updateMealList()" style="flex:1;min-width:110px">
+          <option value="all">All Types</option>
+          <option value="breakfast_options">Breakfast</option>
+          <option value="lunch_options">Lunch</option>
+          <option value="snack_options">Snack</option>
+          <option value="dinner_options">Dinner</option>
+        </select>
+        <span style="font-size:11px;color:var(--t3)" id="mm-count"></span>
+      </div>
+      <!-- Category tag pills -->
+      <div id="mm-tags" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="mm-tag-btn on" onclick="setMmTag('',this)">All</button>
+        <button class="mm-tag-btn" onclick="setMmTag('chicken',this)">&#x1F357; Chicken</button>
+        <button class="mm-tag-btn" onclick="setMmTag('red-meat',this)">&#x1F969; Red Meat</button>
+        <button class="mm-tag-btn" onclick="setMmTag('turkey',this)">&#x1F983; Turkey</button>
+        <button class="mm-tag-btn" onclick="setMmTag('eggs',this)">&#x1F95A; Eggs</button>
+        <button class="mm-tag-btn" onclick="setMmTag('rice-bowl',this)">&#x1F35A; Rice Bowl</button>
+        <button class="mm-tag-btn" onclick="setMmTag('pasta',this)">&#x1F35D; Pasta</button>
+        <button class="mm-tag-btn" onclick="setMmTag('tacos',this)">&#x1F32E; Tacos</button>
+        <button class="mm-tag-btn" onclick="setMmTag('sandwich',this)">&#x1F96A; Sandwich</button>
+        <button class="mm-tag-btn" onclick="setMmTag('shake',this)">&#x1F964; Shake</button>
+        <button class="mm-tag-btn" onclick="setMmTag('high-protein',this)">&#x1F4AA; 40g+ P</button>
+      </div>
+      <div id="mm-list" style="max-height:300px;overflow-y:auto"></div>
     </div>
     <div id="mm-custom" style="display:none">
       <div style="margin-bottom:11px">
@@ -4112,6 +4147,250 @@ openSubModal=function(editId){
   if(!title){console.error('sub-modal not found in DOM');toast('Reload page to add subscriptions');return;}
   if(_fixOpenSubModal){_fixOpenSubModal(editId);}
   else{openModal('sub-modal');}
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 5 — Meal Category Browsing, Search, Macro Filter
+// ════════════════════════════════════════════════════════════════
+
+// ── STATE ────────────────────────────────────────────────────────
+let mmMealType='all';     // 'all','breakfast_options','lunch_options','snack_options','dinner_options'
+let mmTagFilter='';       // '', 'chicken', 'red-meat', etc.
+let mmSearch='';          // text search
+let mmMacroFilter=false;  // toggle macro-fit filtering
+let mmRemaining={cal:9999,pro:9999,car:9999,fat:9999}; // today's remaining macros
+
+// ── GET ALL MEALS (flattened from CONTENT + FALLBACK) ────────────
+function getAllMealsFlat(){
+  const plan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const cats=['breakfast_options','lunch_options','snack_options','dinner_options'];
+  const seen=new Set();const all=[];
+  cats.forEach(cat=>{
+    const type=cat.replace('_options','');
+    const items=(plan&&plan[cat])||FALLBACK_MEALS[cat]||[];
+    items.forEach(m=>{
+      if(seen.has(m.name))return;
+      seen.add(m.name);
+      all.push({...m,_type:type});
+    });
+  });
+  return all;
+}
+
+// ── APPLY FILTERS ─────────────────────────────────────────────────
+function getFilteredMeals(){
+  let meals=getAllMealsFlat();
+  // Meal type filter
+  if(mmMealType!=='all'){
+    const type=mmMealType.replace('_options','');
+    meals=meals.filter(m=>m._type===type||(m.tags||[]).includes(type));
+  }
+  // Category tag filter
+  if(mmTagFilter){
+    meals=meals.filter(m=>(m.tags||[]).includes(mmTagFilter));
+  }
+  // Text search
+  if(mmSearch){
+    const q=mmSearch.toLowerCase().trim();
+    meals=meals.filter(m=>
+      m.name.toLowerCase().includes(q)||
+      (m.instructions||'').toLowerCase().includes(q)||
+      (m.tags||[]).some(t=>t.includes(q))
+    );
+  }
+  // Macro filter — only show meals that fit remaining calories
+  if(mmMacroFilter&&mmRemaining.cal<9000){
+    meals=meals.filter(m=>m.cal<=mmRemaining.cal*1.15); // 15% tolerance
+  }
+  // Sort: if macro filter active, sort by calorie fit then protein; otherwise by protein desc
+  if(mmMacroFilter&&mmRemaining.cal<9000){
+    meals.sort((a,b)=>{
+      const af=a.cal<=mmRemaining.cal,bf=b.cal<=mmRemaining.cal;
+      if(af&&!bf)return -1;if(!af&&bf)return 1;
+      return b.protein-a.protein;
+    });
+  }else{
+    meals.sort((a,b)=>(b.usage_count||0)-(a.usage_count||0)||b.protein-a.protein);
+  }
+  return meals;
+}
+
+// ── SET TAG FILTER ────────────────────────────────────────────────
+function setMmTag(tag,btn){
+  mmTagFilter=tag;
+  document.querySelectorAll('.mm-tag-btn').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  updateMealList();
+}
+
+// ── TOGGLE MACRO FILTER ───────────────────────────────────────────
+function toggleMacroFilter(){
+  mmMacroFilter=!mmMacroFilter;
+  const btn=document.getElementById('mm-macro-btn');
+  if(btn){btn.textContent=mmMacroFilter?'✓ Macro filter ON':'Filter by macros';btn.style.background=mmMacroFilter?'var(--grn-l)':'';btn.style.color=mmMacroFilter?'var(--grn)':'';btn.style.borderColor=mmMacroFilter?'var(--grn)':'';}
+  updateMealList();
+}
+
+// ── UPDATE REMAINING DISPLAY ──────────────────────────────────────
+function updateRemainingDisplay(){
+  const ce=document.getElementById('mm-rem-cal');
+  const pe=document.getElementById('mm-rem-pro');
+  if(ce)ce.textContent=mmRemaining.cal>=9000?'—':Math.round(mmRemaining.cal);
+  if(pe)pe.textContent=mmRemaining.pro>=9000?'—':Math.round(mmRemaining.pro);
+}
+
+// ── FETCH TODAY'S REMAINING MACROS ───────────────────────────────
+async function fetchRemainingMacros(){
+  const plan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const tgt=plan?.targets||{calories:1900,protein_g:185,carbs_g:175,fat_g:55};
+  const{data:logs}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const consumed={cal:0,pro:0,car:0,fat:0};
+  (logs||[]).forEach(l=>{consumed.cal+=l.calories||0;consumed.pro+=l.protein_g||0;consumed.car+=l.carbs_g||0;consumed.fat+=l.fat_g||0;});
+  mmRemaining={
+    cal:Math.max(0,tgt.calories-consumed.cal),
+    pro:Math.max(0,tgt.protein_g-consumed.pro),
+    car:Math.max(0,tgt.carbs_g-consumed.car),
+    fat:Math.max(0,tgt.fat_g-consumed.fat)
+  };
+  updateRemainingDisplay();
+}
+
+// ── DEFINITIVE updateMealList ─────────────────────────────────────
+updateMealList=function(){
+  const meals=getFilteredMeals();
+  const el=document.getElementById('mm-list');if(!el)return;
+  const countEl=document.getElementById('mm-count');
+  if(countEl)countEl.textContent=meals.length+' meal'+(meals.length!==1?'s':'');
+  updateRemainingDisplay();
+  if(!meals.length){
+    el.innerHTML=`<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">
+      <div style="font-size:20px;margin-bottom:8px">&#x1F374;</div>
+      No meals match${mmSearch?' "'+mmSearch+'"':''}${mmTagFilter?' in '+mmTagFilter:''}.
+      ${mmMacroFilter?'<br><span style="font-size:11px">Try turning off the macro filter.</span>':''}
+    </div>`;
+    return;
+  }
+  el.innerHTML=meals.map(m=>{
+    const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+    const fits=!mmMacroFilter||mmRemaining.cal>=9000||m.cal<=mmRemaining.cal;
+    const fitStyle=mmMacroFilter?(fits?'border-color:var(--grn)':'border-color:var(--red);opacity:0.7'):'';
+    const fitBadge=mmMacroFilter?`<span style="font-size:9px;font-family:DM Mono,monospace;color:${fits?'var(--grn)':'var(--red)'};">${fits?'✓ fits':'over'}</span>`:'';
+    const typeBadge=`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${m._type}</span>`;
+    const tagBadges=(m.tags||[]).filter(t=>!['breakfast','lunch','snack','dinner'].includes(t)).slice(0,2).map(t=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${t}</span>`).join('');
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${m.id||''}')" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${mmMacroFilter&&fits?'var(--grn)':mmMacroFilter?'var(--red)':'transparent'}'">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">${m.name}</div>
+        <div class="mono" style="font-size:11px;color:var(--t3);margin-bottom:4px">${m.cal}cal &middot; ${m.protein}g P &middot; ${m.carbs}g C &middot; ${m.fat}g F</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${typeBadge}${tagBadges}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+        ${fitBadge}
+        <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${m.id||''}')">+ Log</button>
+      </div>
+    </div>`;
+  }).join('');
+};
+
+// ── UPDATE quickLogClose to track usage + accept mealId ──────────
+const _s5_origQuickLogClose=quickLogClose;
+quickLogClose=function(name,cal,pro,car,fat,mealId){
+  addMealEntry(name,cal,pro,car,fat);
+  closeModal('meal-modal');
+  toast('Logged: '+name);
+  // Track usage in DB (non-blocking)
+  if(mealId){
+    sb.rpc('increment_meal_usage',{meal_id:mealId}).then(()=>{}).catch(()=>{});
+  }
+  // Refresh remaining macros
+  fetchRemainingMacros();
+};
+
+// Also patch quickLog (used from nutrition reference panel)
+const _s5_origQuickLog=typeof quickLog==='function'?quickLog:null;
+quickLog=function(name,cal,pro,car,fat,mealId){
+  addMealEntry(name,cal,pro,car,fat);
+  toast('Logged: '+name);
+  if(mealId)sb.rpc('increment_meal_usage',{meal_id:mealId}).then(()=>{}).catch(()=>{});
+  fetchRemainingMacros();
+};
+
+// ── UPDATE openMealModal to reset state + fetch remaining ─────────
+const _s5_origOpenMealModal=typeof openMealModal==='function'?openMealModal:null;
+openMealModal=function(){
+  // Reset filter state
+  mmSearch='';mmTagFilter='';mmMacroFilter=false;
+  const si=document.getElementById('mm-search');if(si)si.value='';
+  const ci=document.getElementById('mm-cat');if(ci)ci.value='all';
+  document.querySelectorAll('.mm-tag-btn').forEach(b=>{b.classList.toggle('on',b.textContent.trim()==='All');});
+  const mb=document.getElementById('mm-macro-btn');
+  if(mb){mb.textContent='Filter by macros';mb.style.background='';mb.style.color='';mb.style.borderColor='';}
+  // Open the modal
+  openModal('meal-modal');
+  setMealTab('preset',document.querySelector('#mm-tabs .tb'));
+  // Fetch remaining macros (async, non-blocking)
+  fetchRemainingMacros().then(()=>updateMealList());
+  updateMealList();
+};
+
+// ── RULE-BASED TAG SUGGESTION when adding custom meals to DB ──────
+function suggestMealTags(name, proteinKey, sideKey, mealType){
+  const tags=[mealType||''];
+  const nl=name.toLowerCase();
+  const tagRules=[
+    {tag:'chicken', words:['chicken','chipotle chicken']},
+    {tag:'red-meat', words:['beef','steak','ribeye','carne','sirloin','burger']},
+    {tag:'turkey', words:['turkey']},
+    {tag:'eggs', words:['egg','scramble']},
+    {tag:'rice-bowl', words:['rice','bowl']},
+    {tag:'pasta', words:['pasta','spaghetti','penne','fettuccine','meatball']},
+    {tag:'tacos', words:['taco','fajita','carne asada']},
+    {tag:'sandwich', words:['sandwich','wrap','bagel','bread','toast']},
+    {tag:'shake', words:['shake','whey','protein drink']},
+  ];
+  tagRules.forEach(r=>{if(r.words.some(w=>nl.includes(w)))tags.push(r.tag);});
+  if(proteinKey){const pk=proteinKey.toLowerCase();tagRules.forEach(r=>{if(r.words.some(w=>pk.includes(w))&&!tags.includes(r.tag))tags.push(r.tag);});}
+  if(sideKey&&(sideKey.includes('rice')||sideKey.includes('bowl'))&&!tags.includes('rice-bowl'))tags.push('rice-bowl');
+  if(sideKey&&(sideKey.includes('pasta')||sideKey.includes('penne'))&&!tags.includes('pasta'))tags.push('pasta');
+  return [...new Set(tags.filter(Boolean))];
+}
+
+// ── PATCH submitMeal (Custom Entry) to save to DB + suggest tags ──
+const _s5_origSubmitMeal=typeof submitMeal==='function'?submitMeal:null;
+submitMeal=async function(){
+  if(mealTab==='custom'){
+    const pk=document.getElementById('c-prot-sel')?.value;
+    const sk=document.getElementById('c-side-sel')?.value;
+    const customName=document.getElementById('c-meal-name')?.value.trim();
+    const prow=typeof MACRO_PROT!=='undefined'?MACRO_PROT[pk]||{}:{};
+    const sidew=typeof MACRO_SIDE!=='undefined'?MACRO_SIDE[sk]||{}:{};
+    const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+    const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+    const season=document.getElementById('c-season-sel')?.value||'';
+    const name=customName||([pa&&prow.label?pa+'oz '+prow.label:'',sa&&sidew.label?sa+(sidew.unit==='cup'?'c ':' ')+sidew.label:'',season&&season!=='Default (S+P+Garlic)'?'('+season+')':''].filter(Boolean).join(' + ')||'Custom Meal');
+    const cal=+document.getElementById('c-cal')?.value||0;
+    const pro=+document.getElementById('c-pro')?.value||0;
+    const car=+document.getElementById('c-car')?.value||0;
+    const fat=+document.getElementById('c-fati')?.value||0;
+    if(!cal&&!pro){toast('Select ingredients or enter macros');return;}
+    // Save to meals table in DB with auto-suggested tags
+    const tags=suggestMealTags(name,pk,sk,'');
+    try{
+      const{data:newMeal}=await sb.from('meals').insert({
+        name,meal_type:'custom',calories:cal,protein_g:pro,carbs_g:car,fat_g:fat,
+        instructions:name,tags,is_template:false,created_by:PROFILE.id
+      }).select().single();
+      if(newMeal)toast('Custom meal saved to your library!');
+    }catch(e){}
+    // Log it regardless
+    ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
+    await addMealEntry(name,cal,pro,car,fat);
+    closeModal('meal-modal');
+    toast('Logged: '+name);
+    fetchRemainingMacros();
+    return;
+  }
+  if(_s5_origSubmitMeal)await _s5_origSubmitMeal();
 };
 
 </script>
