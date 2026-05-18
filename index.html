@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -479,7 +479,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       </div>
       <!-- Library search + genre filter (shown only in library view) -->
       <div id="lib-controls" style="display:none;margin-bottom:12px">
-        <input class="inp" id="lib-search" type="search" placeholder="&#x1F50D; Search 36+ books..." oninput="renderLibrary()" style="margin-bottom:8px">
+        <input class="inp" id="lib-search" type="search" placeholder="&#x1F50D; Search 36+ books..." oninput="_debouncedLibSearch()" style="margin-bottom:8px">
         <div style="display:flex;gap:5px;flex-wrap:wrap" id="lib-genre-tags">
           <button class="mm-tag-btn on" onclick="setLibGenre('',this)">All</button>
           <button class="mm-tag-btn" onclick="setLibGenre('self-improvement',this)">&#x1F4AA; Self-Help</button>
@@ -704,7 +704,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
     </div>
     <div id="mm-preset">
       <!-- Search bar -->
-      <input class="inp" id="mm-search" type="search" placeholder="&#x1F50D; Search meals..." oninput="mmSearch=this.value;updateMealList()" style="margin-bottom:8px">
+      <input class="inp" id="mm-search" type="search" placeholder="&#x1F50D; Search meals..." oninput="mealModal.search=this.value;_debouncedMealSearch()" style="margin-bottom:8px">
       <!-- Macro filter banner -->
       <div id="mm-macro-banner" style="display:flex;justify-content:space-between;align-items:center;background:var(--s3);border-radius:var(--r);padding:7px 12px;margin-bottom:8px;font-size:11px;gap:8px">
         <div style="font-family:DM Mono,monospace;color:var(--t3)">
@@ -714,7 +714,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
       </div>
       <!-- Meal type row -->
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
-        <select class="inp sel" id="mm-cat" onchange="mmMealType=this.value;updateMealList()" style="flex:1;min-width:110px">
+        <select class="inp sel" id="mm-cat" onchange="mealModal.type=this.value;updateMealList()" style="flex:1;min-width:110px">
           <option value="all">All Types</option>
           <option value="breakfast_options">Breakfast</option>
           <option value="lunch_options">Lunch</option>
@@ -1058,16 +1058,71 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
 <div id="toast"></div>
 <script>
+'use strict';
 
-const SUPABASE_URL='https://nyjnojknzplfigehzamk.supabase.co';
-const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55am5vamtuenBsZmlnZWh6YW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NTE2MDgsImV4cCI6MjA5NDAyNzYwOH0.uL9Nucz4R0qdkmiggk-r_zEmIEG5L8loQ_osK6AF79c';
-const SIGNUP_CODE='Memento Mori';
+// ── APP CONFIG ───────────────────────────────────────────────────
+// SUPABASE_KEY is the public anon key — safe to ship client-side.
+// Security is enforced by Row Level Security policies on the DB.
+// Do NOT replace this with the service_role key.
+const CONFIG = Object.freeze({
+  supabaseUrl:  'https://nyjnojknzplfigehzamk.supabase.co',
+  supabaseKey:  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55am5vamtuenBsZmlnZWh6YW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NTE2MDgsImV4cCI6MjA5NDAyNzYwOH0.uL9Nucz4R0qdkmiggk-r_zEmIEG5L8loQ_osK6AF79c',
+  signupCode:   'Memento Mori',
+});
+
 const {createClient}=supabase;
-const sb=createClient(SUPABASE_URL,SUPABASE_KEY);
+const sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
+
+// ── SAFETY HELPERS ───────────────────────────────────────────────
+/**
+ * Escape a value for safe embedding inside an HTML attribute (single or double quoted).
+ * Use this whenever user-controlled data appears in onclick="..." or similar.
+ * @param {*} val
+ * @returns {string}
+ */
+function escapeAttr(val){
+  return String(val==null?'':val)
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+/**
+ * Escape a value for safe insertion as text content inside HTML.
+ * @param {*} val
+ * @returns {string}
+ */
+function escapeHtml(val){
+  return String(val==null?'':val)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+/**
+ * Returns a debounced version of fn that delays invocation until after
+ * `wait` ms have elapsed since the last call.
+ * @param {Function} fn
+ * @param {number} wait
+ * @returns {Function}
+ */
+function debounce(fn,wait){
+  let timer;
+  return function(...args){
+    clearTimeout(timer);
+    timer=setTimeout(()=>fn.apply(this,args),wait);
+  };
+}
 let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toLocaleDateString('en-CA',{timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York'}),
     calView='month',calDate=new Date(),bookEditMode=false,logDayIdx=0,mealTab='preset',
     debtEditId=null,subEditId=null,evEditId=null,habitCache={};
 const CACHE_TTL=86400000;
+/** Fetch a JSON content file with 24h localStorage cache. Falls back to cached
+ *  data if the network fetch fails. Returns null if both fail.
+ * @param {string} file - filename without extension, e.g. 'meals'
+ * @returns {Promise<Object|null>} */
 async function fetchContent(file){
   // Bump version to clear any stale null-caches from old failed fetches
   const key='cc_v4_'+file;
@@ -1091,6 +1146,8 @@ async function fetchContent(file){
   console.error('[content] FAILED to load',file,'- check your Data/ folder on GitHub');
   return cached?.data||null;
 }
+/** Populate the global CONTENT object from JSON files. Overridden later by
+ *  the Supabase stage to prefer DB data with JSON fallback. */
 async function loadAllContent(){
   const[w,m,b,s,sc]=await Promise.all([
     fetchContent('workouts'),fetchContent('meals'),fetchContent('books'),
@@ -1111,14 +1168,21 @@ function fmtD(d){return M12[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();}
 function fmtDs(d){return M12[d.getMonth()].slice(0,3)+' '+d.getDate();}
 function yearMonth(){return new Date().toISOString().slice(0,7);}
 let toastTmr;
+/** Show a brief status message at the bottom of the screen.
+ * @param {string} msg
+ * @param {number} [dur=2400] - display duration in ms */
 function toast(msg,dur=2400){
   const el=document.getElementById('toast');
   el.textContent=msg;el.classList.add('show');
   clearTimeout(toastTmr);toastTmr=setTimeout(()=>el.classList.remove('show'),dur);
 }
+/** @param {string} id - element id of the .modal-bg to open */
 function openModal(id){document.getElementById(id)?.classList.add('open');}
+/** @param {string} id - element id of the .modal-bg to close */
 function closeModal(id){document.getElementById(id)?.classList.remove('open');}
 document.addEventListener('click',e=>{if(e.target.classList.contains('modal-bg'))e.target.classList.remove('open');});
+/** Show an inline error message for 5 s then hide it.
+ * @param {string} id - element id  @param {string} msg */
 function showErr(id,msg){
   const el=document.getElementById(id);if(!el)return;
   el.textContent=msg;el.style.display='block';
@@ -1143,7 +1207,7 @@ async function doLogin(){
 }
 function checkCode(){
   const val=document.getElementById('s-code-inp').value.trim();
-  if(val.toLowerCase()===SIGNUP_CODE.toLowerCase()){show('s-signup');}
+  if(val.toLowerCase()===CONFIG.signupCode.toLowerCase()){show('s-signup');}
   else{showErr('code-err','Invalid invite code.');document.getElementById('s-code-inp').value='';}
 }
 async function doSignup(){
@@ -1440,9 +1504,9 @@ function buildNav(){
   const navEl=document.getElementById('nav-items');
   const bnavEl=document.getElementById('bnav-items');
   navEl.innerHTML=NAV_ITEMS.filter(n=>!n.adminOnly||isAdmin)
-    .map(n=>`<div class="nav-item" data-page="${n.id}" onclick="goto('${n.id}')"><span class="ni">${n.icon}</span><span>${n.label}</span></div>`).join('');
+    .map(n=>`<div class="nav-item" role="button" tabindex="0" aria-label="${escapeAttr(n.label)}" data-page="${escapeAttr(n.id)}" onclick="goto('${escapeAttr(n.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goto('${escapeAttr(n.id)}')}"><span class="ni" aria-hidden="true">${n.icon}</span><span>${escapeHtml(n.label)}</span></div>`).join('');
   bnavEl.innerHTML=NAV_ITEMS.filter(n=>!n.adminOnly)
-    .map(n=>`<div class="bnav-item" id="bn-${n.id}" onclick="goto('${n.id}')"><span class="bi">${n.icon}</span><span>${n.label}</span></div>`).join('');
+    .map(n=>`<div class="bnav-item" role="button" tabindex="0" aria-label="${escapeAttr(n.label)}" id="bn-${escapeAttr(n.id)}" onclick="goto('${escapeAttr(n.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goto('${escapeAttr(n.id)}')}"><span class="bi" aria-hidden="true">${n.icon}</span><span>${escapeHtml(n.label)}</span></div>`).join('');
 }
 function goto(pid){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
@@ -1554,7 +1618,10 @@ async function renderDash(){
   const mgEl=document.getElementById('milestone-grid');
   if(mgEl)mgEl.innerHTML=MILES.map(m=>`<div class="card card-${m.col}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><div style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:1px">${m.name}</div><div class="mono" style="font-size:13px">${m.tgt}</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px">${m.desc}</div><select class="inp sel" style="font-size:11px;padding:4px 22px 4px 8px" onchange="saveMilestone('${m.name}',this.value)"><option${msMap[m.name]==='Not Started'?' selected':''}>Not Started</option><option${msMap[m.name]==='In Progress'?' selected':''}>In Progress</option><option${msMap[m.name]==='Complete'?' selected':''}>Complete</option></select></div>`).join('');
 }
-async function saveMilestone(name,val){await sb.from('milestone_status').upsert({user_id:PROFILE.id,milestone_name:name,status:val});}
+async function saveMilestone(name,val){
+  const{error}=await sb.from('milestone_status').upsert({user_id:PROFILE.id,milestone_name:name,status:val});
+  if(error){toast('Error saving milestone: '+error.message);console.error('[milestone] upsert failed:',error);}
+}
 
 // HABITS
 const HABIT_SECS=[
@@ -1564,11 +1631,15 @@ const HABIT_SECS=[
   {cat:'mindset',label:'Mindset',col:'b',habits:[{id:'read',label:'Read 30 min (physical book)'},{id:'prep',label:'Prepped for tomorrow'},{id:'screens',label:'Screens off by 10 PM'},{id:'sleep',label:'In bed by 11:30 PM'}]},
 ];
 const ALL_H_IDS=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
+/** Toggle a habit checkbox for the current habitDate. Optimistically updates
+ *  the UI then writes to Supabase; shows a toast if the write fails.
+ * @param {string} id - habit_id (e.g. 'wake', 'workout') */
 async function toggleHabit(id){
   const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
   const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
   if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
-  await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal},{onConflict:'user_id,log_date,habit_id'});
+  const{error:habitErr}=await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal},{onConflict:'user_id,log_date,habit_id'});
+  if(habitErr){console.error('[habit] upsert failed:',habitErr.message);toast('Error saving habit — check connection');}
   renderCatProg();renderStreakBar();
 }
 async function chDay(d){
@@ -1718,7 +1789,8 @@ async function openLogModal(i){
 }
 async function saveLog(){
   const t=document.getElementById('log-text').value.trim();
-  await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes:t});
+  const{error}=await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes:t});
+  if(error){toast('Error saving log: '+error.message);console.error('[workout] log upsert failed:',error);return;}
   closeModal('log-modal');toast('Session logged!');
 }
 
@@ -2146,10 +2218,17 @@ async function editDebt(id){
 async function saveDebt(){
   const name=document.getElementById('d-name').value.trim();if(!name){toast('Enter a name');return;}
   const debt={user_id:PROFILE.id,debt_name:name,balance:+document.getElementById('d-bal').value||0,monthly_payment:+document.getElementById('d-pay').value||0,interest_rate:+document.getElementById('d-rate').value||0,due_day:+document.getElementById('d-due').value||1};
-  if(debtEditId){await sb.from('debt_tracker').update(debt).eq('id',debtEditId);}else{await sb.from('debt_tracker').insert(debt);}
+  const q=debtEditId?sb.from('debt_tracker').update(debt).eq('id',debtEditId):sb.from('debt_tracker').insert(debt);
+  const{error}=await q;
+  if(error){toast('Error saving debt: '+error.message);console.error('[debt] save failed:',error);return;}
   closeModal('debt-modal');renderDebtList();renderFinCal();toast('Debt saved');
 }
-async function removeDebt(id){if(!confirm('Remove this debt?'))return;await sb.from('debt_tracker').delete().eq('id',id);renderDebtList();renderFinCal();toast('Removed');}
+async function removeDebt(id){
+  if(!confirm('Remove this debt?'))return;
+  const{error}=await sb.from('debt_tracker').delete().eq('id',id);
+  if(error){toast('Error removing debt: '+error.message);console.error('[debt] remove failed:',error);return;}
+  renderDebtList();renderFinCal();toast('Removed');
+}
 async function renderSubList(){
   const{data:subs}=await sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id);
   const el=document.getElementById('sub-list');if(!el)return;
@@ -2161,10 +2240,17 @@ async function editSub(id){const{data:s}=await sb.from('subscription_tracker').s
 async function saveSub(){
   const name=document.getElementById('s-name').value.trim();if(!name){toast('Enter a name');return;}
   const sub={user_id:PROFILE.id,sub_name:name,monthly_cost:+document.getElementById('s-cost').value||0,renewal_day:+document.getElementById('s-due').value||1,action:document.getElementById('s-action').value};
-  if(subEditId){await sb.from('subscription_tracker').update(sub).eq('id',subEditId);}else{await sb.from('subscription_tracker').insert(sub);}
+  const q=subEditId?sb.from('subscription_tracker').update(sub).eq('id',subEditId):sb.from('subscription_tracker').insert(sub);
+  const{error}=await q;
+  if(error){toast('Error saving subscription: '+error.message);console.error('[sub] save failed:',error);return;}
   closeModal('sub-modal');renderSubList();renderFinCal();toast('Saved: '+name);
 }
-async function removeSub(id){if(!confirm('Remove subscription?'))return;await sb.from('subscription_tracker').delete().eq('id',id);renderSubList();renderFinCal();toast('Removed');}
+async function removeSub(id){
+  if(!confirm('Remove subscription?'))return;
+  const{error}=await sb.from('subscription_tracker').delete().eq('id',id);
+  if(error){toast('Error removing subscription: '+error.message);console.error('[sub] remove failed:',error);return;}
+  renderSubList();renderFinCal();toast('Removed');
+}
 async function renderFinCal(){
   const el=document.getElementById('fin-cal');if(!el)return;
   const now=new Date();const y=now.getFullYear();const m=now.getMonth();
@@ -3859,7 +3945,8 @@ async function saveBill(){
 
 async function removeBill(id){
   if(!confirm('Remove this bill?'))return;
-  await sb.from('bills_tracker').delete().eq('id',id);
+  const{error}=await sb.from('bills_tracker').delete().eq('id',id);
+  if(error){toast('Error removing bill: '+error.message);console.error('[bill] remove failed:',error);return;}
   await renderBillsList();
   await updateFinancialBoxes();
   toast('Bill removed');
@@ -3867,11 +3954,14 @@ async function removeBill(id){
 
 // ── UPDATED updateFinancialBoxes (5-box: includes bills) ─────────
 updateFinancialBoxes=async function(){
-  const[{data:debts},{data:subs},{data:bills}]=await Promise.all([
+  const results=await Promise.allSettled([
     sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id),
     sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id),
     sb.from('bills_tracker').select('amount,due_day').eq('user_id',PROFILE.id),
   ]);
+  const debts=results[0].status==='fulfilled'?results[0].value.data||[]:[];
+  const subs=results[1].status==='fulfilled'?results[1].value.data||[]:[];
+  const bills=results[2].status==='fulfilled'?results[2].value.data||[]:[]; results.forEach((r,i)=>{if(r.status==='rejected')console.error('[fin] financial query '+(i+1)+' failed:',r.reason);});
   const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
   const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
@@ -4108,26 +4198,28 @@ renderHabits=async function(){
   const secs=getUserHabitSecs();
   const listEl=document.getElementById('h-habits-list');if(!listEl)return;
   listEl.innerHTML=secs.map((sec,si)=>{
+    const sCat=escapeAttr(sec.cat);
+    const sLabel=escapeHtml(sec.label);
     const rows=sec.habits.map((h,hi)=>{
       const done=!!habitCache[h.id];
-      // Build onclick safely using single-quoted JS args inside double-quoted HTML attr
-      const toggleClick=habitEditMode?'':"toggleHabit('"+h.id+"')";
+      const hId=escapeAttr(h.id);
+      const toggleClick=habitEditMode?'':`toggleHabit('${hId}')`;
       const editBtns=habitEditMode?
         `<div style="display:flex;gap:3px;margin-left:5px">
-          <button onclick="event.stopPropagation();editHabit(${si},${hi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
-          <button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+          <button onclick="event.stopPropagation();editHabit(${si},${hi})" aria-label="Edit habit" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="event.stopPropagation();removeHabit(${si},${hi})" aria-label="Remove habit" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
         </div>`:'';
-      return`<div class="hcheck${done?' done':''}" id="hc-${h.id}" onclick="${toggleClick}" style="cursor:${habitEditMode?'default':'pointer'}">
-        <div class="hbox" id="hb-${h.id}">${done?'✓':''}</div>
-        <div class="hl">${h.label}</div>
-        <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
+      return`<div class="hcheck${done?' done':''}" id="hc-${hId}" role="checkbox" aria-checked="${done}" tabindex="0" onclick="${toggleClick}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${toggleClick}}" style="cursor:${habitEditMode?'default':'pointer'}">
+        <div class="hbox" id="hb-${hId}">${done?'✓':''}</div>
+        <div class="hl">${escapeHtml(h.label)}</div>
+        <span class="badge b-${escapeAttr(sec.col)}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sCat}</span>
         ${editBtns}
       </div>`;
     }).join('');
-    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add to ${sec.label}</button>`:'';
+    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sCat}')">+ Add to ${sLabel}</button>`:'';
     const header=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
-      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+      <div class="sh" style="margin-bottom:0;flex:1">${sLabel}</div>
+      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sCat}')">+ Add</button>`:''}
     </div>`;
     return`<div style="margin-bottom:14px">${header}${rows}${addBtn}</div>`;
   }).join('')+(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
@@ -4239,12 +4331,15 @@ openSubModal=function(editId){
 // STAGE 5 — Meal Category Browsing, Search, Macro Filter
 // ════════════════════════════════════════════════════════════════
 
-// ── STATE ────────────────────────────────────────────────────────
-let mmMealType='all';     // 'all','breakfast_options','lunch_options','snack_options','dinner_options'
-let mmTagFilter='';       // '', 'chicken', 'red-meat', etc.
-let mmSearch='';          // text search
-let mmMacroFilter=false;  // toggle macro-fit filtering
-let mmRemaining={cal:9999,pro:9999,car:9999,fat:9999}; // today's remaining macros
+// ── MEAL MODAL STATE ─────────────────────────────────────────────
+// Bundled into one object so mutations are explicit and easy to reset.
+const mealModal={
+  type:'all',          // 'all' | 'breakfast_options' | 'lunch_options' | 'snack_options' | 'dinner_options'
+  tagFilter:'',        // '' | 'chicken' | 'red-meat' | …
+  search:'',           // free-text search string
+  macroFilter:false,   // toggle macro-fit filtering
+  remaining:{cal:9999,pro:9999,car:9999,fat:9999}, // today's remaining macros
+};
 
 // ── GET ALL MEALS (flattened from CONTENT + FALLBACK) ────────────
 function getAllMealsFlat(){
@@ -4267,17 +4362,17 @@ function getAllMealsFlat(){
 function getFilteredMeals(){
   let meals=getAllMealsFlat();
   // Meal type filter
-  if(mmMealType!=='all'){
-    const type=mmMealType.replace('_options','');
+  if(mealModal.type!=='all'){
+    const type=mealModal.type.replace('_options','');
     meals=meals.filter(m=>m._type===type||(m.tags||[]).includes(type));
   }
   // Category tag filter
-  if(mmTagFilter){
-    meals=meals.filter(m=>(m.tags||[]).includes(mmTagFilter));
+  if(mealModal.tagFilter){
+    meals=meals.filter(m=>(m.tags||[]).includes(mealModal.tagFilter));
   }
   // Text search
-  if(mmSearch){
-    const q=mmSearch.toLowerCase().trim();
+  if(mealModal.search){
+    const q=mealModal.search.toLowerCase().trim();
     meals=meals.filter(m=>
       m.name.toLowerCase().includes(q)||
       (m.instructions||'').toLowerCase().includes(q)||
@@ -4285,13 +4380,13 @@ function getFilteredMeals(){
     );
   }
   // Macro filter — only show meals that fit remaining calories
-  if(mmMacroFilter&&mmRemaining.cal<9000){
-    meals=meals.filter(m=>m.cal<=mmRemaining.cal*1.15); // 15% tolerance
+  if(mealModal.macroFilter&&mealModal.remaining.cal<9000){
+    meals=meals.filter(m=>m.cal<=mealModal.remaining.cal*1.15); // 15% tolerance
   }
   // Sort: if macro filter active, sort by calorie fit then protein; otherwise by protein desc
-  if(mmMacroFilter&&mmRemaining.cal<9000){
+  if(mealModal.macroFilter&&mealModal.remaining.cal<9000){
     meals.sort((a,b)=>{
-      const af=a.cal<=mmRemaining.cal,bf=b.cal<=mmRemaining.cal;
+      const af=a.cal<=mealModal.remaining.cal,bf=b.cal<=mealModal.remaining.cal;
       if(af&&!bf)return -1;if(!af&&bf)return 1;
       return b.protein-a.protein;
     });
@@ -4303,7 +4398,7 @@ function getFilteredMeals(){
 
 // ── SET TAG FILTER ────────────────────────────────────────────────
 function setMmTag(tag,btn){
-  mmTagFilter=tag;
+  mealModal.tagFilter=tag;
   document.querySelectorAll('.mm-tag-btn').forEach(b=>b.classList.remove('on'));
   if(btn)btn.classList.add('on');
   updateMealList();
@@ -4311,9 +4406,9 @@ function setMmTag(tag,btn){
 
 // ── TOGGLE MACRO FILTER ───────────────────────────────────────────
 function toggleMacroFilter(){
-  mmMacroFilter=!mmMacroFilter;
+  mealModal.macroFilter=!mealModal.macroFilter;
   const btn=document.getElementById('mm-macro-btn');
-  if(btn){btn.textContent=mmMacroFilter?'✓ Macro filter ON':'Filter by macros';btn.style.background=mmMacroFilter?'var(--grn-l)':'';btn.style.color=mmMacroFilter?'var(--grn)':'';btn.style.borderColor=mmMacroFilter?'var(--grn)':'';}
+  if(btn){btn.textContent=mealModal.macroFilter?'✓ Macro filter ON':'Filter by macros';btn.style.background=mealModal.macroFilter?'var(--grn-l)':'';btn.style.color=mealModal.macroFilter?'var(--grn)':'';btn.style.borderColor=mealModal.macroFilter?'var(--grn)':'';}
   updateMealList();
 }
 
@@ -4321,8 +4416,8 @@ function toggleMacroFilter(){
 function updateRemainingDisplay(){
   const ce=document.getElementById('mm-rem-cal');
   const pe=document.getElementById('mm-rem-pro');
-  if(ce)ce.textContent=mmRemaining.cal>=9000?'—':Math.round(mmRemaining.cal);
-  if(pe)pe.textContent=mmRemaining.pro>=9000?'—':Math.round(mmRemaining.pro);
+  if(ce)ce.textContent=mealModal.remaining.cal>=9000?'—':Math.round(mealModal.remaining.cal);
+  if(pe)pe.textContent=mealModal.remaining.pro>=9000?'—':Math.round(mealModal.remaining.pro);
 }
 
 // ── FETCH TODAY'S REMAINING MACROS ───────────────────────────────
@@ -4332,7 +4427,7 @@ async function fetchRemainingMacros(){
   const{data:logs}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
   const consumed={cal:0,pro:0,car:0,fat:0};
   (logs||[]).forEach(l=>{consumed.cal+=l.calories||0;consumed.pro+=l.protein_g||0;consumed.car+=l.carbs_g||0;consumed.fat+=l.fat_g||0;});
-  mmRemaining={
+  mealModal.remaining={
     cal:Math.max(0,tgt.calories-consumed.cal),
     pro:Math.max(0,tgt.protein_g-consumed.pro),
     car:Math.max(0,tgt.carbs_g-consumed.car),
@@ -4341,41 +4436,59 @@ async function fetchRemainingMacros(){
   updateRemainingDisplay();
 }
 
+// ── BUILD SINGLE MEAL ITEM HTML (pure template, no side-effects) ──
+/** @param {Object} m - meal object  @param {boolean} fits - passes macro filter */
+function buildMealItemHtml(m, fits){
+  const sn=escapeAttr(m.name);
+  const mId=escapeAttr(m.id||'');
+  const fitStyle=mealModal.macroFilter?(fits?'border-color:var(--grn)':'border-color:var(--red);opacity:0.7'):'';
+  const fitBadge=mealModal.macroFilter?`<span style="font-size:9px;font-family:DM Mono,monospace;color:${fits?'var(--grn)':'var(--red)'};">${fits?'✓ fits':'over'}</span>`:'';
+  const typeBadge=`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(m._type)}</span>`;
+  const tagBadges=(m.tags||[]).filter(t=>!['breakfast','lunch','snack','dinner'].includes(t)).slice(0,2).map(t=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(t)}</span>`).join('');
+  const borderOut=mealModal.macroFilter&&fits?'var(--grn)':mealModal.macroFilter?'var(--red)':'transparent';
+  return`<div role="button" tabindex="0" aria-label="Log ${sn}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')}" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${borderOut}'">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(m.name)}</div>
+      <div class="mono" style="font-size:11px;color:var(--t3);margin-bottom:4px">${m.cal}cal &middot; ${m.protein}g P &middot; ${m.carbs}g C &middot; ${m.fat}g F</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${typeBadge}${tagBadges}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+      ${fitBadge}
+      <button class="btn btn-g btn-xs" aria-label="Log ${sn}" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')">+ Log</button>
+    </div>
+  </div>`;
+}
+
 // ── DEFINITIVE updateMealList ─────────────────────────────────────
+const MEAL_PAGE_SIZE=50; // cap visible items; prevents DOM thrash on large libraries
 updateMealList=function(){
-  const meals=getFilteredMeals();
+  const allMeals=getFilteredMeals();
   const el=document.getElementById('mm-list');if(!el)return;
   const countEl=document.getElementById('mm-count');
-  if(countEl)countEl.textContent=meals.length+' meal'+(meals.length!==1?'s':'');
+  if(countEl)countEl.textContent=allMeals.length+' meal'+(allMeals.length!==1?'s':'');
   updateRemainingDisplay();
-  if(!meals.length){
+  if(!allMeals.length){
     el.innerHTML=`<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">
       <div style="font-size:20px;margin-bottom:8px">&#x1F374;</div>
-      No meals match${mmSearch?' "'+mmSearch+'"':''}${mmTagFilter?' in '+mmTagFilter:''}.
-      ${mmMacroFilter?'<br><span style="font-size:11px">Try turning off the macro filter.</span>':''}
+      No meals match${mealModal.search?' "'+escapeHtml(mealModal.search)+'"':''}${mealModal.tagFilter?' in '+escapeHtml(mealModal.tagFilter):''}.
+      ${mealModal.macroFilter?'<br><span style="font-size:11px">Try turning off the macro filter.</span>':''}
     </div>`;
     return;
   }
-  el.innerHTML=meals.map(m=>{
-    const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
-    const fits=!mmMacroFilter||mmRemaining.cal>=9000||m.cal<=mmRemaining.cal;
-    const fitStyle=mmMacroFilter?(fits?'border-color:var(--grn)':'border-color:var(--red);opacity:0.7'):'';
-    const fitBadge=mmMacroFilter?`<span style="font-size:9px;font-family:DM Mono,monospace;color:${fits?'var(--grn)':'var(--red)'};">${fits?'✓ fits':'over'}</span>`:'';
-    const typeBadge=`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${m._type}</span>`;
-    const tagBadges=(m.tags||[]).filter(t=>!['breakfast','lunch','snack','dinner'].includes(t)).slice(0,2).map(t=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${t}</span>`).join('');
-    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${m.id||''}')" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${mmMacroFilter&&fits?'var(--grn)':mmMacroFilter?'var(--red)':'transparent'}'">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">${m.name}</div>
-        <div class="mono" style="font-size:11px;color:var(--t3);margin-bottom:4px">${m.cal}cal &middot; ${m.protein}g P &middot; ${m.carbs}g C &middot; ${m.fat}g F</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">${typeBadge}${tagBadges}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-        ${fitBadge}
-        <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${m.id||''}')">+ Log</button>
-      </div>
-    </div>`;
+  const meals=allMeals.slice(0,MEAL_PAGE_SIZE);
+  const html=meals.map(m=>{
+    const fits=!mealModal.macroFilter||mealModal.remaining.cal>=9000||m.cal<=mealModal.remaining.cal;
+    return buildMealItemHtml(m,fits);
   }).join('');
+  const overflow=allMeals.length>MEAL_PAGE_SIZE?`<div style="text-align:center;padding:8px;font-size:11px;color:var(--t3)">${allMeals.length-MEAL_PAGE_SIZE} more — refine your search to narrow results.</div>`:'';
+  el.innerHTML=html+overflow;
 };
+// ── DEBOUNCED SEARCH HANDLERS ─────────────────────────────────────
+// Wrapping with debounce prevents a full DOM rebuild on every keystroke.
+// Arrow functions resolve updateMealList/renderLibrary at call-time so
+// late reassignments of those functions are picked up automatically.
+const _debouncedMealSearch=debounce(()=>updateMealList(),250);
+const _debouncedLibSearch=debounce(()=>renderLibrary(),300);
 
 // ── UPDATE quickLogClose to track usage + accept mealId ──────────
 const _s5_origQuickLogClose=quickLogClose;
@@ -4404,7 +4517,7 @@ quickLog=function(name,cal,pro,car,fat,mealId){
 const _s5_origOpenMealModal=typeof openMealModal==='function'?openMealModal:null;
 openMealModal=function(){
   // Reset filter state
-  mmSearch='';mmTagFilter='';mmMacroFilter=false;
+  mealModal.search='';mealModal.tagFilter='';mealModal.macroFilter=false;
   const si=document.getElementById('mm-search');if(si)si.value='';
   const ci=document.getElementById('mm-cat');if(ci)ci.value='all';
   document.querySelectorAll('.mm-tag-btn').forEach(b=>{b.classList.toggle('on',b.textContent.trim()==='All');});
@@ -4461,12 +4574,13 @@ submitMeal=async function(){
     // Save to meals table in DB with auto-suggested tags
     const tags=suggestMealTags(name,pk,sk,'');
     try{
-      const{data:newMeal}=await sb.from('meals').insert({
+      const{data:newMeal,error:mealErr}=await sb.from('meals').insert({
         name,meal_type:'custom',calories:cal,protein_g:pro,carbs_g:car,fat_g:fat,
         instructions:name,tags,is_template:false,created_by:PROFILE.id
       }).select().single();
-      if(newMeal)toast('Custom meal saved to your library!');
-    }catch(e){}
+      if(mealErr){console.error('[meal] insert failed:',mealErr.message);}
+      else if(newMeal){toast('Custom meal saved to your library!');}
+    }catch(e){console.error('[meal] unexpected error saving custom meal:',e.message);}
     // Log it regardless
     ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
     await addMealEntry(name,cal,pro,car,fat);
@@ -4483,10 +4597,13 @@ submitMeal=async function(){
 // STAGE 6 — Books & Reading: DB-driven shelf + library browser
 // ════════════════════════════════════════════════════════════════
 
-let bookView='shelf'; // 'shelf' or 'library'
-let libGenreFilter='';
-let _curBookId=null; // UUID of currently reading book
-let _curBookPages=0; // total pages of current book
+// Book page state — grouped to make resets and mutations explicit.
+const bookState={
+  view:'shelf',        // 'shelf' | 'library'
+  genreFilter:'',      // active genre filter in library view
+  curBookId:null,      // UUID of currently-reading book
+  curBookPages:0,      // total page count of current book
+};
 
 // ── LOAD BOOKS FROM DB (proper format for renderBooks) ───────────
 loadBooksFromDB=async function(){
@@ -4521,7 +4638,7 @@ loadBooksFromDB=async function(){
 
 // ── SET BOOK VIEW (shelf vs library) ─────────────────────────────
 function setBookView(view,btn){
-  bookView=view;
+  bookState.view=view;
   document.querySelectorAll('#books-view-tabs .tb').forEach(b=>b.classList.remove('on'));
   if(btn)btn.classList.add('on');
   const libCtrl=document.getElementById('lib-controls');
@@ -4553,7 +4670,7 @@ function setBookView(view,btn){
 
 // ── SET LIBRARY GENRE FILTER ─────────────────────────────────────
 function setLibGenre(genre,btn){
-  libGenreFilter=genre;
+  bookState.genreFilter=genre;
   document.querySelectorAll('#lib-genre-tags .mm-tag-btn').forEach(b=>b.classList.remove('on'));
   if(btn)btn.classList.add('on');
   renderLibrary();
@@ -4571,7 +4688,7 @@ async function renderLibrary(){
   const onShelf=new Set((userList||[]).map(u=>u.book_id));
   // Apply filters
   let filtered=(allBooks||[]);
-  if(libGenreFilter)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(libGenreFilter)));
+  if(bookState.genreFilter)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(bookState.genreFilter)));
   if(search)filtered=filtered.filter(b=>b.title.toLowerCase().includes(search)||b.author.toLowerCase().includes(search)||(b.description||'').toLowerCase().includes(search));
   if(!filtered.length){el.innerHTML='<div style="color:var(--t3);text-align:center;padding:30px">No books match your filters.</div>';return;}
   const DIFF_COL={light:'grn',medium:'amb',dense:'red'};
@@ -4607,114 +4724,136 @@ async function addToShelf(bookId,title){
   renderLibrary(); // refresh "On Shelf" buttons
 }
 
-// ── UPDATED renderBooks (uses user_reading_list via CONTENT) ──────
-renderBooks=async function(){
-  // Refresh from DB
+// ── FETCH + SORT BOOKS (data only, no DOM) ────────────────────────
+/** Loads books from DB, merges into CONTENT, applies localStorage sort order.
+ * @returns {Array} sorted book array, or empty array on failure */
+async function fetchAndSortBooks(){
   const fresh=await loadBooksFromDB();
   if(fresh)CONTENT.books=fresh;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];
-  if(!listData){
-    document.getElementById('book-list').innerHTML='<div style="color:var(--t3);padding:20px;text-align:center">No books on your shelf yet. Browse the Library tab to add some.</div>';
-    return;
-  }
+  if(!listData)return[];
   const storedOrder=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
   let bks=listData.books||[];
   if(storedOrder?.length){
     const orderMap=Object.fromEntries(storedOrder.map((b,i)=>[b.id,i]));
     bks=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
   }
-  // Update CONTENT with sorted order
   if(CONTENT.books?.lists?.[listId])CONTENT.books.lists[listId].books=bks;
-  // Update currently reading card
-  const reading=bks.find(b=>b.status==='Reading')||bks[0];
-  if(reading){
-    _curBookId=reading.id;_curBookPages=reading.pages||0;
-    const pct=reading.pages>0?Math.round((reading.current_page||0)/reading.pages*100):0;
-    const ct=document.getElementById('cur-book-title');if(ct)ct.textContent=reading.title;
-    const ca=document.getElementById('cur-book-author');if(ca)ca.textContent=reading.author+' \u00b7 ~'+reading.pages+' pages';
-    const cl=document.getElementById('cur-book-label');if(cl)cl.textContent='CURRENTLY READING — POSITION '+reading._position;
-    const cd=document.getElementById('cur-book-desc');if(cd)cd.textContent=reading.description||'';
-    const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
-    const pi=document.getElementById('cur-page-input');if(pi)pi.value=reading.current_page||'';
-    const pl=document.getElementById('cur-page-label');if(pl)pl.textContent='of '+reading.pages+' pages';
-  }
-  // Render book list
-  const el=document.getElementById('book-list');if(!el)return;
+  return bks;
+}
+
+// ── UPDATE CURRENTLY-READING CARD (DOM only, no fetch) ───────────
+/** Populates the currently-reading hero card from a book object. */
+function renderCurrentlyReadingCard(reading){
+  if(!reading)return;
+  bookState.curBookId=reading.id;
+  bookState.curBookPages=reading.pages||0;
+  const pct=reading.pages>0?Math.round((reading.current_page||0)/reading.pages*100):0;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('cur-book-title',reading.title);
+  set('cur-book-author',reading.author+' · ~'+reading.pages+' pages');
+  set('cur-book-label','CURRENTLY READING — POSITION '+reading._position);
+  set('cur-book-desc',reading.description||'');
+  set('read-pct',pct+'%');
+  const pi=document.getElementById('cur-page-input');if(pi)pi.value=reading.current_page||'';
+  const pl=document.getElementById('cur-page-label');if(pl)pl.textContent='of '+reading.pages+' pages';
+}
+
+// ── BUILD SINGLE BOOK CARD HTML (pure template, no side-effects) ──
+/** @param {Object} bk  @param {number} idx - display index */
+function buildBookCardHtml(bk,idx){
   const GCOLS2={fiction:'p',fantasy:'p','sci-fi':'blu','self-improvement':'grn',business:'amb',philosophy:'amb',stoicism:'amb',psychology:'blu',biography:'d',general:'d',health:'grn',productivity:'grn',memoir:'d'};
   const statuses=['To Be Read','Reading','Read','Dropped'];
-  el.innerHTML=bks.map((bk,idx)=>{
-    const gcol=GCOLS2[bk.genre]||'d';
-    const stars=Array.from({length:5},(_,si)=>`<span class="star${si<bk.rating?' on':''}" onclick="setRating('${bk.id}',${si+1})" style="cursor:pointer">\u2605</span>`).join('');
-    const statSel=`<select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:118px" onchange="setBookStatus('${bk.id}',this.value)">${statuses.map(s=>`<option${bk.status===s?' selected':''}>${s}</option>`).join('')}</select>`;
-    const fmtBtns=['Physical','Audiobook','Ebook'].map(f=>`<button class="btn btn-xs" style="background:${bk.format===f?'var(--blu-l)':'var(--s3)'};color:${bk.format===f?'var(--blu)':'var(--t3)'};border:1px solid ${bk.format===f?'rgba(77,159,236,.3)':'var(--b2)'}" onclick="toggleFormat('${bk.id}','${f}')">${f}</button>`).join('');
-    const pageRow=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
-      <input type="number" value="${bk.current_page||0}" min="0" max="${bk.pages||9999}" class="inp" style="width:70px;text-align:center;font-size:12px;padding:4px" onchange="savePageProgress('${bk.id}',${bk.pages||0},this.value)" placeholder="page">
-      <span style="font-size:11px;color:var(--t3)">of ${bk.pages} pages</span>
-      ${bk.pages>0?`<div class="pb" style="flex:1;height:6px"><div class="pbf" style="width:${Math.min(100,Math.round((bk.current_page||0)/bk.pages*100))}%;background:var(--grn)"></div></div>`:''}
-    </div>`;
-    const editCtrl=bookEditMode?`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px">
-      <button onclick="moveBook('${bk.id}',-1)" class="btn btn-o btn-xs">&uarr;</button>
-      <button onclick="moveBook('${bk.id}',1)" class="btn btn-o btn-xs">&darr;</button>
-      <button onclick="removeFromShelf('${bk.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px">&#x2715;</button>
-    </div>`:'';
-    return`<div style="display:flex;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:10px;overflow:hidden">
-      <div style="width:4px;background:var(--${gcol});flex-shrink:0"></div>
-      <div style="padding:14px;flex:1;min-width:0">
-        <div style="display:flex;align-items:flex-start;gap:8px">
-          <div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--${bk.status==='Reading'?'red':'t3'});line-height:1;min-width:28px;text-align:center">${idx+1}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:700;margin-bottom:2px">${bk.title}</div>
-            <div style="font-size:12px;color:var(--t3);margin-bottom:6px">${bk.author} &middot; ~${bk.pages} pages</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              ${statSel}${fmtBtns}
-            </div>
-            <div style="display:flex;gap:4px;margin-top:4px">${stars}</div>
-            ${pageRow}
-            ${bk.description?`<div style="font-size:11px;color:var(--t3);margin-top:6px;line-height:1.5">${bk.description}</div>`:''}
-          </div>
-          ${editCtrl}
+  const gcol=GCOLS2[bk.genre]||'d';
+  const bkId=escapeAttr(bk.id);
+  const stars=Array.from({length:5},(_,si)=>`<span class="star${si<bk.rating?' on':''}" onclick="setRating('${bkId}',${si+1})" style="cursor:pointer" aria-label="Rate ${si+1} star">★</span>`).join('');
+  const statSel=`<select class="inp sel" aria-label="Reading status" style="font-size:11px;padding:3px 22px 3px 7px;width:118px" onchange="setBookStatus('${bkId}',this.value)">${statuses.map(s=>`<option${bk.status===s?' selected':''}>${escapeHtml(s)}</option>`).join('')}</select>`;
+  const fmtBtns=['Physical','Audiobook','Ebook'].map(f=>`<button class="btn btn-xs" aria-label="Format: ${f}" style="background:${bk.format===f?'var(--blu-l)':'var(--s3)'};color:${bk.format===f?'var(--blu)':'var(--t3)'};border:1px solid ${bk.format===f?'rgba(77,159,236,.3)':'var(--b2)'}" onclick="toggleFormat('${bkId}','${f}')">${f}</button>`).join('');
+  const pageRow=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+    <input type="number" value="${bk.current_page||0}" min="0" max="${bk.pages||9999}" class="inp" aria-label="Current page" style="width:70px;text-align:center;font-size:12px;padding:4px" onchange="savePageProgress('${bkId}',${bk.pages||0},this.value)" placeholder="page">
+    <span style="font-size:11px;color:var(--t3)">of ${bk.pages} pages</span>
+    ${bk.pages>0?`<div class="pb" style="flex:1;height:6px"><div class="pbf" style="width:${Math.min(100,Math.round((bk.current_page||0)/bk.pages*100))}%;background:var(--grn)"></div></div>`:''}
+  </div>`;
+  const editCtrl=bookEditMode?`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px">
+    <button onclick="moveBook('${bkId}',-1)" class="btn btn-o btn-xs" aria-label="Move up">&uarr;</button>
+    <button onclick="moveBook('${bkId}',1)" class="btn btn-o btn-xs" aria-label="Move down">&darr;</button>
+    <button onclick="removeFromShelf('${bkId}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px" aria-label="Remove from shelf">&#x2715;</button>
+  </div>`:'';
+  return`<div style="display:flex;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:10px;overflow:hidden">
+    <div style="width:4px;background:var(--${gcol});flex-shrink:0"></div>
+    <div style="padding:14px;flex:1;min-width:0">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--${bk.status==='Reading'?'red':'t3'});line-height:1;min-width:28px;text-align:center">${idx+1}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(bk.title)}</div>
+          <div style="font-size:12px;color:var(--t3);margin-bottom:6px">${escapeHtml(bk.author)} &middot; ~${bk.pages} pages</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statSel}${fmtBtns}</div>
+          <div style="display:flex;gap:4px;margin-top:4px">${stars}</div>
+          ${pageRow}
+          ${bk.description?`<div style="font-size:11px;color:var(--t3);margin-top:6px;line-height:1.5">${escapeHtml(bk.description)}</div>`:''}
         </div>
+        ${editCtrl}
       </div>
-    </div>`;
-  }).join('');
-};
+    </div>
+  </div>`;
+}
 
+// ── UPDATED renderBooks (orchestrator: fetch → sort → render) ─────
+renderBooks=async function(){
+  const bks=await fetchAndSortBooks();
+  if(!bks.length){
+    const el=document.getElementById('book-list');
+    if(el)el.innerHTML='<div style="color:var(--t3);padding:20px;text-align:center">No books on your shelf yet. Browse the Library tab to add some.</div>';
+    return;
+  }
+  const reading=bks.find(b=>b.status==='Reading')||bks[0];
+  renderCurrentlyReadingCard(reading);
+  const el=document.getElementById('book-list');if(!el)return;
+  el.innerHTML=bks.map((bk,idx)=>buildBookCardHtml(bk,idx)).join('');
+};
 // ── UPDATED interaction functions (write to user_reading_list) ────
 setBookStatus=async function(bookId,status){
-  await sb.from('user_reading_list').update({status}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  const{error}=await sb.from('user_reading_list').update({status}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error updating status: '+error.message);console.error('[book] setBookStatus failed:',error);return;}
   toast('Status: '+status);
   await renderBooks();
 };
 setRating=async function(bookId,rating){
-  await sb.from('user_reading_list').update({rating}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  const{error}=await sb.from('user_reading_list').update({rating}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving rating: '+error.message);console.error('[book] setRating failed:',error);return;}
   await renderBooks();
 };
 toggleFormat=async function(bookId,format){
-  await sb.from('user_reading_list').update({format}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  const{error}=await sb.from('user_reading_list').update({format}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving format: '+error.message);console.error('[book] toggleFormat failed:',error);return;}
   await renderBooks();
 };
 
 // ── PAGE PROGRESS ─────────────────────────────────────────────────
 async function savePageProgress(bookId,totalPages,currentPage){
   const cp=parseInt(currentPage)||0;
+  const tz=PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today=new Date().toLocaleDateString('en-CA',{timeZone:tz});
   const updates={current_page:cp};
-  if(cp>0)updates.started_at=updates.started_at||new Date().toLocaleDateString('en-CA',{timeZone:PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone});
-  if(totalPages>0&&cp>=totalPages){updates.finished_at=new Date().toLocaleDateString('en-CA',{timeZone:PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone});updates.status='Read';}
-  await sb.from('user_reading_list').update(updates).eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(bookId===_curBookId){
+  if(cp>0)updates.started_at=today;
+  if(totalPages>0&&cp>=totalPages){updates.finished_at=today;updates.status='Read';}
+  const{error}=await sb.from('user_reading_list').update(updates).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving progress: '+error.message);console.error('[book] savePageProgress failed:',error);return;}
+  if(bookId===bookState.curBookId){
     const pct=totalPages>0?Math.round(cp/totalPages*100):0;
     const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
   }
 }
 async function saveCurrentPage(val){
-  if(_curBookId)await savePageProgress(_curBookId,_curBookPages,val);
+  if(bookState.curBookId)await savePageProgress(bookState.curBookId,bookState.curBookPages,val);
 }
 
 // ── REMOVE FROM SHELF ─────────────────────────────────────────────
 async function removeFromShelf(bookId){
   if(!confirm('Remove this book from your shelf?'))return;
-  await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
+  const{error}=await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error removing book: '+error.message);console.error('[book] removeFromShelf failed:',error);return;}
   // Clear from localStorage order
   const stored=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
   if(stored){
@@ -4749,7 +4888,7 @@ const _s6_origGoto=typeof goto==='function'?goto:null;
 goto=function(pid){
   if(_s6_origGoto)_s6_origGoto(pid);
   if(pid==='reading'){
-    bookView='shelf';
+    bookState.view='shelf';
     setTimeout(()=>renderBooks(),100);
   }
 };
@@ -4778,8 +4917,11 @@ moveBook=function(id,dir){
 // STAGE 7 — Workout Session Logging, History, Plan Builder
 // ════════════════════════════════════════════════════════════════
 
-let _existingSessionId=null;
-let _pbDayCount=0;
+// Workout logging state — grouped for clarity and reset safety.
+const workoutState={
+  existingSessionId:null, // ID of today's already-started session, if any
+  planBuilderDayCount:0,  // running day count in the plan builder UI
+};
 
 // ── POPULATE PLAN SELECTOR ────────────────────────────────────────
 function populatePlanSelector(){
@@ -4821,7 +4963,7 @@ openLogModal=async function(i){
     .select('*,workout_exercise_logs(*)')
     .eq('user_id',PROFILE.id).eq('session_date',todayStr()).eq('day_name',focus)
     .maybeSingle();
-  _existingSessionId=existing?.id||null;
+  workoutState.existingSessionId=existing?.id||null;
   // Build prior-sets lookup
   const prior={};
   (existing?.workout_exercise_logs||[]).forEach(l=>{
@@ -4868,7 +5010,7 @@ saveLog=async function(){
   const duration=parseInt(document.getElementById('log-duration')?.value)||null;
   const btn=document.querySelector('#log-modal .btn-r');
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
-  let sessionId=_existingSessionId;
+  let sessionId=workoutState.existingSessionId;
   if(sessionId){
     await sb.from('workout_sessions').update({notes,duration_minutes:duration}).eq('id',sessionId);
     await sb.from('workout_exercise_logs').delete().eq('session_id',sessionId);
@@ -4938,7 +5080,7 @@ async function renderWorkoutHistory(){
 
 // ── PLAN BUILDER ──────────────────────────────────────────────────
 function openPlanBuilder(){
-  _pbDayCount=0;
+  workoutState.planBuilderDayCount=0;
   document.getElementById('pb-name').value='';
   document.getElementById('pb-desc').value='';
   document.getElementById('pb-days').innerHTML='';
@@ -4951,7 +5093,7 @@ function openPlanBuilder(){
 }
 
 function addPlanDay(name='',focus='',exercises=''){
-  const i=_pbDayCount++;
+  const i=workoutState.planBuilderDayCount++;
   const div=document.createElement('div');
   div.id=`pb-day-${i}`;
   div.style.cssText='background:var(--s3);border-radius:var(--r);padding:12px;margin-bottom:8px';
@@ -4974,7 +5116,7 @@ async function importTemplate(planKey){
   document.getElementById('pb-name').value=plan.name+' (Custom)';
   document.getElementById('pb-desc').value=plan.description||'';
   document.getElementById('pb-days').innerHTML='';
-  _pbDayCount=0;
+  workoutState.planBuilderDayCount=0;
   (plan.days||[]).forEach(d=>{
     const exStr=(d.exercises||[]).map(e=>`${e.name} ${e.sets||3}x${e.reps||10}`).join('\n');
     addPlanDay(d.day_name||'',d.focus||'',exStr);
