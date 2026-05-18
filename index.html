@@ -441,10 +441,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
           <button class="tb" onclick="setCalView('day')">Day</button>
         </div>
         <button class="btn btn-r btn-sm" onclick="openEventModal()">+ Event</button>
-        <label class="btn btn-o btn-sm" style="cursor:pointer" title="Import .ics calendar file">
-          &#x1F4C5; Import .ics
-          <input type="file" accept=".ics,.ICS" style="display:none" onchange="importICS(this)">
-        </label>
+        <button class="btn btn-o btn-sm" onclick="openModal('ics-modal')" title="Import .ics calendar file">&#x1F4C5; Import .ics</button>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div style="display:flex;gap:6px"><button class="btn btn-o btn-sm" onclick="calNav(-1)">←</button><button class="btn btn-o btn-sm" onclick="calNav(0)">Today</button></div>
@@ -1056,6 +1053,31 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   </div>
 </div>
 
+<div class="modal-bg" id="confirm-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">CONFIRM</div>
+    <div id="confirm-msg" style="margin-bottom:18px;font-size:14px;line-height:1.5;color:var(--t1)"></div>
+    <div class="modal-footer">
+      <button class="btn btn-r" id="confirm-yes-btn">Yes</button>
+      <button class="btn btn-o" id="confirm-no-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="ics-modal">
+  <div class="modal">
+    <div class="modal-title">&#x1F4C5; IMPORT CALENDAR</div>
+    <div style="margin-bottom:14px;font-size:12px;color:var(--t2)">Select an .ics file exported from Google Calendar, Outlook, Apple Calendar, or any calendar app.</div>
+    <label style="display:block;border:2px dashed var(--b1);border-radius:var(--r);padding:28px;text-align:center;cursor:pointer;color:var(--t2);font-size:13px" onmouseover="this.style.borderColor='var(--red)'" onmouseout="this.style.borderColor='var(--b1)'">
+      &#x1F4C2; Click to choose .ics file
+      <input type="file" accept=".ics,.ICS" style="display:none" onchange="importICS(this);closeModal('ics-modal')">
+    </label>
+    <div class="modal-footer" style="margin-top:14px">
+      <button class="btn btn-o" onclick="closeModal('ics-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <script>
 'use strict';
@@ -1195,6 +1217,20 @@ function toast(msg,dur=2400){
   const el=document.getElementById('toast');
   el.textContent=msg;el.classList.add('show');
   clearTimeout(toastTmr);toastTmr=setTimeout(()=>el.classList.remove('show'),dur);
+}
+/** Show an embedded confirmation dialog instead of the native browser confirm().
+ * Returns a Promise that resolves true (Yes) or false (Cancel).
+ * @param {string} msg */
+function confirmDialog(msg){
+  return new Promise(resolve=>{
+    document.getElementById('confirm-msg').textContent=msg;
+    const yes=document.getElementById('confirm-yes-btn');
+    const no=document.getElementById('confirm-no-btn');
+    const finish=v=>{closeModal('confirm-modal');resolve(v);};
+    yes.onclick=()=>finish(true);
+    no.onclick=()=>finish(false);
+    openModal('confirm-modal');
+  });
 }
 /** @param {string} id - element id of the .modal-bg to open */
 function openModal(id){document.getElementById(id)?.classList.add('open');}
@@ -1691,7 +1727,8 @@ async function renderHabits(){
 }
 function renderCatProg(){
   const el=document.getElementById('h-cat-prog');if(!el)return;
-  el.innerHTML=HABIT_SECS.map(sec=>{
+  const secs=typeof getUserHabitSecs==='function'?getUserHabitSecs():HABIT_SECS;
+  el.innerHTML=secs.map(sec=>{
     const done=sec.habits.filter(h=>!!habitCache[h.id]).length;
     const pct=Math.round(done/sec.habits.length*100);
     const c=sec.col==='r'?'red':sec.col==='g'?'grn':sec.col==='a'?'amb':'blu';
@@ -2201,8 +2238,8 @@ function moveBook(id,dir){
   CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
   renderBooks();
 }
-function removeBook(id){
-  if(!confirm('Remove this book?'))return;
+async function removeBook(id){
+  if(!await confirmDialog('Remove this book?'))return;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const books=(PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[]).filter(b=>b.id!==id);
   PROFILE.book_list_order=books;
@@ -2253,7 +2290,7 @@ async function saveDebt(){
   closeModal('debt-modal');renderDebtList();renderFinCal();toast('Debt saved');
 }
 async function removeDebt(id){
-  if(!confirm('Remove this debt?'))return;
+  if(!await confirmDialog('Remove this debt?'))return;
   const{error}=await sb.from('debt_tracker').delete().eq('id',id);
   if(error){toast('Error removing debt: '+error.message);console.error('[debt] remove failed:',error);return;}
   renderDebtList();renderFinCal();toast('Removed');
@@ -2275,7 +2312,7 @@ async function saveSub(){
   closeModal('sub-modal');renderSubList();renderFinCal();toast('Saved: '+name);
 }
 async function removeSub(id){
-  if(!confirm('Remove subscription?'))return;
+  if(!await confirmDialog('Remove subscription?'))return;
   const{error}=await sb.from('subscription_tracker').delete().eq('id',id);
   if(error){toast('Error removing subscription: '+error.message);console.error('[sub] remove failed:',error);return;}
   renderSubList();renderFinCal();toast('Removed');
@@ -2285,11 +2322,15 @@ async function renderFinCal(){
   const now=new Date();const y=now.getFullYear();const m=now.getMonth();
   const hdr=document.getElementById('fin-cal-hdr');if(hdr)hdr.textContent=M12[m]+' '+y;
   const first=new Date(y,m,1);const last=new Date(y,m+1,0);
-  const{data:debts}=await sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id);
-  const{data:subs}=await sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id);
+  const[{data:debts},{data:subs},{data:bills2}]=await Promise.all([
+    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),
+    sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),
+    sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),
+  ]);
   const bMap={};
   (debts||[]).forEach(d=>{if(!d.due_day)return;if(!bMap[d.due_day])bMap[d.due_day]=[];bMap[d.due_day].push({name:d.debt_name,c:'r'});});
   (subs||[]).forEach(s=>{if(!s.renewal_day)return;if(!bMap[s.renewal_day])bMap[s.renewal_day]=[];bMap[s.renewal_day].push({name:s.sub_name,c:s.action==='Keep'?'b':'d'});});
+  (bills2||[]).forEach(b=>{if(!b.due_day)return;if(!bMap[b.due_day])bMap[b.due_day]=[];bMap[b.due_day].push({name:b.bill_name,c:'a'});});
   let html='';D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
   for(let i=0;i<first.getDay();i++)html+='<div></div>';
   const cMap={r:'red',b:'blu',a:'amb',d:'t3'};
@@ -2614,8 +2655,8 @@ function confirmAddHabit(){
   renderHabits();
   toast('Habit added: '+label);
 }
-function removeHabit(catIdx,habitIdx){
-  if(!confirm('Remove this habit?'))return;
+async function removeHabit(catIdx,habitIdx){
+  if(!await confirmDialog('Remove this habit?'))return;
   const secs=getUserHabitSecs();
   secs[catIdx].habits.splice(habitIdx,1);
   if(secs[catIdx].habits.length===0)secs.splice(catIdx,1);
@@ -2688,8 +2729,8 @@ function confirmAddGoal(){
   renderGoals();
   toast('Goal added!');
 }
-function removeGoal(secIdx,goalIdx){
-  if(!confirm('Remove this goal?'))return;
+async function removeGoal(secIdx,goalIdx){
+  if(!await confirmDialog('Remove this goal?'))return;
   const data=getUserGoalData();
   data[secIdx].goals.splice(goalIdx,1);
   if(data[secIdx].goals.length===0)data.splice(secIdx,1);
@@ -3446,7 +3487,7 @@ async function saveTodo(){
 }
 async function markTodoDone(id){await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);renderTodo();toast('Task marked done!');}
 async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
-async function deleteTodo(id){if(!confirm('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
+async function deleteTodo(id){if(!await confirmDialog('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
 
 // ── RECIPES — EDIT MODE ──────────────────────────────────────
 let spiceEditMode=false;
@@ -3488,8 +3529,8 @@ function saveSpiceRecipe(){
   else customs.push(recipe);
   saveCustomSpice(customs);closeModal('spice-modal');spiceEditMode=true;renderSpice();toast('Recipe saved!');
 }
-function removeSpiceRecipe(id){
-  if(!confirm('Remove this recipe?'))return;
+async function removeSpiceRecipe(id){
+  if(!await confirmDialog('Remove this recipe?'))return;
   const customs=getCustomSpice().filter(r=>r.id!==id);
   saveCustomSpice(customs);renderSpice();toast('Recipe removed');
 }
@@ -3827,7 +3868,7 @@ async function openUserEvent(eventId){
 // ── Delete current event being edited ───────────────────────────
 async function deleteEvent(){
   if(!evEditId){toast('No event selected');return;}
-  if(!confirm('Delete this event?'))return;
+  if(!await confirmDialog('Delete this event?'))return;
   await sb.from('calendar_events').delete().eq('id',evEditId);
   closeModal('event-modal');
   toast('Event deleted');
@@ -3993,7 +4034,7 @@ async function saveBill(){
 }
 
 async function removeBill(id){
-  if(!confirm('Remove this bill?'))return;
+  if(!await confirmDialog('Remove this bill?'))return;
   const{error}=await sb.from('bills_tracker').delete().eq('id',id);
   if(error){toast('Error removing bill: '+error.message);console.error('[bill] remove failed:',error);return;}
   await renderBillsList();
@@ -4055,30 +4096,7 @@ renderFinancial=async function(){
   await safe(updateFinancialBoxes,'updateFinancialBoxes');
 };
 
-// ── UPDATED renderFinCal to include bills in calendar ────────────
-// Override to add bills to the payment calendar
-const _s3_origRenderFinCal=renderFinCal;
-renderFinCal=async function(){
-  await _s3_origRenderFinCal();
-  // After base render, add bills to the calendar
-  const{data:bills}=await sb.from('bills_tracker').select('bill_name,due_day,amount')
-    .eq('user_id',PROFILE.id);
-  if(!bills?.length)return;
-  const calEl=document.getElementById('fin-cal');if(!calEl)return;
-  const cells=calEl.querySelectorAll('.fin-cal-day');
-  cells.forEach(cell=>{
-    const dayNum=parseInt(cell.querySelector('.fin-cal-dn')?.textContent||'0');
-    if(!dayNum)return;
-    bills.filter(b=>b.due_day===dayNum).forEach(b=>{
-      const chip=document.createElement('div');
-      chip.className='cal-ev a';
-      chip.style.cssText='font-size:9px;padding:1px 4px;border-radius:3px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-      chip.textContent=b.bill_name;
-      chip.title=b.bill_name+' — $'+b.amount;
-      cell.appendChild(chip);
-    });
-  });
-};
+// Bills are now fetched inside the base renderFinCal — no override needed.
 
 // ── PATCH saveBill/removeDebt/removeSub hooks already in place ───
 // Wrap existing removeDebt and removeSub to also call updateFinancialBoxes
@@ -4922,7 +4940,7 @@ async function saveCurrentPage(val){
 
 // ── REMOVE FROM SHELF ─────────────────────────────────────────────
 async function removeFromShelf(bookId){
-  if(!confirm('Remove this book from your shelf?'))return;
+  if(!await confirmDialog('Remove this book from your shelf?'))return;
   const{error}=await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
   if(error){toast('Error removing book: '+error.message);console.error('[book] removeFromShelf failed:',error);return;}
   // Remove book from the persistent order list
@@ -5226,7 +5244,7 @@ async function savePlan(){
   closeModal('plan-builder-modal');
   toast('Plan "'+name+'" saved!');
   // Ask if user wants to activate it
-  if(confirm('Activate "'+name+'" as your current plan?')){
+  if(await confirmDialog('Activate "'+name+'" as your current plan?')){
     // Store as custom plan key
     PROFILE.assigned_workout_plan='custom_'+Date.now();
     // For now load it into CONTENT
@@ -5420,7 +5438,7 @@ removeSpiceRecipe=async function(id){
   const{data:rec}=await sb.from('recipes').select('is_template,created_by').eq('id',id).maybeSingle();
   if(rec&&rec.is_template){toast("Library recipes can't be deleted — you can edit them instead");return;}
   if(rec&&rec.created_by!==PROFILE.id){toast("Can only delete your own recipes");return;}
-  if(!confirm('Delete this recipe?'))return;
+  if(!await confirmDialog('Delete this recipe?'))return;
   await sb.from('recipes').delete().eq('id',id);
   const fresh=await loadRecipesFromDB();
   if(fresh)CONTENT.spice=fresh;
