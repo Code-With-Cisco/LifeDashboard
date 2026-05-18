@@ -1060,6 +1060,26 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 <script>
 'use strict';
 
+// ════════════════════════════════════════════════════════════════
+// ARCHITECTURE: STAGED LOADING
+// ════════════════════════════════════════════════════════════════
+// This file uses a staged override pattern. Base implementations
+// are defined early; later STAGE blocks reassign functions (e.g.
+// `renderHabits = async function(){...}`) to swap in DB-driven
+// versions without removing the original fallback logic.
+//
+// STAGE 1–3  Core auth, profiles, all user-data logging (Supabase)
+// STAGE 4    DB-powered content: meals, workouts, recipes from DB
+//            with per-source JSON fallback if DB is empty.
+// STAGE 5    Advanced library, workout builder, meal search
+// STAGE 6    (pending) Migrate books year-plan metadata to DB;
+//            books.json is currently kept as static template data.
+//
+// All user-specific data (preferences, logs, lists) lives in
+// Supabase. Static reference content (books.json, schedule.json)
+// remains in JSON files — these are templates, not user data.
+// ════════════════════════════════════════════════════════════════
+
 // ── APP CONFIG ───────────────────────────────────────────────────
 // SUPABASE_KEY is the public anon key — safe to ship client-side.
 // Security is enforced by Row Level Security policies on the DB.
@@ -1584,8 +1604,8 @@ async function renderWeightLog(){
   el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
     ||'<div style="color:var(--t3);font-size:12px">No entries yet.</div>';
   if(logs?.length){
-    const _tgt=parseFloat(localStorage.getItem('tgt_weight_'+PROFILE.id))||165;
-    const _startWt=parseFloat(localStorage.getItem('start_weight_'+PROFILE.id))||logs[logs.length-1]?.weight_lbs||logs[0].weight_lbs;
+    const _tgt=PROFILE.target_weight||165;
+    const _startWt=PROFILE.start_weight||logs[logs.length-1]?.weight_lbs||logs[0].weight_lbs;
     const pct=_startWt>_tgt?Math.round(Math.max(0,Math.min(100,(_startWt-logs[0].weight_lbs)/(_startWt-_tgt)*100))):0;
     const pe=document.getElementById('wt-pct');const pb=document.getElementById('wt-bar');
     if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';
@@ -1624,6 +1644,8 @@ async function saveMilestone(name,val){
 }
 
 // HABITS
+// App-level config — fixed default categories/habits. User-defined habits and
+// custom categories layer on top at runtime via getUserHabitSecs().
 const HABIT_SECS=[
   {cat:'morning',label:'Morning',col:'a',habits:[{id:'wake',label:'Wake up by 6 AM'},{id:'hydrate',label:'16 oz water first thing'},{id:'mobility',label:'Morning mobility (15 min)'}]},
   {cat:'fitness',label:'Fitness',col:'r',habits:[{id:'workout',label:'Workout complete'},{id:'hiit',label:'HIIT / Conditioning done'},{id:'kneerehab',label:'Knee rehab done'},{id:'walk',label:'Evening walk (30 min)'}]},
@@ -1638,6 +1660,8 @@ async function toggleHabit(id){
   const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
   const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
   if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
+  // Upsert keeps the operation idempotent — toggling the same habit twice is safe.
+  // Conflict key: (user_id, log_date, habit_id) ensures one row per user/day/habit.
   const{error:habitErr}=await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal},{onConflict:'user_id,log_date,habit_id'});
   if(habitErr){console.error('[habit] upsert failed:',habitErr.message);toast('Error saving habit — check connection');}
   renderCatProg();renderStreakBar();
@@ -2109,6 +2133,9 @@ function setSpiceTab(idx){
 
 // READING
 const GCOLS={'Self-improvement':'g','Philosophy':'b','Mindset':'b','Sci-fi':'r','Fiction':'a','Finance':'a','Strategy':'r','Psychology':'b','Fantasy':'g','Memoir':'d','Business':'b','Other':'d'};
+// Two-layer data model: book metadata (title, author, pages, month, why) comes from
+// CONTENT.books (books.json template). User state (rating, status, format) comes from
+// the book_progress table keyed by book_id. Custom ordering is in PROFILE.book_list_order.
 async function renderBooks(){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];if(!listData)return;
@@ -2117,11 +2144,11 @@ async function renderBooks(){
     const ct=document.getElementById('cur-book-title');const ca=document.getElementById('cur-book-author');
     if(ct)ct.textContent=first.title;if(ca)ca.textContent=first.author+' - ~'+first.pages+' pages';
   }
-  const rpVal=parseInt(localStorage.getItem('readPct_'+PROFILE.id))||0;
+  const rpVal=PROFILE.read_pct||0;
   const rpEl=document.getElementById('read-pct');if(rpEl)rpEl.textContent=rpVal+'%';
   const{data:bpData}=await sb.from('book_progress').select('*').eq('user_id',PROFILE.id);
   const bpMap={};(bpData||[]).forEach(b=>bpMap[b.book_id]=b);
-  const books=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||listData.books;
+  const books=PROFILE.book_list_order||listData.books;
   const el=document.getElementById('book-list');if(!el)return;
   el.innerHTML=books.map((bk)=>{
     const meta=bpMap[bk.id]||{};const rating=meta.rating||0;const format=meta.format||'Physical';const status=meta.status||'Not Started';
@@ -2144,9 +2171,10 @@ async function renderBooks(){
   }).join('');
   if(listData.year2_flagship)el.innerHTML+=`<div style="margin-top:12px;background:var(--amb-ll);border:1px dashed var(--amb);border-radius:var(--r2);padding:14px"><div style="font-size:10px;font-weight:700;letter-spacing:2px;color:var(--amb);margin-bottom:5px">YEAR 2 FLAGSHIP</div><div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;margin-bottom:2px">${listData.year2_flagship.title} -- ${listData.year2_flagship.author}</div><div style="font-size:12px;color:var(--t2);line-height:1.5">${listData.year2_flagship.note}</div></div>`;
 }
-function updReadPct(d){
-  const v=Math.max(0,Math.min(100,(parseInt(localStorage.getItem('readPct_'+PROFILE.id))||0)+d));
-  localStorage.setItem('readPct_'+PROFILE.id,v);
+async function updReadPct(d){
+  const v=Math.max(0,Math.min(100,(PROFILE.read_pct||0)+d));
+  PROFILE.read_pct=v;
+  await sb.from('profiles').update({read_pct:v}).eq('id',PROFILE.id);
   const el=document.getElementById('read-pct');if(el)el.textContent=v+'%';
 }
 async function setRating(id,r){await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,rating:r});renderBooks();toast('Rated '+r+' stars');}
@@ -2164,30 +2192,31 @@ function toggleBookEdit(){
 }
 function moveBook(id,dir){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
-  const books=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||CONTENT.books?.lists?.[listId]?.books||[];
+  const books=PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[];
   const i=books.findIndex(b=>b.id===id);if(i<0)return;
   const ni=i+dir;if(ni<0||ni>=books.length)return;
   [books[i],books[ni]]=[books[ni],books[i]];
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));
-  // Force renderBooks to pick up the new localStorage order
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
   CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
   renderBooks();
 }
 function removeBook(id){
   if(!confirm('Remove this book?'))return;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
-  const books=(JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||CONTENT.books?.lists?.[listId]?.books||[]).filter(b=>b.id!==id);
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));
-  // Force renderBooks to pick up the new localStorage order
+  const books=(PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[]).filter(b=>b.id!==id);
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
   CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
   renderBooks();toast('Book removed');
 }
 function addBook(){
   const title=document.getElementById('bk-title').value.trim();if(!title){toast('Enter a title');return;}
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
-  const books=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||CONTENT.books?.lists?.[listId]?.books||[];
+  const books=PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[];
   books.push({id:'u'+Date.now(),month:+document.getElementById('bk-month').value||null,title,author:document.getElementById('bk-author').value||'Unknown',pages:document.getElementById('bk-pages').value||'?',genre:document.getElementById('bk-genre').value||'Other',why:document.getElementById('bk-why').value||''});
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(books));
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
   closeModal('book-modal');renderBooks();toast('Book added: '+title);
   ['bk-title','bk-author','bk-month','bk-pages','bk-genre','bk-why'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
@@ -2283,6 +2312,8 @@ async function renderRoadmap(){
 async function saveRoadmap(num,val){await sb.from('roadmap_status').upsert({user_id:PROFILE.id,step_number:num,status:val});}
 
 // GOALS
+// App-level config — fixed goal reference list used for the Goals overview panel.
+// These are display-only; actual completion tracking is via habit_logs in Supabase.
 const GOALS_DATA=[
   {sec:'FITNESS',col:'red',goals:[{freq:'Daily',g:'Wake up by 6 AM',p:'Critical'},{freq:'Daily',g:'Workout complete',p:'Critical'},{freq:'Daily',g:'HIIT finisher Mon/Wed/Fri',p:'Critical'},{freq:'Daily',g:'Knee rehab every session',p:'Critical'},{freq:'Daily',g:'Evening walk 30 min',p:'Critical'},{freq:'Daily',g:'Morning mobility 15 min',p:'High'},{freq:'Weekly',g:'5-6 workouts completed',p:'Critical'},{freq:'Weekly',g:'Monday weigh-in',p:'High'},{freq:'Monthly',g:'Lose 6-8 lbs',p:'Critical'},{freq:'Monthly',g:'Progressive overload on main lifts',p:'High'}]},
   {sec:'NUTRITION',col:'grn',goals:[{freq:'Daily',g:'Hit protein target',p:'Critical'},{freq:'Daily',g:'Stay within calorie target',p:'Critical'},{freq:'Daily',g:'Log all meals before eating',p:'Critical'},{freq:'Daily',g:'120+ oz water',p:'High'},{freq:'Daily',g:'No processed food weekdays',p:'High'},{freq:'Daily',g:'No eating after 9 PM',p:'High'},{freq:'Weekly',g:'Sunday meal prep complete',p:'Critical'},{freq:'Monthly',g:'Zero energy drink months',p:'Critical'}]},
@@ -2302,7 +2333,7 @@ function filterGoals(freq,btn){
 }
 
 // IS IT WORTH IT
-function getWitRate(){return parseFloat(localStorage.getItem('wit_rate_'+PROFILE.id)||'23');}
+function getWitRate(){return PROFILE.wit_hourly_rate||23;}
 function calcWit(){
   const cost=parseFloat(document.getElementById('wit-cost')?.value);
   const rate=getWitRate();
@@ -2322,7 +2353,8 @@ function fmtWorkTime(hrs){
 function saveWitRate(){
   const r=parseFloat(document.getElementById('wit-rate')?.value);
   if(!r||r<=0){toast('Enter a valid hourly rate');return;}
-  localStorage.setItem('wit_rate_'+PROFILE.id,r);
+  PROFILE.wit_hourly_rate=r;
+  sb.from('profiles').update({wit_hourly_rate:r}).eq('id',PROFILE.id);
   toast('Rate saved: $'+r+'/hr');calcWit();
 }
 function witDecide(decision){
@@ -2484,25 +2516,31 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 
 // ── EDITABLE DASHBOARD STATS ────────────────────────────────────
+// Maps the legacy localStorage key names to their profiles table column names.
+const STAT_COL={tgt_weight:'target_weight',cal_target:'calorie_target',pro_target:'protein_target'};
 function editStat(elId, key, defaultVal, unit){
   const el=document.getElementById(elId); if(!el)return;
-  const cur=parseFloat(localStorage.getItem(key+'_'+PROFILE.id))||defaultVal;
+  const col=STAT_COL[key];
+  const cur=(col&&PROFILE[col]!=null?PROFILE[col]:null)||defaultVal;
   el.innerHTML=`<input type="number" value="${cur}" step="any" style="width:80px;background:none;border:none;border-bottom:2px solid var(--red);color:inherit;font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveStat('${elId}','${key}','${unit}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
   el.querySelector('input').select();
 }
-function saveStat(elId,key,unit,value){
+async function saveStat(elId,key,unit,value){
   const v=parseFloat(value);
-  if(!isNaN(v)&&v>0)localStorage.setItem(key+'_'+PROFILE.id,v);
-  const stored=parseFloat(localStorage.getItem(key+'_'+PROFILE.id));
-  const display=stored||(key==='tgt_weight'?165:key==='cal_target'?1900:185);
+  const col=STAT_COL[key];
+  if(!isNaN(v)&&v>0&&col){
+    PROFILE[col]=v;
+    await sb.from('profiles').update({[col]:v}).eq('id',PROFILE.id);
+  }
+  const display=(col&&PROFILE[col])||v||(key==='tgt_weight'?165:key==='cal_target'?1900:185);
   const el=document.getElementById(elId);
   if(el)el.textContent=display.toLocaleString()+(unit==='g'?'g':'');
   toast('Saved: '+display+(unit==='g'?'g':' '+unit));
 }
 function loadDashStats(){
-  const tgt=parseFloat(localStorage.getItem('tgt_weight_'+PROFILE.id))||165;
-  const cal=parseFloat(localStorage.getItem('cal_target_'+PROFILE.id))||1900;
-  const pro=parseFloat(localStorage.getItem('pro_target_'+PROFILE.id))||185;
+  const tgt=PROFILE.target_weight||165;
+  const cal=PROFILE.calorie_target||1900;
+  const pro=PROFILE.protein_target||185;
   const te=document.getElementById('d-tgt-wt'); if(te)te.textContent=tgt;
   const ce=document.getElementById('d-cal-tgt'); if(ce)ce.textContent=cal.toLocaleString();
   const pe=document.getElementById('d-pro-tgt'); if(pe)pe.textContent=pro+'g';
@@ -2793,13 +2831,16 @@ updateMealList=function(){
 // ── FINANCIAL TAKE-HOME ─────────────────────────────────────────
 function editTakeHome(){
   const el=document.getElementById('fin-take-home');if(!el)return;
-  const cur=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  const cur=PROFILE.take_home_pay||3370;
   el.innerHTML=`<input type="number" value="${cur}" step="1" style="width:90px;background:none;border:none;border-bottom:2px solid var(--grn);color:var(--grn);font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveTakeHome(this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
   el.querySelector('input').select();
 }
 function saveTakeHome(value){
   const v=parseFloat(value);
-  if(!isNaN(v)&&v>0)localStorage.setItem('take_home_'+PROFILE.id,v);
+  if(!isNaN(v)&&v>0){
+    PROFILE.take_home_pay=v;
+    sb.from('profiles').update({take_home_pay:v}).eq('id',PROFILE.id);
+  }
   updateFinancialBoxes();
 }
 updateFinancialBoxes=async function(){
@@ -2809,7 +2850,7 @@ updateFinancialBoxes=async function(){
   const totalPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
   const expenses=totalPay+totalSubs;
-  const takeHome=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  const takeHome=PROFILE.take_home_pay||3370;
   const freeCash=takeHome-expenses;
   const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
@@ -2897,9 +2938,14 @@ qNext=async function(){
 // Extend completeQuestionnaire to save weight data
 const _origCompleteQ=completeQuestionnaire;
 completeQuestionnaire=async function(){
-  // Save weight targets before completing
-  if(qAnswers.goal_weight)localStorage.setItem('tgt_weight_'+PROFILE.id,qAnswers.goal_weight);
-  if(qAnswers.cur_weight)localStorage.setItem('start_weight_'+PROFILE.id,qAnswers.cur_weight);
+  // Save weight targets before completing — persist to DB so they survive cross-device
+  const _wtUpdates={};
+  if(qAnswers.goal_weight)_wtUpdates.target_weight=+qAnswers.goal_weight;
+  if(qAnswers.cur_weight)_wtUpdates.start_weight=+qAnswers.cur_weight;
+  if(Object.keys(_wtUpdates).length){
+    Object.assign(PROFILE,_wtUpdates);
+    await sb.from('profiles').update(_wtUpdates).eq('id',PROFILE.id);
+  }
   // Log starting weight as first entry
   if(qAnswers.cur_weight){
     await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:+qAnswers.cur_weight}).then(()=>{}).catch(()=>{});
@@ -3410,6 +3456,9 @@ function toggleSpiceEdit(){
   const addBtn=document.getElementById('spice-add-btn');if(addBtn)addBtn.style.display=spiceEditMode?'inline-flex':'none';
   renderSpice();
 }
+// Legacy read-only helpers — kept so any recipes stored in localStorage before the
+// DB migration still appear in edit lookups. New saves go to the recipes table via
+// the Stage 5 override of saveSpiceRecipe(); saveCustomSpice is no longer called.
 function getCustomSpice(){
   try{return JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');}catch(e){return[];}
 }
@@ -3966,7 +4015,7 @@ updateFinancialBoxes=async function(){
   const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
   const totalBills=(bills||[]).reduce((s,b)=>s+(+b.amount||0),0);
-  const takeHome=parseFloat(localStorage.getItem('take_home_'+PROFILE.id))||3370;
+  const takeHome=PROFILE.take_home_pay||3370;
   // Free Cash = Take-Home - Bills - Subs - Debt Monthly Payments
   const freeCash=takeHome-totalBills-totalSubs-totalDebtPay;
   const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -4053,10 +4102,18 @@ if(_s3_origRemoveSub){
 // STAGE 4 — DB-powered content loading (JSON fallback retained)
 // ════════════════════════════════════════════════════════════════
 
+/**
+ * Load template + user meals from DB and reshape into the same {plans:{...}} object
+ * that meals.json produces. Each plan key shares the same grouped meal options but
+ * has different macro targets. Returns null if the DB is empty (triggers JSON fallback).
+ * The hard-coded targets here are defaults; calorie/protein targets per-user come
+ * from PROFILE.calorie_target / PROFILE.protein_target read in loadDashStats().
+ */
 async function loadMealsFromDB(){
   const{data:meals,error}=await sb.from('meals').select('*').eq('is_template',true).order('meal_type').order('name');
   if(error||!meals?.length)return null;
   const grouped={};
+  // Default macro targets — overridden per-plan in the returned object below
   const targets={calories:1900,protein_g:185,carbs_g:175,fat_g:55,sugar_max_g:35,water_oz:120};
   meals.forEach(m=>{
     const key=m.meal_type+'_options';
@@ -4081,11 +4138,18 @@ async function loadBooksFromDB(){
   return null;
 }
 
+/**
+ * Load template workout plans from DB with their days via a nested join.
+ * Reshapes rows into an object keyed by plan_key to match the workouts.json
+ * format consumed by renderWorkout(). workout_plan_days are sorted by day_number
+ * so the weekly schedule displays in order regardless of insert sequence.
+ * Returns null on error or empty DB (triggers JSON fallback).
+ */
 async function loadWorkoutPlansFromDB(){
   const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
   if(error||!plans?.length)return null;
   const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
-  // Return as OBJECT keyed by plan_key (matches workouts.json format)
+  // Keyed by plan_key to match workouts.json structure
   const plansObj={};
   plans.forEach(p=>{
     plansObj[p.plan_key]={
@@ -4102,10 +4166,18 @@ async function loadWorkoutPlansFromDB(){
   return{plans:plansObj,knee_rehab:knee};
 }
 
+/**
+ * Load all recipes from DB and group by profile_id (one flavor "profile" per cuisine
+ * style, e.g. Japanese, Mediterranean). Each profile contains an ordered list of
+ * named recipes with dry_rub and sauce ingredient arrays.
+ * Custom user recipes are stored in the same table with created_by = PROFILE.id
+ * and is_template = false, so they appear in the same SELECT.
+ * Returns null on error or empty DB (triggers JSON fallback).
+ */
 async function loadRecipesFromDB(){
   const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
   if(error||!recs?.length)return null;
-  // Group by profile
+  // Group recipes by their flavor profile ID
   const profileMap={};
   recs.forEach(r=>{
     if(!profileMap[r.profile_id]){
@@ -4116,20 +4188,19 @@ async function loadRecipesFromDB(){
     if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
     profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
   });
-  // Include user custom recipes
-  if(PROFILE){
-    const customs=JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');
-    customs.forEach(r=>{
-      if(!profileMap[r.profileId]){profileMap[r.profileId]={id:r.profileId,label:r.profileId,recipes:[]};}
-      profileMap[r.profileId].recipes.push(r);
-    });
-  }
+  // Custom recipes are stored in the recipes table (created_by = PROFILE.id, is_template = false)
+  // and are already included in the SELECT above, so no localStorage fallback is needed.
   return{profiles:Object.values(profileMap)};
 }
 
-// Override loadAllContent to use Supabase DB with JSON fallback
+// Override the base loadAllContent (defined earlier) with a DB-first waterfall:
+// 1. Fire all four DB loaders in parallel.
+// 2. For each source, use DB data if available; fall back to its JSON file if null.
+// 3. books.json is always loaded — Stage 6 will replace this once the books table
+//    is fully populated with year-plan metadata (month, why, genre fields).
+// 4. schedule.json has no DB equivalent; it is static reference content.
+// 5. If the entire DB call throws, fall back to all JSON files.
 loadAllContent=async function(){
-  // Try loading from DB
   let dbOk=false;
   try{
     const[mealsData,booksData,workoutsData,recipesData]=await Promise.all([
@@ -4733,7 +4804,7 @@ async function fetchAndSortBooks(){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];
   if(!listData)return[];
-  const storedOrder=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
+  const storedOrder=PROFILE.book_list_order||null;
   let bks=listData.books||[];
   if(storedOrder?.length){
     const orderMap=Object.fromEntries(storedOrder.map((b,i)=>[b.id,i]));
@@ -4854,10 +4925,10 @@ async function removeFromShelf(bookId){
   if(!confirm('Remove this book from your shelf?'))return;
   const{error}=await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
   if(error){toast('Error removing book: '+error.message);console.error('[book] removeFromShelf failed:',error);return;}
-  // Clear from localStorage order
-  const stored=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null');
-  if(stored){
-    localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(stored.filter(b=>b.id!==bookId)));
+  // Remove book from the persistent order list
+  if(PROFILE.book_list_order){
+    PROFILE.book_list_order=PROFILE.book_list_order.filter(b=>b.id!==bookId);
+    sb.from('profiles').update({book_list_order:PROFILE.book_list_order}).eq('id',PROFILE.id);
   }
   toast('Removed from shelf');
   await renderBooks();
@@ -4897,13 +4968,14 @@ goto=function(pid){
 moveBook=function(id,dir){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const bks=CONTENT.books?.lists?.[listId]?.books||[];
-  const stored=JSON.parse(localStorage.getItem('booklist_'+PROFILE.id)||'null')||bks.map(b=>({id:b.id}));
+  const stored=PROFILE.book_list_order||bks.map(b=>({id:b.id}));
   const i=stored.findIndex(b=>b.id===id);
   if(i<0)return;
   const ni=i+dir;
   if(ni<0||ni>=stored.length)return;
   [stored[i],stored[ni]]=[stored[ni],stored[i]];
-  localStorage.setItem('booklist_'+PROFILE.id,JSON.stringify(stored));
+  PROFILE.book_list_order=stored;
+  sb.from('profiles').update({book_list_order:stored}).eq('id',PROFILE.id);
   // Also update CONTENT order
   if(CONTENT.books?.lists?.[listId]){
     const orderMap=Object.fromEntries(stored.map((b,idx)=>[b.id,idx]));
