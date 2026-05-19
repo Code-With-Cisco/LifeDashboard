@@ -1085,6 +1085,9 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 <script src="api.js"></script>
 <script src="render.js"></script>
 <script src="main.js"></script>
+<script src="services/RecipeService.js"></script>
+<script src="services/HabitService.js"></script>
+<script src="services/NutritionService.js"></script>
 <script>
 'use strict';
 
@@ -5286,16 +5289,7 @@ goto=function(pid){
 
 // ── NUTRITIONAL RATING ENGINE ─────────────────────────────────────
 // Thresholds agreed in planning session:
-// Good:       protein ≥ 30g AND calories ≤ 600
-// So-So:      protein 15–29g OR calories 600–800
-// Needs Care: protein < 15g OR calories > 800
-function calcRecipeRating(cal, protein){
-  if(!cal && !protein) return null;
-  const c=+cal||0, p=+protein||0;
-  if(p>=30 && c<=600) return 'good';
-  if(p<15 || c>800) return 'needs-care';
-  return 'so-so';
-}
+function calcRecipeRating(cal, protein){ return RecipeService.rate(cal, protein); }
 const RATING_CONFIG={
   'good':   {label:'Good',badge:'b-g',icon:'✅',desc:'High protein, lean calories'},
   'so-so':  {label:'So-So',badge:'b-a',icon:'🟡',desc:'Moderate nutritional fit'},
