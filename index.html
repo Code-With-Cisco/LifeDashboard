@@ -1080,6 +1080,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 
 <div id="toast"></div>
 <script src="logs.js"></script>
+<script src="state.js"></script>
 <script>
 'use strict';
 
@@ -1169,7 +1170,7 @@ const CACHE_TTL=86400000;
 async function fetchContent(file){
   // Bump version to clear any stale null-caches from old failed fetches
   const key='cc_v4_'+file;
-  const cached=JSON.parse(localStorage.getItem(key)||'null');
+  const cached=State.get(key);
   if(cached&&Date.now()-cached.ts<CACHE_TTL)return cached.data;
   // Try both cases of folder name (GitHub is case-sensitive)
   const attempts=['./Data/','./data/'];
@@ -1179,7 +1180,7 @@ async function fetchContent(file){
       const r=await fetch(url);
       if(r.ok){
         const data=await r.json();
-        localStorage.setItem(key,JSON.stringify({data,ts:Date.now()}));
+        State.set(key,{data,ts:Date.now()});
         console.log('[content] loaded from',url);
         return data;
       }
@@ -2405,9 +2406,9 @@ function witDecide(decision){
   if(!name){toast('Enter an item name');return;}
   if(!cost||cost<=0){toast('Enter a price');return;}
   const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=JSON.parse(localStorage.getItem(key)||'[]');
+  const items=State.get(key)||[];
   items.push({name,cost,decision,date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}),ts:Date.now()});
-  localStorage.setItem(key,JSON.stringify(items));
+  State.set(key,items);
   document.getElementById('wit-name').value='';
   document.getElementById('wit-cost').value='';
   document.getElementById('wit-result').style.display='none';
@@ -2416,15 +2417,15 @@ function witDecide(decision){
 }
 function deleteWitItem(idx){
   const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=JSON.parse(localStorage.getItem(key)||'[]');
-  items.splice(idx,1);localStorage.setItem(key,JSON.stringify(items));
+  const items=State.get(key)||[];
+  items.splice(idx,1);State.set(key,items);
   renderWit();toast('Item removed');
 }
 function renderWit(){
   const rate=getWitRate();
   const rateEl=document.getElementById('wit-rate');if(rateEl&&!rateEl.value)rateEl.value=rate;
   const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=JSON.parse(localStorage.getItem(key)||'[]');
+  const items=State.get(key)||[];
   const bought=items.filter(i=>i.decision==='buy');
   const passed=items.filter(i=>i.decision==='pass');
   const totalBought=bought.reduce((s,i)=>s+i.cost,0);
@@ -2540,7 +2541,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   // Clear stale content caches from old versions
   for(let i=localStorage.length-1;i>=0;i--){
     const k=localStorage.key(i);
-    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_'))localStorage.removeItem(k);
+    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_'))State.delete(k);
   }
   // IMPORTANT: Do NOT call sb.auth.getSession() here.
   // onAuthStateChange fires INITIAL_SESSION on every page load and handles all auth state.
@@ -2613,12 +2614,12 @@ const HABIT_COLORS={morning:'a',fitness:'r',nutrition:'g',mindset:'b',custom:'p'
 
 function getUserHabitSecs(){
   if(!PROFILE)return JSON.parse(JSON.stringify(HABIT_SECS));
-  const k='habits_'+PROFILE.id;
-  try{const s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}
+  const s=State.get('habits_'+PROFILE.id);
+  if(s!==null)return s;
   return JSON.parse(JSON.stringify(HABIT_SECS));
 }
 function saveUserHabitSecs(secs){
-  localStorage.setItem('habits_'+PROFILE.id,JSON.stringify(secs));
+  State.set('habits_'+PROFILE.id,secs);
 }
 function toggleHabitEdit(){
   habitEditMode=!habitEditMode;
@@ -2700,11 +2701,11 @@ renderHabits=async function(){
 let goalEditMode=false;
 function getUserGoalData(){
   if(!PROFILE)return JSON.parse(JSON.stringify(GOALS_DATA));
-  const k='goals_'+PROFILE.id;
-  try{const s=localStorage.getItem(k);if(s)return JSON.parse(s);}catch(e){}
+  const s=State.get('goals_'+PROFILE.id);
+  if(s!==null)return s;
   return JSON.parse(JSON.stringify(GOALS_DATA));
 }
-function saveUserGoalData(data){localStorage.setItem('goals_'+PROFILE.id,JSON.stringify(data));}
+function saveUserGoalData(data){State.set('goals_'+PROFILE.id,data);}
 function toggleGoalEdit(){
   goalEditMode=!goalEditMode;
   const btn=document.getElementById('goals-edit-btn');
@@ -2763,7 +2764,7 @@ renderWit=function(){
   _origRenderWit();
   // Add net position calc
   const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=JSON.parse(localStorage.getItem(key)||'[]');
+  const items=State.get(key)||[];
   const bought=items.filter(i=>i.decision==='buy');
   const passed=items.filter(i=>i.decision==='pass');
   const totalBought=bought.reduce((s,i)=>s+i.cost,0);
@@ -3502,9 +3503,9 @@ function toggleSpiceEdit(){
 // DB migration still appear in edit lookups. New saves go to the recipes table via
 // the Stage 5 override of saveSpiceRecipe(); saveCustomSpice is no longer called.
 function getCustomSpice(){
-  try{return JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');}catch(e){return[];}
+  return State.get('custom_spice_'+PROFILE.id)||[];
 }
-function saveCustomSpice(arr){localStorage.setItem('custom_spice_'+PROFILE.id,JSON.stringify(arr));}
+function saveCustomSpice(arr){State.set('custom_spice_'+PROFILE.id,arr);}
 function openSpiceModal(profileId,editKey){
   document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
   document.getElementById('spice-edit-key').value=editKey||'';
@@ -3570,8 +3571,8 @@ renderSpice=function(){
 };
 
 // ── CUSTOM PROTEIN/SIDE OPTIONS IN MEAL BUILDER ──────────────────
-function getCustomProteins(){try{return JSON.parse(localStorage.getItem('custom_proteins_'+PROFILE.id)||'{}');}catch(e){return{};}}
-function getCustomSides(){try{return JSON.parse(localStorage.getItem('custom_sides_'+PROFILE.id)||'{}');}catch(e){return{};}}
+function getCustomProteins(){return State.get('custom_proteins_'+PROFILE.id)||{};}
+function getCustomSides(){return State.get('custom_sides_'+PROFILE.id)||{};}
 function openCustomProteinModal(type){
   document.getElementById('cp-type').value=type||'protein';
   document.getElementById('cp-modal-title').textContent=type==='side'?'ADD CUSTOM SIDE':'ADD CUSTOM PROTEIN';
@@ -3590,7 +3591,7 @@ function saveCustomProtein(){
   const entry={cal,pro,car,fat,label:name,unit:'oz'};
   if(type==='side'){
     const customs=getCustomSides();customs[key]=entry;
-    localStorage.setItem('custom_sides_'+PROFILE.id,JSON.stringify(customs));
+    State.set('custom_sides_'+PROFILE.id,customs);
     // Add to MACRO_SIDE runtime
     if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=entry;
     // Refresh side dropdown
@@ -3601,7 +3602,7 @@ function saveCustomProtein(){
     }
   }else{
     const customs=getCustomProteins();customs[key]=entry;
-    localStorage.setItem('custom_proteins_'+PROFILE.id,JSON.stringify(customs));
+    State.set('custom_proteins_'+PROFILE.id,customs);
     if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=entry;
     const sel=document.getElementById('c-prot-sel');
     if(sel&&!sel.querySelector(`option[value="${key}"]`)){
@@ -4076,13 +4077,13 @@ updateFinancialBoxes=async function(){
   if(debts?.length){
     const topDebt=debts.reduce((a,b)=>(+b.balance>+a.balance?b:a),debts[0]);
     const startKey='debt_start_'+PROFILE.id;
-    const startBal=parseFloat(localStorage.getItem(startKey))||+topDebt.balance||1;
+    const startBal=State.get(startKey)||+topDebt.balance||1;
     const pct=Math.round(Math.max(0,Math.min(100,(1-topDebt.balance/startBal)*100)));
     const pctEl=document.getElementById('cc-pct');if(pctEl)pctEl.textContent=pct+'%';
     const barEl=document.getElementById('cc-bar');if(barEl)barEl.style.width=pct+'%';
     const lblEl=document.getElementById('cc-progress-label');
     // Store starting balance on first load so progress is meaningful
-    if(!localStorage.getItem(startKey))localStorage.setItem(startKey,topDebt.balance);
+    if(State.get(startKey)===null)State.set(startKey,+topDebt.balance);
   }
 };
 
@@ -4287,10 +4288,10 @@ renderHabits=async function(){
   try{
     const{data,error}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
     if(error){Logger.error('habits','renderHabits.db_error',error);}
-    else{hData=data;localStorage.setItem('_cachedHabits_'+habitDate,JSON.stringify(data||[]));}
+    else{hData=data;State.set('_cachedHabits_'+habitDate,data||[]);}
   }catch(e){
     Logger.error('habits','renderHabits.catch',e);
-    try{hData=JSON.parse(localStorage.getItem('_cachedHabits_'+habitDate)||'[]');}catch(_){}
+    hData=State.get('_cachedHabits_'+habitDate)||[];
   }
   habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
   const secs=getUserHabitSecs();
@@ -4354,7 +4355,7 @@ openSpiceModal=function(profileId,editKey){
     }
     // Also check localStorage customs
     if(!found){
-      const customs=JSON.parse(localStorage.getItem('custom_spice_'+PROFILE.id)||'[]');
+      const customs=State.get('custom_spice_'+PROFILE.id)||[];
       found=customs.find(r=>r.id===editKey);
     }
     if(found){
@@ -5469,8 +5470,7 @@ loadRecipesFromDB=async function(){
     if(error){
       Logger.error('recipes','loadFromDB.error',error);
       Logger.log('recipes','loadFromDB.using_cache');
-      const cached=localStorage.getItem('_cachedRecipes');
-      return cached?JSON.parse(cached):null;
+      return State.get('_cachedRecipes');
     }
     if(!recs?.length){Logger.log('recipes','loadFromDB.empty');return null;}
     Logger.log('recipes','loadFromDB.success',{count:recs.length});
@@ -5490,12 +5490,11 @@ loadRecipesFromDB=async function(){
       });
     });
     const result={profiles:Object.values(profileMap)};
-    localStorage.setItem('_cachedRecipes',JSON.stringify(result));
+    State.set('_cachedRecipes',result);
     return result;
   }catch(e){
     Logger.error('recipes','loadFromDB.catch',e);
-    const cached=localStorage.getItem('_cachedRecipes');
-    return cached?JSON.parse(cached):null;
+    return State.get('_cachedRecipes');
   }
 };
 
