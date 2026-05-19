@@ -1079,6 +1079,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 </div>
 
 <div id="toast"></div>
+<script src="logs.js"></script>
 <script>
 'use strict';
 
@@ -4282,7 +4283,15 @@ renderHabits=async function(){
     const diff=Math.round((new Date(todayStr()+'T12:00:00')-new Date(habitDate+'T12:00:00'))/86400000);
     rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';
   }
-  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  let hData=null;
+  try{
+    const{data,error}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+    if(error){Logger.error('habits','renderHabits.db_error',error);}
+    else{hData=data;localStorage.setItem('_cachedHabits_'+habitDate,JSON.stringify(data||[]));}
+  }catch(e){
+    Logger.error('habits','renderHabits.catch',e);
+    try{hData=JSON.parse(localStorage.getItem('_cachedHabits_'+habitDate)||'[]');}catch(_){}
+  }
   habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
   const secs=getUserHabitSecs();
   const listEl=document.getElementById('h-habits-list');if(!listEl)return;
@@ -5341,6 +5350,7 @@ renderSpice=function(){
 
 // ── UPDATED openSpiceModal (loads full DB recipe data) ────────────
 openSpiceModal=async function(profileId,editKey){
+  Logger.log('recipes','openSpiceModal.start',{profileId,editKey});
   document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
   document.getElementById('spice-edit-key').value=editKey||'';
   document.getElementById('spice-edit-is-template').value='';
@@ -5354,6 +5364,7 @@ openSpiceModal=async function(profileId,editKey){
     // Try to load from DB first
     const{data:rec}=await sb.from('recipes').select('*').eq('id',editKey).maybeSingle();
     if(rec){
+      Logger.log('recipes','openSpiceModal.loaded_from_db',{id:rec.id,name:rec.name});
       const n=document.getElementById('sm-name');if(n)n.value=rec.name||'';
       const sp=document.getElementById('sm-profile');if(sp)sp.value=rec.profile_id||profileId||'basics';
       const ps=document.getElementById('sm-protein-src');if(ps)ps.value=rec.protein_src||'';
@@ -5366,6 +5377,7 @@ openSpiceModal=async function(profileId,editKey){
       const fa=document.getElementById('sm-fat-g');if(fa)fa.value=rec.fat_g||'';
       document.getElementById('spice-edit-is-template').value=rec.is_template?'1':'';
       previewRecipeRating();
+      Logger.log('recipes','openSpiceModal.complete');
       openModal('spice-modal');
       return;
     }
@@ -5383,13 +5395,15 @@ openSpiceModal=async function(profileId,editKey){
       const me=document.getElementById('sm-method');if(me)me.value=found.method||'';
     }
   }
+  Logger.log('recipes','openSpiceModal.complete');
   openModal('spice-modal');
 };
 
 // ── UPDATED saveSpiceRecipe (writes to DB) ────────────────────────
 saveSpiceRecipe=async function(){
+  Logger.log('spice','saveRecipe.start');
   const name=document.getElementById('sm-name')?.value.trim();
-  if(!name){toast('Enter a recipe name');return;}
+  if(!name){Logger.log('spice','saveRecipe.validation_failed',{reason:'empty_name'});toast('Enter a recipe name');return;}
   const editKey=document.getElementById('spice-edit-key')?.value;
   const isTemplate=document.getElementById('spice-edit-is-template')?.value==='1';
   const profileId=document.getElementById('sm-profile')?.value||'basics';
@@ -5422,7 +5436,8 @@ saveSpiceRecipe=async function(){
     // New recipe
     ({error}=await sb.from('recipes').insert(payload));
   }
-  if(error){toast('Error saving: '+error.message);console.error(error);return;}
+  if(error){Logger.error('spice','saveRecipe.db_error',error);toast('Error saving: '+error.message);console.error(error);return;}
+  Logger.log('spice','saveRecipe.success',{name,editKey});
   // Refresh content from DB
   const fresh=await loadRecipesFromDB();
   if(fresh)CONTENT.spice=fresh;
@@ -5448,24 +5463,40 @@ removeSpiceRecipe=async function(id){
 
 // ── UPDATED loadRecipesFromDB (marks template vs user recipes) ────
 loadRecipesFromDB=async function(){
-  const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
-  if(error||!recs?.length)return null;
-  const profileMap={};
-  recs.forEach(r=>{
-    if(!profileMap[r.profile_id]){
-      profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+  Logger.log('recipes','loadFromDB.start');
+  try{
+    const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
+    if(error){
+      Logger.error('recipes','loadFromDB.error',error);
+      Logger.log('recipes','loadFromDB.using_cache');
+      const cached=localStorage.getItem('_cachedRecipes');
+      return cached?JSON.parse(cached):null;
     }
-    const rows=[];
-    if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
-    if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
-    profileMap[r.profile_id].recipes.push({
-      ...r,rows,
-      profileId:r.profile_id,
-      _isTemplate:r.is_template,
-      _isUserRecipe:r.created_by===PROFILE?.id&&!r.is_template
+    if(!recs?.length){Logger.log('recipes','loadFromDB.empty');return null;}
+    Logger.log('recipes','loadFromDB.success',{count:recs.length});
+    const profileMap={};
+    recs.forEach(r=>{
+      if(!profileMap[r.profile_id]){
+        profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+      }
+      const rows=[];
+      if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+      if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+      profileMap[r.profile_id].recipes.push({
+        ...r,rows,
+        profileId:r.profile_id,
+        _isTemplate:r.is_template,
+        _isUserRecipe:r.created_by===PROFILE?.id&&!r.is_template
+      });
     });
-  });
-  return{profiles:Object.values(profileMap)};
+    const result={profiles:Object.values(profileMap)};
+    localStorage.setItem('_cachedRecipes',JSON.stringify(result));
+    return result;
+  }catch(e){
+    Logger.error('recipes','loadFromDB.catch',e);
+    const cached=localStorage.getItem('_cachedRecipes');
+    return cached?JSON.parse(cached):null;
+  }
 };
 
 </script>
