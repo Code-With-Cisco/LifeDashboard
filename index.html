@@ -1081,6 +1081,10 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 <div id="toast"></div>
 <script src="logs.js"></script>
 <script src="state.js"></script>
+<script src="utils.js"></script>
+<script src="api.js"></script>
+<script src="render.js"></script>
+<script src="main.js"></script>
 <script>
 'use strict';
 
@@ -1115,7 +1119,7 @@ const CONFIG = Object.freeze({
 });
 
 const {createClient}=supabase;
-const sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
+window.sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
 
 // ── SAFETY HELPERS ───────────────────────────────────────────────
 /**
@@ -1700,8 +1704,9 @@ async function toggleHabit(id){
   if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
   // Upsert keeps the operation idempotent — toggling the same habit twice is safe.
   // Conflict key: (user_id, log_date, habit_id) ensures one row per user/day/habit.
-  const{error:habitErr}=await sb.from('habit_logs').upsert({user_id:PROFILE.id,log_date:habitDate,habit_id:id,completed:newVal},{onConflict:'user_id,log_date,habit_id'});
-  if(habitErr){console.error('[habit] upsert failed:',habitErr.message);toast('Error saving habit — check connection');}
+  try{
+    await API.habits.upsert(PROFILE.id,id,habitDate,newVal);
+  }catch(e){console.error('[habit] upsert failed:',e.message);toast('Error saving habit — check connection');}
   renderCatProg();renderStreakBar();
 }
 async function chDay(d){
@@ -4195,22 +4200,24 @@ async function loadWorkoutPlansFromDB(){
  * Returns null on error or empty DB (triggers JSON fallback).
  */
 async function loadRecipesFromDB(){
-  const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
-  if(error||!recs?.length)return null;
-  // Group recipes by their flavor profile ID
-  const profileMap={};
-  recs.forEach(r=>{
-    if(!profileMap[r.profile_id]){
-      profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
-    }
-    const rows=[];
-    if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
-    if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
-    profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
-  });
-  // Custom recipes are stored in the recipes table (created_by = PROFILE.id, is_template = false)
-  // and are already included in the SELECT above, so no localStorage fallback is needed.
-  return{profiles:Object.values(profileMap)};
+  try{
+    const recs=await API.recipes.list();
+    if(!recs?.length)return null;
+    // Group recipes by their flavor profile ID
+    const profileMap={};
+    recs.forEach(r=>{
+      if(!profileMap[r.profile_id]){
+        profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+      }
+      const rows=[];
+      if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+      if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+      profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
+    });
+    // Custom recipes are stored in the recipes table (created_by = PROFILE.id, is_template = false)
+    // and are already included in the SELECT above, so no localStorage fallback is needed.
+    return{profiles:Object.values(profileMap)};
+  }catch(e){return null;}
 }
 
 // Override the base loadAllContent (defined earlier) with a DB-first waterfall:
@@ -4286,9 +4293,8 @@ renderHabits=async function(){
   }
   let hData=null;
   try{
-    const{data,error}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
-    if(error){Logger.error('habits','renderHabits.db_error',error);}
-    else{hData=data;State.set('_cachedHabits_'+habitDate,data||[]);}
+    const logs=await API.habits.getLogs(PROFILE.id,habitDate);
+    hData=logs;State.set('_cachedHabits_'+habitDate,logs);
   }catch(e){
     Logger.error('habits','renderHabits.catch',e);
     hData=State.get('_cachedHabits_'+habitDate)||[];
@@ -5363,7 +5369,7 @@ openSpiceModal=async function(profileId,editKey){
   const spEl=document.getElementById('sm-profile');if(spEl)spEl.value=profileId||'basics';
   if(editKey){
     // Try to load from DB first
-    const{data:rec}=await sb.from('recipes').select('*').eq('id',editKey).maybeSingle();
+    const rec=await API.recipes.get(editKey);
     if(rec){
       Logger.log('recipes','openSpiceModal.loaded_from_db',{id:rec.id,name:rec.name});
       const n=document.getElementById('sm-name');if(n)n.value=rec.name||'';
@@ -5424,20 +5430,20 @@ saveSpiceRecipe=async function(){
     rating,color_tag:rating==='good'?'green':rating==='needs-care'?'red':'amber',
     is_template:false,created_by:PROFILE.id
   };
-  let error;
-  if(editKey&&!isTemplate){
-    // Update existing user recipe in DB
-    ({error}=await sb.from('recipes').update(payload).eq('id',editKey).eq('created_by',PROFILE.id));
-  }else if(editKey&&isTemplate){
-    // Template recipe — save as NEW custom version (don't modify template)
-    payload.name=name+(name.includes('(Custom)')?'':'');
-    ({error}=await sb.from('recipes').insert(payload));
-    toast('Saved as your custom version');
-  }else{
-    // New recipe
-    ({error}=await sb.from('recipes').insert(payload));
-  }
-  if(error){Logger.error('spice','saveRecipe.db_error',error);toast('Error saving: '+error.message);console.error(error);return;}
+  try{
+    if(editKey&&!isTemplate){
+      // Update existing user recipe in DB
+      await API.recipes.update(payload,editKey,PROFILE.id);
+    }else if(editKey&&isTemplate){
+      // Template recipe — save as NEW custom version (don't modify template)
+      payload.name=name+(name.includes('(Custom)')?'':'');
+      await API.recipes.insert(payload);
+      toast('Saved as your custom version');
+    }else{
+      // New recipe
+      await API.recipes.insert(payload);
+    }
+  }catch(e){Logger.error('spice','saveRecipe.db_error',e);toast('Error saving: '+e.message);console.error(e);return;}
   Logger.log('spice','saveRecipe.success',{name,editKey});
   // Refresh content from DB
   const fresh=await loadRecipesFromDB();
@@ -5451,11 +5457,11 @@ saveSpiceRecipe=async function(){
 // ── UPDATED removeSpiceRecipe (DB delete, user recipes only) ──────
 removeSpiceRecipe=async function(id){
   // Check if it's a user recipe
-  const{data:rec}=await sb.from('recipes').select('is_template,created_by').eq('id',id).maybeSingle();
+  const rec=await API.recipes.getMeta(id);
   if(rec&&rec.is_template){toast("Library recipes can't be deleted — you can edit them instead");return;}
   if(rec&&rec.created_by!==PROFILE.id){toast("Can only delete your own recipes");return;}
   if(!await confirmDialog('Delete this recipe?'))return;
-  await sb.from('recipes').delete().eq('id',id);
+  await API.recipes.delete(id);
   const fresh=await loadRecipesFromDB();
   if(fresh)CONTENT.spice=fresh;
   renderSpice();
@@ -5466,12 +5472,7 @@ removeSpiceRecipe=async function(id){
 loadRecipesFromDB=async function(){
   Logger.log('recipes','loadFromDB.start');
   try{
-    const{data:recs,error}=await sb.from('recipes').select('*').order('profile_id').order('name');
-    if(error){
-      Logger.error('recipes','loadFromDB.error',error);
-      Logger.log('recipes','loadFromDB.using_cache');
-      return State.get('_cachedRecipes');
-    }
+    const recs=await API.recipes.list();
     if(!recs?.length){Logger.log('recipes','loadFromDB.empty');return null;}
     Logger.log('recipes','loadFromDB.success',{count:recs.length});
     const profileMap={};
