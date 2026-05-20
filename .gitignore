@@ -1,2 +1,4 @@
 .claude/worktrees/affectionate-volhard-67e907/
 .claude/worktrees/clever-aryabhata-83b6f2/
+node_modules/
+coverage/
