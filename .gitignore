@@ -2,3 +2,7 @@
 .claude/worktrees/clever-aryabhata-83b6f2/
 node_modules/
 coverage/
+config.js
+.env.local
+.env.*.local
+.DS_Store

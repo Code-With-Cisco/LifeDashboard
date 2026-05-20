@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -1101,25 +1102,12 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 //
 // STAGE 1–3  Core auth, profiles, all user-data logging (Supabase)
 // STAGE 4    DB-powered content: meals, workouts, recipes from DB
-//            with per-source JSON fallback if DB is empty.
 // STAGE 5    Advanced library, workout builder, meal search
-// STAGE 6    (pending) Migrate books year-plan metadata to DB;
-//            books.json is currently kept as static template data.
+// STAGE 6    (pending) Migrate books year-plan metadata to DB
 //
 // All user-specific data (preferences, logs, lists) lives in
-// Supabase. Static reference content (books.json, schedule.json)
-// remains in JSON files — these are templates, not user data.
+// Supabase. Books and schedule data will be migrated in Stage 6.
 // ════════════════════════════════════════════════════════════════
-
-// ── APP CONFIG ───────────────────────────────────────────────────
-// SUPABASE_KEY is the public anon key — safe to ship client-side.
-// Security is enforced by Row Level Security policies on the DB.
-// Do NOT replace this with the service_role key.
-const CONFIG = Object.freeze({
-  supabaseUrl:  'https://nyjnojknzplfigehzamk.supabase.co',
-  supabaseKey:  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55am5vamtuenBsZmlnZWh6YW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0NTE2MDgsImV4cCI6MjA5NDAyNzYwOH0.uL9Nucz4R0qdkmiggk-r_zEmIEG5L8loQ_osK6AF79c',
-  signupCode:   'Memento Mori',
-});
 
 const {createClient}=supabase;
 window.sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
@@ -1174,37 +1162,10 @@ const CACHE_TTL=86400000;
  *  data if the network fetch fails. Returns null if both fail.
  * @param {string} file - filename without extension, e.g. 'meals'
  * @returns {Promise<Object|null>} */
-async function fetchContent(file){
-  // Bump version to clear any stale null-caches from old failed fetches
-  const key='cc_v4_'+file;
-  const cached=State.get(key);
-  if(cached&&Date.now()-cached.ts<CACHE_TTL)return cached.data;
-  // Try both cases of folder name (GitHub is case-sensitive)
-  const attempts=['./Data/','./data/'];
-  for(const base of attempts){
-    try{
-      const url=base+file+'.json?t='+Date.now();
-      const r=await fetch(url);
-      if(r.ok){
-        const data=await r.json();
-        State.set(key,{data,ts:Date.now()});
-        console.log('[content] loaded from',url);
-        return data;
-      }
-      console.warn('[content]',url,'returned',r.status);
-    }catch(e){console.warn('[content] fetch error for',base+file,e.message);}
-  }
-  console.error('[content] FAILED to load',file,'- check your Data/ folder on GitHub');
-  return cached?.data||null;
-}
-/** Populate the global CONTENT object from JSON files. Overridden later by
- *  the Supabase stage to prefer DB data with JSON fallback. */
+/** Populate the global CONTENT object from the DB. Overridden later by
+ *  the Supabase stage with the full DB-powered implementation. */
 async function loadAllContent(){
-  const[w,m,b,s,sc]=await Promise.all([
-    fetchContent('workouts'),fetchContent('meals'),fetchContent('books'),
-    fetchContent('spice-guide'),fetchContent('schedule')
-  ]);
-  CONTENT={workouts:w,meals:m,books:b,spice:s,schedule:sc};
+  CONTENT={workouts:null,meals:null,books:null,spice:null,schedule:null};
 }
 const M12=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const D7=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -2181,8 +2142,8 @@ function setSpiceTab(idx){
 // READING
 const GCOLS={'Self-improvement':'g','Philosophy':'b','Mindset':'b','Sci-fi':'r','Fiction':'a','Finance':'a','Strategy':'r','Psychology':'b','Fantasy':'g','Memoir':'d','Business':'b','Other':'d'};
 // Two-layer data model: book metadata (title, author, pages, month, why) comes from
-// CONTENT.books (books.json template). User state (rating, status, format) comes from
-// the book_progress table keyed by book_id. Custom ordering is in PROFILE.book_list_order.
+// CONTENT.books (Stage 6: will be migrated to DB). User state (rating, status, format)
+// comes from the book_progress table keyed by book_id. Custom ordering is in PROFILE.book_list_order.
 async function renderBooks(){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];if(!listData)return;
@@ -4127,15 +4088,17 @@ if(_s3_origRemoveSub){
 
 
 // ════════════════════════════════════════════════════════════════
-// STAGE 4 — DB-powered content loading (JSON fallback retained)
+// STAGE 4 — DB-powered content loading
 // ════════════════════════════════════════════════════════════════
 
+// Placeholder — overridden in Stage 5 with the full user_reading_list implementation.
+async function loadBooksFromDB(){return null;}
+
 /**
- * Load template + user meals from DB and reshape into the same {plans:{...}} object
- * that meals.json produces. Each plan key shares the same grouped meal options but
- * has different macro targets. Returns null if the DB is empty (triggers JSON fallback).
- * The hard-coded targets here are defaults; calorie/protein targets per-user come
- * from PROFILE.calorie_target / PROFILE.protein_target read in loadDashStats().
+ * Load template + user meals from DB and reshape into a {plans:{...}} object.
+ * Each plan key shares the same grouped meal options but has different macro targets.
+ * Returns null if the DB is empty. Hard-coded targets are defaults; per-user
+ * targets come from PROFILE.calorie_target / PROFILE.protein_target.
  */
 async function loadMealsFromDB(){
   const{data:meals,error}=await sb.from('meals').select('*').eq('is_template',true).order('meal_type').order('name');
@@ -4160,24 +4123,17 @@ async function loadMealsFromDB(){
   return{plans:{'high-protein-deficit':{id:'high-protein-deficit',name:'High Protein Deficit',targets,...grouped},'balanced-deficit':{id:'balanced-deficit',name:'Balanced Deficit',targets:{calories:1800,protein_g:160,carbs_g:180,fat_g:55},...grouped},'maintenance-muscle':{id:'maintenance-muscle',name:'Maintenance + Muscle',targets:{calories:2400,protein_g:200,carbs_g:250,fat_g:70},...grouped}}};
 }
 
-async function loadBooksFromDB(){
-  // Stage 6 will migrate reading to DB. For now, use JSON so book_progress
-  // table (existing) continues to work correctly with the reading renderer.
-  return null;
-}
-
 /**
  * Load template workout plans from DB with their days via a nested join.
- * Reshapes rows into an object keyed by plan_key to match the workouts.json
- * format consumed by renderWorkout(). workout_plan_days are sorted by day_number
- * so the weekly schedule displays in order regardless of insert sequence.
- * Returns null on error or empty DB (triggers JSON fallback).
+ * Reshapes rows into an object keyed by plan_key. workout_plan_days are
+ * sorted by day_number so the weekly schedule displays in order regardless
+ * of insert sequence. Returns null on error or empty DB.
  */
 async function loadWorkoutPlansFromDB(){
   const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
   if(error||!plans?.length)return null;
   const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
-  // Keyed by plan_key to match workouts.json structure
+  // Keyed by plan_key (matches the shape expected by renderWorkout)
   const plansObj={};
   plans.forEach(p=>{
     plansObj[p.plan_key]={
@@ -4200,7 +4156,7 @@ async function loadWorkoutPlansFromDB(){
  * named recipes with dry_rub and sauce ingredient arrays.
  * Custom user recipes are stored in the same table with created_by = PROFILE.id
  * and is_template = false, so they appear in the same SELECT.
- * Returns null on error or empty DB (triggers JSON fallback).
+ * Returns null on error or empty DB.
  */
 async function loadRecipesFromDB(){
   try{
@@ -4223,53 +4179,26 @@ async function loadRecipesFromDB(){
   }catch(e){return null;}
 }
 
-// Override the base loadAllContent (defined earlier) with a DB-first waterfall:
-// 1. Fire all four DB loaders in parallel.
-// 2. For each source, use DB data if available; fall back to its JSON file if null.
-// 3. books.json is always loaded — Stage 6 will replace this once the books table
-//    is fully populated with year-plan metadata (month, why, genre fields).
-// 4. schedule.json has no DB equivalent; it is static reference content.
-// 5. If the entire DB call throws, fall back to all JSON files.
+// Override the base loadAllContent with a DB-powered implementation.
+// All content comes from Supabase; books and schedule will be migrated in Stage 6.
 loadAllContent=async function(){
-  let dbOk=false;
   try{
-    const[mealsData,booksData,workoutsData,recipesData]=await Promise.all([
+    const[mealsData,workoutsData,recipesData]=await Promise.all([
       loadMealsFromDB(),
-      loadBooksFromDB(),
       loadWorkoutPlansFromDB(),
       loadRecipesFromDB()
     ]);
-    // Schedule/roadmap still comes from JSON file
-    const scheduleData=await fetchContent('schedule');
-    if(mealsData||workoutsData||recipesData){
-      // Load each from DB where available, fall back to JSON per-source
-      const[jsonW,jsonM,jsonB,jsonS]=await Promise.all([
-        workoutsData?null:fetchContent('workouts'),
-        mealsData?null:fetchContent('meals'),
-        fetchContent('books'),   // books always from JSON until Stage 6
-        recipesData?null:fetchContent('spice-guide')
-      ]);
-      CONTENT={
-        workouts:workoutsData||jsonW,
-        meals:mealsData||jsonM,
-        books:jsonB,
-        spice:recipesData||jsonS,
-        schedule:scheduleData
-      };
-      dbOk=true;
-      console.log('[content] loaded from Supabase DB ✓');
-    }
+    CONTENT={
+      workouts:workoutsData||null,
+      meals:mealsData||null,
+      books:null,
+      spice:recipesData||null,
+      schedule:null
+    };
+    console.log('[content] loaded from Supabase DB ✓');
   }catch(e){
     console.warn('[content] DB load error:',e.message);
-  }
-  if(!dbOk){
-    // Fallback to JSON files
-    console.log('[content] falling back to JSON files');
-    const[w,m,b,s,sc]=await Promise.all([
-      fetchContent('workouts'),fetchContent('meals'),fetchContent('books'),
-      fetchContent('spice-guide'),fetchContent('schedule')
-    ]);
-    CONTENT={workouts:w,meals:m,books:b,spice:s,schedule:sc};
+    CONTENT={workouts:null,meals:null,books:null,spice:null,schedule:null};
   }
 };
 

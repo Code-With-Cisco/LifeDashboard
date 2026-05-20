@@ -4,7 +4,50 @@
 
 No build step required. Open `index.html` directly in a browser (or serve with any static file server if Supabase CORS policies require an origin).
 
-You'll need Supabase credentials. The project reads them from the inline script at the top of `index.html` — no `.env` file or build config involved.
+### Step 1: Get your Supabase credentials
+
+1. Go to [Supabase Dashboard](https://supabase.com) and open your project
+2. Click **Settings → API**
+3. Copy **Project URL** and **anon key**
+
+### Step 2: Create `config.js`
+
+```bash
+cp config.example.js config.js
+```
+
+Open `config.js` and fill in your real values:
+
+```js
+const CONFIG = Object.freeze({
+  supabaseUrl:  'https://your-project.supabase.co',
+  supabaseKey:  'your-anon-key-here',
+  signupCode:   'your-signup-code-here',
+});
+```
+
+`config.js` is listed in `.gitignore` — never commit it.
+
+### Step 3: Run the app
+
+```bash
+# Option A — Python (no install)
+python -m http.server 8000
+# Then open http://localhost:8000
+
+# Option B — Node
+npx http-server
+```
+
+Or just open `index.html` directly in Chrome/Firefox.
+
+### Troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| "Cannot read properties of undefined (reading 'from')" | `config.js` is missing or has wrong `supabaseUrl` |
+| 401 / 403 from Supabase | Wrong `supabaseKey` — use the **anon** key, not the service_role key |
+| Blank page | Open DevTools → Console and look for the first red error |
 
 ## Running Tests
 
@@ -41,7 +84,7 @@ fix: short description of what was wrong and what changed
 | New business logic (no DOM, no DB) | `services/` — create or extend a service file |
 | New HTML template | `render.js` — add a pure function that returns a string |
 | New DOM utility | `utils.js` — add to the appropriate util object |
-| New UI feature wired to events | `index.html` inline script — follow the staged loading pattern |
+| New UI feature wired to events | `app.js` — follow the staged loading pattern |
 | New event delegation action | `main.js` — add a `case` to `setupEventDelegation` |
 
 ## Staged Loading Pattern
