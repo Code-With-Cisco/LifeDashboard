@@ -1,10 +1,35 @@
 /**
- * Render: Pure template functions that return HTML strings.
- * No DOM manipulation, no side effects, no API calls.
- * Used by page renderers to build HTML before inserting into the DOM.
+ * render.js — Pure HTML template functions.
+ *
+ * PURPOSE: Returns HTML strings for page regions. No DOM writes, no API calls,
+ *   no side effects — only data → HTML string transforms. Callers are responsible
+ *   for setting innerHTML with the result.
+ *
+ * PUBLIC INTERFACE:
+ *   Render.recipeCard(recipe)               — single recipe card HTML
+ *   Render.recipes(recipes, profileId)      — recipe grid HTML (filtered by profile)
+ *   Render.habitRow(habit, completed)       — single habit row HTML
+ *   Render.habits(habits, completions)      — full habits list HTML
+ *   Render.nutritionSummary(nutrition)      — nutrition macro stats block HTML
+ *   Render.emptyState(message)              — empty state placeholder HTML
+ *   Render.errorState(message)              — error state placeholder HTML (red)
+ *
+ * CONNECTED TO: utils.js (StringUtils.truncate)
+ *               main.js, app.js (call Render.* then set innerHTML)
  */
 window.Render = {
 
+  /**
+   * Return HTML for a single recipe card.
+   * @param {Object} recipe
+   * @param {string} recipe.id
+   * @param {string} recipe.name
+   * @param {string} recipe.rating            - 'good' | 'so-so' | 'needs-care' | 'unknown'
+   * @param {number} [recipe.protein_g]
+   * @param {number} [recipe.calories_per_serving]
+   * @param {string} recipe.profile_id
+   * @returns {string} HTML string
+   */
   recipeCard: function(recipe) {
     const rating = recipe.rating || 'unknown';
     const ratingClass = 'rating-' + rating.replace(/[^a-z-]/g, '');
@@ -26,6 +51,13 @@ window.Render = {
       </div>`;
   },
 
+  /**
+   * Return HTML for a recipe grid, filtered to a given profile.
+   * Returns an empty-state message if no recipes match.
+   * @param {Object[]} recipes
+   * @param {string}   profileId
+   * @returns {string} HTML string
+   */
   recipes: function(recipes, profileId) {
     if (!recipes || recipes.length === 0) {
       return '<p class="empty-state">No recipes yet. Create one to get started.</p>';
@@ -37,6 +69,16 @@ window.Render = {
     return '<div class="recipes-grid">' + filtered.map(r => this.recipeCard(r)).join('') + '</div>';
   },
 
+  /**
+   * Return HTML for a single habit row with a completion checkbox.
+   * @param {Object}  habit
+   * @param {string}  habit.id
+   * @param {string}  [habit.label]
+   * @param {string}  [habit.name]
+   * @param {number}  [habit.streak]
+   * @param {boolean} completed - whether the habit is checked today
+   * @returns {string} HTML string
+   */
   habitRow: function(habit, completed) {
     return `
       <div class="habit-row" data-habit-id="${habit.id}">
@@ -46,6 +88,12 @@ window.Render = {
       </div>`;
   },
 
+  /**
+   * Return HTML for the full habits list.
+   * @param {Object[]}                habits
+   * @param {Object.<string,boolean>} [completions={}] - map of habit_id → completed
+   * @returns {string} HTML string
+   */
   habits: function(habits, completions = {}) {
     if (!habits || habits.length === 0) {
       return '<p class="empty-state">No habits yet. Create one to start tracking.</p>';
@@ -53,6 +101,15 @@ window.Render = {
     return '<div class="habits-list">' + habits.map(h => this.habitRow(h, !!completions[h.id])).join('') + '</div>';
   },
 
+  /**
+   * Return HTML for the nutrition macro summary block.
+   * @param {Object|null} nutrition
+   * @param {number}      [nutrition.calories]
+   * @param {number}      [nutrition.protein_g]
+   * @param {number}      [nutrition.carbs_g]
+   * @param {number}      [nutrition.fat_g]
+   * @returns {string} HTML string
+   */
   nutritionSummary: function(nutrition) {
     const n = nutrition || {calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0};
     return `
@@ -64,10 +121,20 @@ window.Render = {
       </div>`;
   },
 
+  /**
+   * Return an empty-state placeholder HTML string.
+   * @param {string} message
+   * @returns {string}
+   */
   emptyState: function(message) {
     return `<p class="empty-state">${message}</p>`;
   },
 
+  /**
+   * Return an error-state placeholder HTML string (styled in red).
+   * @param {string} message
+   * @returns {string}
+   */
   errorState: function(message) {
     return `<p class="error-state" style="color:var(--red);padding:12px">${message}</p>`;
   }

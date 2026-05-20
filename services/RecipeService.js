@@ -1,6 +1,19 @@
 /**
- * RecipeService: Business logic for recipes.
- * No DOM manipulation. No direct sb.from() calls. Uses API module for data access.
+ * RecipeService — Business logic for recipes.
+ *
+ * PURPOSE: Pure business logic for recipe rating and filtering.
+ *   No DOM manipulation, no sb.from() calls, no Logger calls.
+ *   Consumed by app.js; tested in test/RecipeService.test.js.
+ *
+ * PUBLIC INTERFACE:
+ *   RecipeService.rate(cal, protein)                  → 'good'|'so-so'|'needs-care'|null
+ *   RecipeService.ratingInfo(rating)                  → {label,badge,icon,desc}|null
+ *   RecipeService.filter(recipes, {profileId,rating}) → recipe[]
+ *   RecipeService.suggest(recipes, profileId, n)      → top-n recipe[]
+ *
+ * CONNECTED TO: app.js (consumer)
+ *               test/RecipeService.test.js
+ *               RATING_CONFIG badge keys must match CSS classes in styles.css
  */
 window.RecipeService = {
 
@@ -11,10 +24,13 @@ window.RecipeService = {
   },
 
   /**
-   * Calculate nutritional rating for a recipe.
+   * Calculate a nutritional rating for a recipe.
    * Good:       protein >= 30g AND calories <= 600
    * So-So:      protein 15–29g OR calories 600–800
    * Needs Care: protein < 15g OR calories > 800
+   * @param {number|string} cal     - calories per serving
+   * @param {number|string} protein - protein in grams
+   * @returns {'good'|'so-so'|'needs-care'|null} null if both inputs are falsy
    */
   rate: function(cal, protein) {
     if (!cal && !protein) return null;
@@ -24,12 +40,23 @@ window.RecipeService = {
     return 'so-so';
   },
 
-  /** Return the rating config object for a given rating key, or null. */
+  /**
+   * Return the display config object for a rating key.
+   * @param {string} rating - 'good' | 'so-so' | 'needs-care'
+   * @returns {{label: string, badge: string, icon: string, desc: string}|null}
+   */
   ratingInfo: function(rating) {
     return this.RATING_CONFIG[rating] || null;
   },
 
-  /** Filter recipes by profileId and/or rating. */
+  /**
+   * Filter a recipe array by profile and/or rating.
+   * @param {Object[]}   recipes
+   * @param {Object}     [options={}]
+   * @param {string}     [options.profileId] - keep only recipes with this profile_id
+   * @param {string}     [options.rating]    - keep only recipes with this rating
+   * @returns {Object[]}
+   */
   filter: function(recipes, {profileId, rating} = {}) {
     let result = recipes || [];
     if (profileId) result = result.filter(r => r.profile_id === profileId);
@@ -38,8 +65,13 @@ window.RecipeService = {
   },
 
   /**
-   * Return top n recipes for a profile, ranked by protein density
-   * (protein per calorie, descending). Recipes with no calorie data rank last.
+   * Return the top n recipes for a profile ranked by protein density
+   * (protein_g / calories_per_serving, descending).
+   * Recipes with zero or missing calories rank last.
+   * @param {Object[]} recipes
+   * @param {string}   profileId
+   * @param {number}   [n=5]
+   * @returns {Object[]}
    */
   suggest: function(recipes, profileId, n = 5) {
     const pool = this.filter(recipes, {profileId});

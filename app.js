@@ -1,0 +1,4395 @@
+/**
+ * app.js — LifeDashboard main application script.
+ *
+ * PURPOSE: Entry point for all UI logic. Initialises the Supabase client,
+ *   manages auth state, and defines the staged-override functions for each
+ *   data domain (habits, nutrition, meals, workouts, recipes, books,
+ *   calendar, finance).
+ *
+ * PUBLIC INTERFACE: Exposes global functions called from index.html onclick
+ *   attributes and event listeners. Key globals:
+ *     toast(msg, dur)           — brief status message overlay
+ *     confirmDialog(msg)        — async in-app confirmation dialog
+ *     openModal(id)/closeModal(id)
+ *     navigate(page)            — switch the active dashboard page
+ *     todayStr()                — current date as YYYY-MM-DD (user timezone)
+ *
+ * CONNECTED TO: config.js (CONFIG), logs.js, state.js, utils.js, api.js,
+ *               render.js, main.js, services/RecipeService.js,
+ *               services/HabitService.js, services/NutritionService.js,
+ *               Supabase JS client (window.sb)
+ *
+ * ARCHITECTURE: Uses a staged override pattern — see block comment below.
+ */
+'use strict';
+
+// ════════════════════════════════════════════════════════════════
+// ARCHITECTURE: STAGED LOADING
+// ════════════════════════════════════════════════════════════════
+// This file uses a staged override pattern. Base implementations
+// are defined early; later STAGE blocks reassign functions (e.g.
+// `renderHabits = async function(){...}`) to swap in DB-driven
+// versions without removing the original fallback logic.
+//
+// STAGE 1–3  Core auth, profiles, all user-data logging (Supabase)
+// STAGE 4    DB-powered content: meals, workouts, recipes from DB
+// STAGE 5    Advanced library, workout builder, meal search
+// STAGE 6    (pending) Migrate books year-plan metadata to DB
+//
+// All user-specific data (preferences, logs, lists) lives in
+// Supabase. Books and schedule data will be migrated in Stage 6.
+// ════════════════════════════════════════════════════════════════
+
+const {createClient}=supabase;
+window.sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
+
+// ── SAFETY HELPERS ───────────────────────────────────────────────
+/**
+ * Escape a value for safe embedding inside an HTML attribute (single or double quoted).
+ * Use this whenever user-controlled data appears in onclick="..." or similar.
+ * @param {*} val
+ * @returns {string}
+ */
+function escapeAttr(val){
+  return String(val==null?'':val)
+    .replace(/&/g,'&amp;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+/**
+ * Escape a value for safe insertion as text content inside HTML.
+ * @param {*} val
+ * @returns {string}
+ */
+function escapeHtml(val){
+  return String(val==null?'':val)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+/**
+ * Returns a debounced version of fn that delays invocation until after
+ * `wait` ms have elapsed since the last call.
+ * @param {Function} fn
+ * @param {number} wait
+ * @returns {Function}
+ */
+function debounce(fn,wait){
+  let timer;
+  return function(...args){
+    clearTimeout(timer);
+    timer=setTimeout(()=>fn.apply(this,args),wait);
+  };
+}
+let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toLocaleDateString('en-CA',{timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York'}),
+    calView='month',calDate=new Date(),bookEditMode=false,logDayIdx=0,mealTab='preset',
+    debtEditId=null,subEditId=null,evEditId=null,habitCache={};
+const CACHE_TTL=86400000;
+/**
+ * Populate the global CONTENT object with nulls. Overridden in Stage 4
+ * by the DB-powered implementation that loads from Supabase.
+ * @returns {Promise<void>}
+ */
+async function loadAllContent(){
+  CONTENT={workouts:null,meals:null,books:null,spice:null,schedule:null};
+}
+const M12=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const D7=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const D7L=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+/**
+ * Return today's date as a YYYY-MM-DD string in the user's stored timezone,
+ * falling back to the browser timezone, then Eastern.
+ * @returns {string}
+ */
+function todayStr(){
+  const tz=(typeof PROFILE!=='undefined'&&PROFILE&&PROFILE.timezone)||
+    Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  return new Date().toLocaleDateString('en-CA',{timeZone:tz});
+}
+/**
+ * Format a Date as "Month D, YYYY" (e.g. "January 5, 2025").
+ * @param {Date} d
+ * @returns {string}
+ */
+function fmtD(d){return M12[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();}
+/**
+ * Format a Date as "Mon D" short form (e.g. "Jan 5").
+ * @param {Date} d
+ * @returns {string}
+ */
+function fmtDs(d){return M12[d.getMonth()].slice(0,3)+' '+d.getDate();}
+/**
+ * Return the current year-month as "YYYY-MM".
+ * @returns {string}
+ */
+function yearMonth(){return new Date().toISOString().slice(0,7);}
+let toastTmr;
+/** Show a brief status message at the bottom of the screen.
+ * @param {string} msg
+ * @param {number} [dur=2400] - display duration in ms */
+function toast(msg,dur=2400){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(toastTmr);toastTmr=setTimeout(()=>el.classList.remove('show'),dur);
+}
+/**
+ * Show an in-app confirmation dialog instead of the native browser confirm().
+ * @param {string} msg
+ * @returns {Promise<boolean>} resolves true (Yes) or false (Cancel)
+ */
+function confirmDialog(msg){
+  return new Promise(resolve=>{
+    document.getElementById('confirm-msg').textContent=msg;
+    const yes=document.getElementById('confirm-yes-btn');
+    const no=document.getElementById('confirm-no-btn');
+    const finish=v=>{closeModal('confirm-modal');resolve(v);};
+    yes.onclick=()=>finish(true);
+    no.onclick=()=>finish(false);
+    openModal('confirm-modal');
+  });
+}
+/**
+ * Open a modal overlay by adding the 'open' class.
+ * @param {string} id - element id of the .modal-bg element
+ * @returns {void}
+ */
+function openModal(id){document.getElementById(id)?.classList.add('open');}
+/**
+ * Close a modal overlay by removing the 'open' class.
+ * @param {string} id - element id of the .modal-bg element
+ * @returns {void}
+ */
+function closeModal(id){document.getElementById(id)?.classList.remove('open');}
+document.addEventListener('click',e=>{if(e.target.classList.contains('modal-bg'))e.target.classList.remove('open');});
+/**
+ * Show an inline error message for 5 s, then hide it.
+ * @param {string} id  - element id of the error container
+ * @param {string} msg - message to display
+ * @returns {void}
+ */
+function showErr(id,msg){
+  const el=document.getElementById(id);if(!el)return;
+  el.textContent=msg;el.style.display='block';
+  setTimeout(()=>el.style.display='none',5000);
+}
+/**
+ * Show an auth screen by id, hiding all others first.
+ * @param {string} id - element id of the .auth-screen to show
+ * @returns {void}
+ */
+function show(id){
+  document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('show'));
+  document.getElementById(id)?.classList.add('show');
+}
+/**
+ * Hide all auth screens.
+ * @returns {void}
+ */
+function hideAuth(){document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('show'));}
+
+// AUTH
+async function doLogin(){
+  const btn=document.getElementById('login-btn');
+  const email=document.getElementById('l-email').value.trim();
+  const pass=document.getElementById('l-pass').value;
+  if(!email||!pass){showErr('login-err','Enter email and password.');return;}
+  btn.disabled=true;btn.textContent='Signing in...';
+  const{error}=await sb.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false;btn.textContent='SIGN IN';
+  if(error)showErr('login-err',error.message.includes('Invalid')?'Incorrect email or password.':error.message);
+}
+function checkCode(){
+  const val=document.getElementById('s-code-inp').value.trim();
+  if(val.toLowerCase()===CONFIG.signupCode.toLowerCase()){show('s-signup');}
+  else{showErr('code-err','Invalid invite code.');document.getElementById('s-code-inp').value='';}
+}
+async function doSignup(){
+  const btn=document.getElementById('signup-btn');
+  const display=document.getElementById('su-display').value.trim();
+  const username=document.getElementById('su-user').value.trim().toLowerCase();
+  const email=document.getElementById('su-email').value.trim();
+  const pass=document.getElementById('su-pass').value;
+  const pass2=document.getElementById('su-pass2').value;
+  if(!display||!username||!email||!pass){showErr('signup-err','All fields required.');return;}
+  if(pass!==pass2){showErr('signup-err',"Passwords don't match.");return;}
+  if(pass.length<8){showErr('signup-err','Min 8 characters.');return;}
+  btn.disabled=true;btn.textContent='Creating...';
+  const{error}=await sb.auth.signUp({email,password:pass,options:{data:{username,display_name:display,role:'standard'}}});
+  btn.disabled=false;btn.textContent='CREATE ACCOUNT & CONTINUE';
+  if(error)showErr('signup-err',error.message);
+}
+async function doFPR(){
+  const btn=document.getElementById('fpr-btn');
+  const cur=(document.getElementById('fpr-cur')?.value||'').trim();
+  const pass=document.getElementById('fpr-pass').value;
+  const pass2=document.getElementById('fpr-pass2').value;
+  if(!pass){showErr('fpr-err','Enter a new password.');return;}
+  if(pass!==pass2){showErr('fpr-err',"Passwords don't match.");return;}
+  if(pass.length<8){showErr('fpr-err','New password must be at least 8 characters.');return;}
+  btn.disabled=true;btn.textContent='Updating...';
+  // Attempt direct password update (works when Secure Password Change is OFF in Supabase)
+  let{error:updateErr}=await sb.auth.updateUser({password:pass});
+  // If that fails and we have current password, try re-auth first then update
+  if(updateErr&&cur){
+    const{data:{user:u}}=await sb.auth.getUser();
+    if(u?.email){
+      const{error:reErr}=await sb.auth.signInWithPassword({email:u.email,password:cur});
+      if(!reErr){
+        const res=await sb.auth.updateUser({password:pass});
+        updateErr=res.error;
+      }
+    }
+  }
+  if(updateErr){
+    btn.disabled=false;btn.textContent='SET NEW PASSWORD';
+    showErr('fpr-err',updateErr.message);return;
+  }
+  // Clear the forced reset flag
+  const{data:{user}}=await sb.auth.getUser();
+  if(user){
+    await sb.from('profiles').update({force_password_reset:false}).eq('id',user.id);
+    if(PROFILE)PROFILE.force_password_reset=false;
+  }
+  btn.disabled=false;btn.textContent='SET NEW PASSWORD';
+  toast('Password updated! Loading your dashboard...');
+  if(PROFILE){await loadAllContent();enterApp();return;}
+  if(user){
+    const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
+    if(profile){PROFILE=profile;await loadAllContent();enterApp();}
+    else{show('s-login');toast('Please sign in with your new password.');}
+  }
+}
+async function logout(){
+  try{await sb.auth.signOut();}
+  catch(e){
+    console.warn('signOut error, forcing UI reset:',e);
+    PROFILE=null;
+    document.getElementById('app').classList.remove('show');
+    document.getElementById('q-screen').classList.remove('show');
+    show('s-choose');
+  }
+}
+const ADMIN_UUID='81dbcc87-60dc-4969-874b-588a8dd861b7';
+
+async function loadProfile(session){
+  // maybeSingle() returns null (not error) when 0 rows found
+  let{data:profile,error}=await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle();
+
+  // Success — profile exists
+  if(!error&&profile)return profile;
+
+  // No error but no profile — row missing, auto-create it
+  if(!error&&!profile){
+    return await createProfile(session);
+  }
+
+  // Server error (500) — could be RLS conflict or table issue
+  // Log for debugging and try creating anyway in case it's just a missing row
+  console.warn('Profile fetch error:',error?.code, error?.message, error?.details);
+
+  if(error?.code==='42P01'){
+    // Table doesn't exist at all
+    showDbError('Table "profiles" not found. Run setup.sql in Supabase SQL Editor.');
+    return null;
+  }
+
+  // For 500 or other errors: attempt profile creation as fallback
+  // (handles cases where SELECT fails but INSERT succeeds due to RLS quirks)
+  const created = await createProfile(session);
+  if(created)return created;
+
+  showDbError('Error '+error?.code+': '+error?.message+'. Run fix.sql in Supabase SQL Editor.');
+  return null;
+}
+
+async function createProfile(session){
+  const meta=session.user.user_metadata||{};
+  const isAdmin=session.user.id===ADMIN_UUID;
+  const{data:created,error:ce}=await sb.from('profiles').insert({
+    id:session.user.id,
+    username:meta.username||session.user.email?.split('@')[0]||'user',
+    display_name:meta.display_name||meta.username||session.user.email?.split('@')[0]||'User',
+    role:isAdmin?'admin':'standard',
+    signup_complete:isAdmin,
+    force_password_reset:false,
+    assigned_workout_plan:'shred-advanced',
+    assigned_meal_plan:'high-protein-deficit',
+    assigned_reading_list:'self-improvement-first',
+  }).select().maybeSingle();
+  if(!ce&&created)return created;
+  console.error('Profile create failed:',ce?.code,ce?.message);
+  return null;
+}
+
+function showDbError(msg){
+  show('s-choose');
+  const existing=document.getElementById('db-err-banner');
+  if(existing)existing.remove();
+  const box=document.querySelector('#s-choose .auth-box');
+  if(!box)return;
+  const banner=document.createElement('div');
+  banner.id='db-err-banner';
+  banner.style.cssText='background:#1a0a0a;border:1px solid rgba(232,64,64,.4);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:12px;line-height:1.7;color:#E84040';
+  banner.innerHTML='<strong>Sign-in Error</strong><br>'+(msg||'Database issue detected.')+'<br><br>Run <strong>fix.sql</strong> in Supabase SQL Editor, then reload.';
+  box.insertBefore(banner,box.firstChild);
+}
+
+sb.auth.onAuthStateChange(async(event,session)=>{
+  if(event==='PASSWORD_RECOVERY'){show('s-fpr');return;}
+  if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
+    if(!session){show('s-choose');return;}
+    const profile=await loadProfile(session);
+    if(!profile)return;
+    if(profile.is_disabled){await sb.auth.signOut();show('s-choose');toast('Account disabled. Contact admin.',5000);return;}
+    PROFILE=profile;
+    if(profile.force_password_reset){show('s-fpr');return;}
+    if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
+    await loadAllContent();enterApp();
+  }else if(event==='USER_UPDATED'){
+    if(session&&!PROFILE){
+      const profile=await loadProfile(session);
+      if(profile){PROFILE=profile;await loadAllContent();enterApp();}
+    }
+  }else if(event==='SIGNED_OUT'){
+    PROFILE=null;
+    document.getElementById('app').classList.remove('show');
+    document.getElementById('q-screen').classList.remove('show');
+    show('s-choose');
+  }
+});
+
+// QUESTIONNAIRE
+const Q_STEPS=[
+  {id:'goal',title:"What's your primary fitness goal?",sub:'Sets your workout plan and calorie targets.',opts:[
+    {icon:'&#x1F525;',label:'Lose weight & get lean',desc:'Fat loss with muscle preservation.',val:'weight-loss'},
+    {icon:'&#x1F4AA;',label:'Build muscle',desc:'Maximize muscle gain with calorie surplus.',val:'muscle-gain'},
+    {icon:'&#x26A1;',label:'Both - recomposition',desc:'Lose fat and build muscle simultaneously.',val:'recomposition'},
+    {icon:'&#x1F3C3;',label:'Improve endurance',desc:'Cardio, stamina, and general health.',val:'endurance'}]},
+  {id:'level',title:'What is your current fitness level?',sub:'Determines exercise selection and training volume.',opts:[
+    {icon:'&#x1F331;',label:'Beginner',desc:'New or returning. Under 6 months consistent.',val:'beginner'},
+    {icon:'&#x1F4C8;',label:'Intermediate',desc:'6 months to 2 years. Know the basics.',val:'intermediate'},
+    {icon:'&#x1F3C6;',label:'Advanced',desc:'3+ years. Comfortable with complex movements.',val:'advanced'}]},
+  {id:'injuries',title:'Any injuries or physical limitations?',sub:'Your plan will be built around any issues.',opts:[
+    {icon:'&#x2705;',label:'None',desc:'Full range of motion available.',val:'none'},
+    {icon:'&#x1F9B5;',label:'Knee issues',desc:'Lower body movements will be modified.',val:'knee'},
+    {icon:'&#x1F519;',label:'Back issues',desc:'Will avoid heavy spinal loading.',val:'back'},
+    {icon:'&#x1F937;',label:'Shoulder issues',desc:'Pressing movements will be modified.',val:'shoulder'}]},
+  {id:'days',title:'How many days per week can you train?',sub:'Consistency beats perfection every time.',opts:[
+    {icon:'3&#xFE0F;&#x20E3;',label:'3 days',desc:'Full body, three sessions. Solid progress.',val:'3'},
+    {icon:'4&#xFE0F;&#x20E3;',label:'4 days',desc:'Upper/lower split. Good volume.',val:'4'},
+    {icon:'6&#xFE0F;&#x20E3;',label:'5-6 days',desc:'High frequency. Maximum results.',val:'6'}]},
+  {id:'equipment',title:'What equipment do you have access to?',sub:'Determines which exercises are in your plan.',opts:[
+    {icon:'&#x1F3CB;&#xFE0F;',label:'Full gym',desc:'Cables, barbells, dumbbells, machines.',val:'full-gym'},
+    {icon:'&#x1F3E0;',label:'Home gym',desc:'Dumbbells, bench, limited machines.',val:'home-gym'},
+    {icon:'&#x1F93B;',label:'Bodyweight only',desc:'No equipment.',val:'bodyweight'}]},
+  {id:'nutrition',title:'How do you want to approach nutrition?',sub:'Your meal plan will be calibrated to your style.',opts:[
+    {icon:'&#x1F4CA;',label:'Structured - track macros',desc:'Precise targets. Log everything. Max results.',val:'structured'},
+    {icon:'&#x1F4CB;',label:'Moderate - general guidelines',desc:'Follow a plan without obsessive tracking.',val:'moderate'},
+    {icon:'&#x1F37D;&#xFE0F;',label:'Flexible - just meal ideas',desc:'Inspiration only. No tracking required.',val:'flexible'}]},
+  {id:'reading',title:'What kinds of books interest you most?',sub:'Your 12-month reading plan sequenced for you.',opts:[
+    {icon:'&#x1F9E0;',label:'Self-improvement & habits',desc:'Psychology, philosophy, productivity, mindset.',val:'self-improvement-first'},
+    {icon:'&#x1F4BC;',label:'Business & finance',desc:'Strategy, persuasion, investing, wealth.',val:'business-focus'},
+    {icon:'&#x1F4D6;',label:'Fiction & stories',desc:'Build the reading habit with great stories first.',val:'fiction-first'},
+    {icon:'&#x1F3B2;',label:'Mix of everything',desc:'No strong preference.',val:'self-improvement-first'}]},
+  {id:'financial',title:"What's your primary financial goal?",sub:'Your financial roadmap will be prioritized accordingly.',opts:[
+    {icon:'&#x1F4B3;',label:'Pay off debt first',desc:'Eliminate high-interest debt before anything else.',val:'debt-payoff'},
+    {icon:'&#x1F3E6;',label:'Build emergency fund',desc:'Financial security before growth.',val:'savings-focus'},
+    {icon:'&#x1F4C8;',label:'Start investing',desc:'Roth IRA, index funds, compounding.',val:'savings-focus'},
+    {icon:'&#x1F3AF;',label:'All of the above',desc:'Balanced approach across all three.',val:'debt-payoff'}]},
+];
+let qAnswers={},qStep=0;
+function startQuestionnaire(){document.getElementById('q-screen').classList.add('show');qStep=0;renderQStep();}
+function renderQStep(){
+  const s=Q_STEPS[qStep];
+  document.getElementById('q-prog-fill').style.width=Math.round(qStep/Q_STEPS.length*100)+'%';
+  document.getElementById('q-back').style.display=qStep>0?'block':'none';
+  document.getElementById('q-next').textContent=qStep===Q_STEPS.length-1?'Build My Dashboard':'Continue';
+  document.getElementById('q-steps').innerHTML=`
+    <div class="q-step show">
+      <div class="q-num">QUESTION ${qStep+1} OF ${Q_STEPS.length}</div>
+      <div class="q-title">${s.title}</div>
+      <div class="q-sub">${s.sub}</div>
+      <div class="q-options">${s.opts.map(o=>`
+        <div class="q-opt${qAnswers[s.id]===o.val?' selected':''}" onclick="selectOpt('${s.id}','${o.val}',this)">
+          <div class="q-opt-icon">${o.icon}</div>
+          <div><div class="q-opt-label">${o.label}</div><div class="q-opt-desc">${o.desc}</div></div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+function selectOpt(id,val,el){
+  qAnswers[id]=val;
+  document.querySelectorAll('.q-opt').forEach(o=>o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function qBack(){if(qStep>0){qStep--;renderQStep();}}
+async function qNext(){
+  if(!qAnswers[Q_STEPS[qStep].id]){toast('Select an option to continue');return;}
+  if(qStep<Q_STEPS.length-1){qStep++;renderQStep();return;}
+  await completeQuestionnaire();
+}
+async function completeQuestionnaire(){
+  document.getElementById('q-next').disabled=true;
+  document.getElementById('q-next').textContent='Building your dashboard...';
+  const asgn=assignPlans(qAnswers);
+  await sb.from('profiles').update({
+    questionnaire:qAnswers,assigned_workout_plan:asgn.workout,
+    assigned_meal_plan:asgn.meal,assigned_reading_list:asgn.reading,signup_complete:true
+  }).eq('id',PROFILE.id);
+  PROFILE={...PROFILE,assigned_workout_plan:asgn.workout,assigned_meal_plan:asgn.meal,
+    assigned_reading_list:asgn.reading,questionnaire:qAnswers,signup_complete:true};
+  document.getElementById('q-screen').classList.remove('show');
+  await loadAllContent();enterApp();
+}
+function assignPlans(a){
+  const days=+a.days||4;
+  let workout='shred-intermediate';
+  if(days>=5&&(a.goal==='recomposition'||a.goal==='weight-loss')&&a.level!=='beginner')workout='shred-advanced';
+  else if(a.goal==='muscle-gain'&&a.level==='advanced'&&days>=5)workout='ppl-advanced';
+  else if(a.level==='beginner'||days<=3)workout='beginner-fullbody';
+  const meal=(a.nutrition==='structured'&&a.goal!=='muscle-gain')?'high-protein-deficit':
+    a.goal==='muscle-gain'?'maintenance-muscle':'balanced-deficit';
+  return{workout,meal,reading:a.reading||'self-improvement-first'};
+}
+const QUOTES=[["The pain you feel today will be the strength you feel tomorrow.", "Unknown"], ["Do not count the days, make the days count.", "Muhammad Ali"], ["The only bad workout is the one that didn't happen.", "Unknown"], ["Success is the sum of small efforts repeated day in and day out.", "Robert Collier"], ["It does not matter how slowly you go as long as you do not stop.", "Confucius"], ["Your body can stand almost anything. It's your mind you have to convince.", "Unknown"], ["The difference between who you are and who you want to be is what you do.", "Unknown"], ["Discipline is the bridge between goals and accomplishment.", "Jim Rohn"], ["If it doesn't challenge you, it doesn't change you.", "Fred DeVito"], ["One month from now you will wish you started today.", "Unknown"], ["You don't have to be great to start, but you have to start to be great.", "Zig Ziglar"], ["The only way out is through.", "Robert Frost"], ["Strength comes from overcoming what you once thought you couldn't.", "Unknown"], ["Champions keep playing until they get it right.", "Billie Jean King"], ["The secret of getting ahead is getting started.", "Mark Twain"], ["It always seems impossible until it is done.", "Nelson Mandela"], ["Push yourself because no one else is going to do it for you.", "Unknown"], ["Small steps in the right direction beat giant leaps in the wrong one.", "Unknown"], ["The harder you work for something, the greater you feel when you achieve it.", "Unknown"], ["Don't wish for it. Work for it.", "Unknown"], ["Your future self is watching you right now through your memories.", "Aubrey Marcus"], ["Energy and persistence conquer all things.", "Benjamin Franklin"], ["You are confined only by the walls you build yourself.", "Unknown"], ["Success isn't always about greatness, it's about consistency.", "Dwayne Johnson"], ["The body achieves what the mind believes.", "Unknown"], ["Excellence is not a destination but a continuous journey.", "Brian Tracy"], ["Today is another chance to get better.", "Unknown"], ["Be so good they can't ignore you.", "Steve Martin"], ["Hard work beats talent when talent doesn't work hard.", "Tim Notke"], ["The will to win means nothing without the will to prepare.", "Juma Ikangaa"]];
+const WORDS=[["Resilience", "noun", "The capacity to recover quickly from difficulties; toughness.", "His resilience after setbacks was what made him exceptional."], ["Tenacity", "noun", "The quality of being determined and persistent regardless of obstacles.", "Her tenacity in training set her apart from everyone else."], ["Acumen", "noun", "The ability to make good judgments and quick decisions.", "Financial acumen is built through disciplined practice, not luck."], ["Fortitude", "noun", "Courage in pain or adversity; mental and emotional strength.", "It takes fortitude to wake at 5:30 AM and choose the hard thing."], ["Perspicacious", "adjective", "Having a ready insight into things; shrewd and perceptive.", "A perspicacious investor sees opportunity where others see risk."], ["Equanimity", "noun", "Mental calmness and composure in difficult situations.", "He maintained equanimity even when the plan fell apart."], ["Efficacious", "adjective", "Successful in producing a desired result; effective.", "Consistent small habits are more efficacious than sporadic big efforts."], ["Stoic", "adjective", "Enduring pain or hardship without showing feelings.", "A stoic attitude toward discomfort is a trainable skill."], ["Indefatigable", "adjective", "Persisting tirelessly; incapable of being fatigued.", "An indefatigable work ethic separates the good from the great."], ["Laconic", "adjective", "Using very few words; brief and to the point.", "His laconic answer said everything: he simply showed up."], ["Autodidact", "noun", "A person who has learned without formal instruction.", "Every great builder in history was an autodidact at their core."], ["Cogent", "adjective", "Clear, logical, and convincing in argument.", "A cogent financial plan is built on facts, not feelings."], ["Sagacious", "adjective", "Having keen mental discernment and good judgment.", "Sagacious decisions made in your 20s compound over decades."], ["Intrepid", "adjective", "Fearless and adventurous.", "The intrepid mindset is built one hard morning at a time."], ["Assiduous", "adjective", "Showing great care and diligence.", "Assiduous practice turns the difficult into the automatic."], ["Prudent", "adjective", "Acting with care and thought for the future.", "Prudent spending today creates the freedom you want tomorrow."], ["Magnanimous", "adjective", "Very generous or forgiving.", "Being magnanimous in victory and gracious in defeat defines character."], ["Stalwart", "adjective", "Loyal, reliable, and hardworking.", "A stalwart commitment to the daily process is the only system that works."], ["Dauntless", "adjective", "Showing fearlessness and determination.", "A dauntless attitude toward challenge is a muscle, train it daily."], ["Veracious", "adjective", "Speaking the truth; truthful.", "Be veracious with yourself first, your habits never lie."], ["Luminary", "noun", "A person who inspires or influences others.", "Every luminary you admire was once a beginner who refused to quit."], ["Redoubtable", "adjective", "Formidable; commanding respect.", "Build a redoubtable version of yourself, one discipline at a time."], ["Alacrity", "noun", "Brisk and cheerful readiness to act.", "He attacked each morning with alacrity that set the tone for everything."], ["Inure", "verb", "To accustom to something unpleasant until it is tolerated.", "Consistent early mornings inure you to discomfort in every area of life."], ["Sanguine", "adjective", "Optimistic, especially in difficult situations.", "Remain sanguine about the process, progress is rarely linear."], ["Meticulous", "adjective", "Showing great attention to detail; precise.", "A meticulous approach prevents the injuries that derail progress."], ["Perspicuity", "noun", "Clearness and lucidity of expression.", "Perspicuity in your goals separates achievers from dreamers."], ["Tenuous", "adjective", "Very weak or slight.", "A tenuous connection to your goals is easily broken, make it a system."], ["Imperious", "adjective", "Domineering; assuming power.", "Don't let an imperious inner critic convince you that effort isn't enough."], ["Fortuitous", "adjective", "Happening by chance with a fortunate result.", "Success looks fortuitous from outside but is systematic on the inside."]];
+
+// NAV + APP ENTRY
+const NAV_ITEMS=[
+  {id:'home',icon:'&#x1F3E0;',label:'Home'},
+  {id:'dash',icon:'&#x1F4CA;',label:'Dashboard'},
+  {id:'habits',icon:'&#x2705;',label:'Habits'},
+  {id:'workout',icon:'&#x1F4AA;',label:'Workout'},
+  {id:'nutrition',icon:'&#x1F957;',label:'Nutrition'},
+  {id:'schedule',icon:'&#x1F4C5;',label:'Schedule'},
+  {id:'spice',icon:'&#x1F336;&#xFE0F;',label:'Recipes'},
+  {id:'reading',icon:'&#x1F4DA;',label:'Reading'},
+  {id:'financial',icon:'&#x1F4B0;',label:'Financial'},
+  {id:'goals',icon:'&#x1F3AF;',label:'Goals'},
+  {id:'wit',icon:'&#x1F4B8;',label:'Is It Worth It?'},
+  {id:'admin',icon:'&#x2699;&#xFE0F;',label:'Admin Panel',adminOnly:true},
+];
+const PT={home:'HOME',dash:'DASHBOARD',habits:'HABITS',workout:'WORKOUT',nutrition:'NUTRITION',
+  schedule:'SCHEDULE',spice:'RECIPES',reading:'READING PLAN',financial:'FINANCIAL PLAN',
+  goals:'GOALS',wit:'IS IT WORTH IT?',admin:'ADMIN CONTROL PANEL'};
+function enterApp(){
+  hideAuth();
+  document.getElementById('app').classList.add('show');
+  buildNav();
+  const now=new Date();const h=now.getHours();
+  const greet=h<12?'GOOD MORNING':h<18?'GOOD AFTERNOON':'GOOD EVENING';
+  const hg=document.getElementById('h-greeting');
+  if(hg)hg.textContent=greet+', '+(PROFILE.display_name||'CISCO').toUpperCase();
+  const hd=document.getElementById('h-date');
+  if(hd)hd.textContent=D7L[now.getDay()]+', '+fmtD(now);
+  const tbd=document.getElementById('tb-date');
+  if(tbd)tbd.textContent=D7[now.getDay()]+' - '+fmtDs(now);
+  const startDate=PROFILE.start_date||todayStr();
+  const wkNum=Math.max(1,Math.floor((new Date(todayStr())-new Date(startDate))/(7*86400000))+1);
+  const wkEl=document.getElementById('wk-num');if(wkEl)wkEl.textContent=wkNum;
+  goto('home');
+}
+function buildNav(){
+  const isAdmin=PROFILE.role==='admin';
+  const av=document.getElementById('nav-av');const nm=document.getElementById('nav-uname');
+  if(av)av.textContent=(PROFILE.display_name||PROFILE.username||'U')[0].toUpperCase();
+  if(nm)nm.textContent=PROFILE.display_name||PROFILE.username;
+  const navEl=document.getElementById('nav-items');
+  const bnavEl=document.getElementById('bnav-items');
+  navEl.innerHTML=NAV_ITEMS.filter(n=>!n.adminOnly||isAdmin)
+    .map(n=>`<div class="nav-item" role="button" tabindex="0" aria-label="${escapeAttr(n.label)}" data-page="${escapeAttr(n.id)}" onclick="goto('${escapeAttr(n.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goto('${escapeAttr(n.id)}')}"><span class="ni" aria-hidden="true">${n.icon}</span><span>${escapeHtml(n.label)}</span></div>`).join('');
+  bnavEl.innerHTML=NAV_ITEMS.filter(n=>!n.adminOnly)
+    .map(n=>`<div class="bnav-item" role="button" tabindex="0" aria-label="${escapeAttr(n.label)}" id="bn-${escapeAttr(n.id)}" onclick="goto('${escapeAttr(n.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goto('${escapeAttr(n.id)}')}"><span class="bi" aria-hidden="true">${n.icon}</span><span>${escapeHtml(n.label)}</span></div>`).join('');
+}
+function goto(pid){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-item,.bnav-item').forEach(n=>n.classList.remove('on'));
+  const pg=document.getElementById('page-'+pid);if(pg)pg.classList.add('on');
+  document.querySelectorAll(`[data-page="${pid}"]`).forEach(n=>n.classList.add('on'));
+  const bn=document.getElementById('bn-'+pid);if(bn)bn.classList.add('on');
+  document.getElementById('tb-title').textContent=PT[pid]||pid.toUpperCase();
+  currentPage=pid;
+  const R={home:renderHome,dash:renderDash,habits:renderHabits,workout:renderWorkout,
+    nutrition:renderNutrition,schedule:renderCal,spice:renderSpice,reading:renderBooks,
+    financial:renderFinancial,goals:renderGoals,wit:renderWit,admin:renderAdmin};
+  if(R[pid])R[pid]();
+}
+function toggleMobileNav(){}
+
+// HOME
+async function renderHome(){
+  const doy=Math.floor((new Date()-new Date(new Date().getFullYear(),0,0))/86400000);
+  const q=QUOTES[doy%QUOTES.length];const wd=WORDS[doy%WORDS.length];
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('qod-text','"'+q[0]+'"');set('qod-auth','-- '+q[1]);
+  set('wod-word',wd[0]);set('wod-pos',wd[1]);set('wod-def',wd[2]);set('wod-ex','"'+wd[3]+'"');
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  const dow=new Date().getDay();const todayWk=wkData?.days?.[dow];
+  const todayEl=document.getElementById('home-today');
+  if(todayEl)todayEl.innerHTML=[
+    {t:'6:00 AM',l:todayWk?(todayWk.rest?'Rest Day + Meal Prep':'Workout: '+todayWk.focus):'See Workout tab'},
+    {t:'7:40 AM',l:'Breakfast -- log before eating'},
+    {t:'3:30 PM',l:'Protein shake or Chobani'},
+    {t:'7:30 PM',l:'Evening walk -- 30 min Zone 1'},
+    {t:'9:00 PM',l:'Reading -- 30 min, no phone'}
+  ].map(e=>`<div class="ev-chip"><span class="ev-time">${e.t}</span><span style="font-size:13px;font-weight:500">${e.l}</span></div>`).join('');
+  const{data:wts}=await sb.from('weight_logs').select('weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(1);
+  if(wts?.length)set('qs-wt',wts[0].weight_lbs);
+  const{data:habits}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  set('qs-hab',(habits||[]).filter(h=>h.completed).length+'/17');
+  let streak=0;
+  for(let i=0;i<14;i++){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const{data:dh}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',d.toISOString().split('T')[0]);
+    if((dh||[]).filter(h=>h.completed).length>=10)streak++;else break;
+  }
+  set('qs-str',streak);
+  const evEl=document.getElementById('home-events');
+  if(evEl){
+    const dayNum=new Date().getDate();
+    const{data:ub_d}=await sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id);
+    const{data:ub_s}=await sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',PROFILE.id);
+    const allBills=[...(ub_d||[]).filter(d=>d.due_day).map(d=>({l:d.debt_name,d:d.due_day,c:'r'})),...(ub_s||[]).filter(s=>s.renewal_day).map(s=>({l:s.sub_name,d:s.renewal_day,c:'b'}))];
+    const upcoming=allBills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({...b,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d'}));
+    const{data:evs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id);
+    (evs||[]).forEach(e=>{
+      const diff=Math.round((new Date(e.event_date+'T12:00:00')-new Date(new Date().toDateString()))/86400000);
+      if(diff>=0&&diff<=3)upcoming.push({l:e.title,badge:diff===0?'Today':'In '+diff+'d',c:e.event_type||'b'});
+    });
+    evEl.innerHTML=upcoming.length
+      ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${e.c}" style="flex-shrink:0">${e.badge}</span><span style="font-size:13px">${e.l}</span></div>`).join('')
+      :'<div style="font-size:12px;color:var(--t3)">No upcoming bills or events in the next 5 days.</div>';
+  }
+}
+
+// WEIGHT
+async function logWeight(){
+  const v=parseFloat(document.getElementById('wt-in').value);
+  if(!v||v<100||v>500){toast('Enter a valid weight');return;}
+  await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:v});
+  document.getElementById('wt-in').value='';
+  renderWeightLog();toast('Weight logged: '+v+' lbs');
+}
+async function renderWeightLog(){
+  const{data:logs}=await sb.from('weight_logs').select('log_date,weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(5);
+  const el=document.getElementById('wt-log');if(!el)return;
+  el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
+    ||'<div style="color:var(--t3);font-size:12px">No entries yet.</div>';
+  if(logs?.length){
+    const _tgt=PROFILE.target_weight||165;
+    const _startWt=PROFILE.start_weight||logs[logs.length-1]?.weight_lbs||logs[0].weight_lbs;
+    const pct=_startWt>_tgt?Math.round(Math.max(0,Math.min(100,(_startWt-logs[0].weight_lbs)/(_startWt-_tgt)*100))):0;
+    const pe=document.getElementById('wt-pct');const pb=document.getElementById('wt-bar');
+    if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';
+    const cw=document.getElementById('d-cur-wt');if(cw)cw.textContent=logs[0].weight_lbs+' lbs';
+  }
+}
+async function renderDash(){
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  if(mPlan){
+    const c=document.getElementById('d-cal-tgt');if(c)c.textContent=mPlan.targets.calories+'/day';
+    const p=document.getElementById('d-pro-tgt');if(p)p.textContent=mPlan.targets.protein_g+'g/day';
+  }
+  await renderWeightLog();
+  const wkData=CONTENT.workouts?.plans?.[PROFILE.assigned_workout_plan||'shred-advanced'];
+  const dow=new Date().getDay();const todayWk=wkData?.days?.[dow];
+  const tw=document.getElementById('dash-wk');
+  if(tw&&todayWk)tw.innerHTML=`<div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:6px">${D7L[dow].toUpperCase()}</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">${todayWk.focus}</div><div style="font-size:12px;color:var(--t3)">${(todayWk.muscles||[]).join(' - ')}</div>${todayWk.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:5px">HIIT finisher included</div>':''}`;
+  const wdays=[];
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);wdays.push({k:d.toISOString().split('T')[0],d});}
+  const{data:hAll}=await sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',PROFILE.id).in('log_date',wdays.map(w=>w.k));
+  const byDate={};(hAll||[]).forEach(h=>{if(!byDate[h.log_date])byDate[h.log_date]={};if(h.completed)byDate[h.log_date][h.habit_id]=true;});
+  const ALL_H=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
+  const wdEl=document.getElementById('dash-week');if(!wdEl)return;
+  const hdrs='<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px"><div style="width:130px;flex-shrink:0"></div>'+wdays.map(({k,d})=>`<div style="width:26px;text-align:center;font-size:10px;font-weight:${k===todayStr()?700:400};color:${k===todayStr()?'var(--red)':'var(--t3)'}">${D7[d.getDay()]}</div>`).join('')+'</div>';
+  const rows=ALL_H.map(id=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+id+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'✓':''}</div>`;}).join('')+'</div>');
+  wdEl.innerHTML=hdrs+rows.join('');
+  const{data:ms}=await sb.from('milestone_status').select('*').eq('user_id',PROFILE.id);
+  const msMap={};(ms||[]).forEach(m=>msMap[m.milestone_name]=m.status);
+  const MILES=[{name:'Month 1',tgt:'~210 lbs',col:'r',desc:'Lock in routine. First 10 lbs.'},{name:'Month 2',tgt:'~200 lbs',col:'a',desc:'Break 200. Progressive overload.'},{name:'Month 3',tgt:'~190 lbs',col:'a',desc:'Visible definition.'},{name:'Month 4-6',tgt:'~165 lbs',col:'g',desc:'Final shred. Goal achieved.'}];
+  const mgEl=document.getElementById('milestone-grid');
+  if(mgEl)mgEl.innerHTML=MILES.map(m=>`<div class="card card-${m.col}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><div style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:1px">${m.name}</div><div class="mono" style="font-size:13px">${m.tgt}</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px">${m.desc}</div><select class="inp sel" style="font-size:11px;padding:4px 22px 4px 8px" onchange="saveMilestone('${m.name}',this.value)"><option${msMap[m.name]==='Not Started'?' selected':''}>Not Started</option><option${msMap[m.name]==='In Progress'?' selected':''}>In Progress</option><option${msMap[m.name]==='Complete'?' selected':''}>Complete</option></select></div>`).join('');
+}
+async function saveMilestone(name,val){
+  const{error}=await sb.from('milestone_status').upsert({user_id:PROFILE.id,milestone_name:name,status:val});
+  if(error){toast('Error saving milestone: '+error.message);console.error('[milestone] upsert failed:',error);}
+}
+
+// HABITS
+// App-level config — fixed default categories/habits. User-defined habits and
+// custom categories layer on top at runtime via getUserHabitSecs().
+const HABIT_SECS=[
+  {cat:'morning',label:'Morning',col:'a',habits:[{id:'wake',label:'Wake up by 6 AM'},{id:'hydrate',label:'16 oz water first thing'},{id:'mobility',label:'Morning mobility (15 min)'}]},
+  {cat:'fitness',label:'Fitness',col:'r',habits:[{id:'workout',label:'Workout complete'},{id:'hiit',label:'HIIT / Conditioning done'},{id:'kneerehab',label:'Knee rehab done'},{id:'walk',label:'Evening walk (30 min)'}]},
+  {cat:'nutrition',label:'Nutrition',col:'g',habits:[{id:'logged',label:'Logged all meals'},{id:'protein',label:'Hit protein target'},{id:'calories',label:'Within calorie target'},{id:'noprocessed',label:'No processed food'},{id:'water',label:'120+ oz water'},{id:'nolateeat',label:'No eating after 9 PM'}]},
+  {cat:'mindset',label:'Mindset',col:'b',habits:[{id:'read',label:'Read 30 min (physical book)'},{id:'prep',label:'Prepped for tomorrow'},{id:'screens',label:'Screens off by 10 PM'},{id:'sleep',label:'In bed by 11:30 PM'}]},
+];
+const ALL_H_IDS=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
+/** Toggle a habit checkbox for the current habitDate. Optimistically updates
+ *  the UI then writes to Supabase; shows a toast if the write fails.
+ * @param {string} id - habit_id (e.g. 'wake', 'workout') */
+async function toggleHabit(id){
+  const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
+  const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
+  if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
+  // Upsert keeps the operation idempotent — toggling the same habit twice is safe.
+  // Conflict key: (user_id, log_date, habit_id) ensures one row per user/day/habit.
+  try{
+    await API.habits.upsert(PROFILE.id,id,habitDate,newVal);
+  }catch(e){console.error('[habit] upsert failed:',e.message);toast('Error saving habit — check connection');}
+  renderCatProg();renderStreakBar();
+}
+async function chDay(d){
+  const nd=new Date(habitDate+'T12:00:00');nd.setDate(nd.getDate()+d);
+  const tmrw=new Date();tmrw.setDate(tmrw.getDate()+1);
+  if(nd>=tmrw){toast("Can't log future habits");return;}
+  const _tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';habitDate=nd.toLocaleDateString('en-CA',{timeZone:_tz});await renderHabits();
+}
+async function renderHabits(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');if(lbl)lbl.textContent=D7L[d.getDay()].toUpperCase()+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){const diff=Math.round((new Date(todayStr())-new Date(habitDate))/86400000);rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';}
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const listEl=document.getElementById('h-habits-list');
+  if(listEl&&!listEl.children.length)
+    listEl.innerHTML=HABIT_SECS.map(sec=>`<div style="margin-bottom:14px"><div class="sh">${sec.label}</div>${sec.habits.map(h=>`<div class="hcheck" id="hc-${h.id}" onclick="toggleHabit('${h.id}')"><div class="hbox" id="hb-${h.id}"></div><div class="hl">${h.label}</div><span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0">${sec.cat}</span></div>`).join('')}</div>`).join('');
+  ALL_H_IDS.forEach(id=>{
+    const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
+    if(!hc)return;const done=!!habitCache[id];
+    hc.classList.toggle('done',done);if(hb)hb.textContent=done?'✓':'';
+  });
+  renderCatProg();renderStreakBar();
+}
+function renderCatProg(){
+  const el=document.getElementById('h-cat-prog');if(!el)return;
+  const secs=typeof getUserHabitSecs==='function'?getUserHabitSecs():HABIT_SECS;
+  el.innerHTML=secs.map(sec=>{
+    const done=sec.habits.filter(h=>!!habitCache[h.id]).length;
+    const pct=Math.round(done/sec.habits.length*100);
+    const c=sec.col==='r'?'red':sec.col==='g'?'grn':sec.col==='a'?'amb':'blu';
+    return`<div class="stat" style="padding:11px 13px"><div class="stat-l">${sec.label}</div><div style="font-family:Bebas Neue,sans-serif;font-size:26px;color:var(--${c});line-height:1;margin-bottom:5px">${done}/${sec.habits.length}</div><div class="pb"><div class="pbf" style="width:${pct}%;background:var(--${c})"></div></div></div>`;
+  }).join('');
+}
+async function renderStreakBar(){
+  const el=document.getElementById('h-streak');if(!el)return;
+  const bars=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);const k=d.toISOString().split('T')[0];
+    const{data:dh}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',k);
+    const done=(dh||[]).filter(h=>h.completed).length;const pct=Math.round(done/17*100);
+    const col=pct>=80?'var(--grn)':pct>=50?'var(--amb)':pct>0?'var(--red)':'var(--s3)';
+    const isToday=k===todayStr();
+    bars.push(`<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:4px">${D7[d.getDay()]}</div><div style="height:54px;background:var(--s3);border-radius:6px;position:relative;overflow:hidden${isToday?';border:1px solid var(--red)':''}"><div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:${col};border-radius:4px;transition:height .3s"></div></div><div style="font-size:10px;color:var(--t3);margin-top:3px">${done}</div></div>`);
+  }
+  el.innerHTML=bars.join('');el.style.cssText='display:flex;gap:4px';
+}
+
+// WORKOUT
+function renderWorkout(){
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  if(!wkData){document.getElementById('wk-panels').innerHTML='<div style="color:var(--t3);padding:20px">Loading workout plan...</div>';return;}
+  const tabsEl=document.getElementById('wk-tabs');const panelsEl=document.getElementById('wk-panels');
+  const cM={red:'red',blue:'blu',amber:'amb',green:'grn',dim:'t3'};
+  const bM={red:'r',blue:'b',amber:'a',green:'g',dim:'d'};
+  tabsEl.innerHTML='<button class="tb on" onclick="setWkTab(-1,this)">OVERVIEW</button>'+
+    wkData.days.map((d,i)=>`<button class="tb" onclick="setWkTab(${i},this)">${d.day_name.slice(0,3).toUpperCase()}</button>`).join('');
+  let html='<div class="wk-panel" id="wkp-ov"><div class="g2">';
+  wkData.days.forEach((d,i)=>{
+    const c=cM[d.color]||'t3';const bc=bM[d.color]||'d';
+    html+=`<div class="card" style="cursor:pointer;border-left:3px solid var(--${c})" onclick="setWkTab(${i},null)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--${c})">${d.day_name.slice(0,3).toUpperCase()}</div>
+        <span class="badge b-${bc}">${d.exercises?.length||0} ex</span>
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${d.focus}</div>
+      <div style="font-size:11px;color:var(--t3)">${(d.muscles||[]).slice(0,3).join(' - ')}</div>
+      ${d.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:4px">HIIT finisher</div>':''}
+    </div>`;
+  });
+  html+='</div></div>';
+  wkData.days.forEach((d,i)=>{
+    const c=cM[d.color]||'t2';
+    html+=`<div class="wk-panel" id="wkp-${i}" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:2px;color:var(--${c})">${d.day_name.toUpperCase()} -- ${d.focus}</div>
+          <div style="font-size:12px;color:var(--t3)">${(d.muscles||[]).join(' - ')}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-o btn-sm" onclick="setWkTab(-1,null)">Back to Overview</button>
+          <button class="btn btn-o btn-sm" onclick="openLogModal(${i})">Log Session</button>
+        </div>
+      </div>`;
+    if(!d.rest){
+      html+='<div class="g2"><div><div class="sh">EXERCISES</div>';
+      (d.exercises||[]).forEach(ex=>{
+        html+=`<div class="ex-card"><div class="ex-name">${ex.name}</div>`;
+        if(ex.sets&&ex.reps)html+=`<div class="ex-det">${ex.sets}x${ex.reps}</div>`;
+        else if(ex.duration)html+=`<div class="ex-det">${ex.duration}</div>`;
+        if(ex.notes)html+=`<div class="ex-note">${ex.notes}</div>`;
+        html+='</div>';
+      });
+      html+='</div><div>';
+      if(d.hiit?.length){
+        html+='<div class="sh">HIIT FINISHER</div>';
+        d.hiit.forEach(h=>{
+          html+=`<div class="hiit-c"><div class="ex-name">${h.name}</div>
+            <div class="ex-det" style="color:var(--t2)">${h.rounds?h.rounds+'x ':''}${h.work||h.reps||''}</div>
+            ${h.notes?`<div class="ex-note" style="color:rgba(232,64,64,.6)">${h.notes}</div>`:''}</div>`;
+        });
+      }
+      const kr=CONTENT.workouts?.knee_rehab;
+      if(kr){
+        html+='<div class="sh">KNEE REHAB</div><div class="card card-g" style="padding:12px 14px">';
+        html+='<div style="font-size:10px;color:var(--grn);font-weight:700;margin-bottom:8px;letter-spacing:1px">MANDATORY -- END OF EVERY SESSION</div>';
+        (kr.exercises||[]).forEach(ex=>{
+          html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px">
+            <span>${ex.name}</span><span class="mono" style="color:var(--grn)">${ex.sets}x${ex.reps}</span></div>`;
+        });
+        html+='</div>';
+      }
+      html+='</div></div>';
+    }else{
+      (d.exercises||[]).forEach(ex=>{
+        html+=`<div class="card-sm" style="margin-bottom:6px">
+          <div style="font-size:13px;font-weight:600">${ex.name}</div>
+          ${ex.duration?`<div class="ex-det">${ex.duration}</div>`:''}
+          ${ex.notes?`<div style="font-size:12px;color:var(--t2);margin-top:3px">${ex.notes}</div>`:''}
+        </div>`;
+      });
+    }
+    html+='</div>';
+  });
+  panelsEl.innerHTML=html;
+}
+function setWkTab(idx,btn){
+  document.querySelectorAll('.wk-panel').forEach(p=>p.style.display='none');
+  document.querySelectorAll('#wk-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(idx===-1){
+    document.getElementById('wkp-ov').style.display='block';
+    document.querySelectorAll('#wk-tabs .tb')[0].classList.add('on');
+  }else{
+    document.getElementById('wkp-'+idx).style.display='block';
+    const tabs=document.querySelectorAll('#wk-tabs .tb');
+    if(tabs[idx+1])tabs[idx+1].classList.add('on');
+  }
+}
+async function openLogModal(i){
+  logDayIdx=i;
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  document.getElementById('log-title').textContent='LOG '+days[i].toUpperCase()+' SESSION';
+  const{data:log}=await sb.from('workout_logs').select('notes').eq('user_id',PROFILE.id).eq('log_date',todayStr()).eq('day_index',i).maybeSingle();
+  document.getElementById('log-text').value=log?.notes||'';
+  openModal('log-modal');
+}
+async function saveLog(){
+  const t=document.getElementById('log-text').value.trim();
+  const{error}=await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes:t});
+  if(error){toast('Error saving log: '+error.message);console.error('[workout] log upsert failed:',error);return;}
+  closeModal('log-modal');toast('Session logged!');
+}
+
+// NUTRITION
+async function renderNutrition(){
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  if(!mPlan)return;
+  const tgt=mPlan.targets;
+  const tgtEl=document.getElementById('nut-targets');
+  if(tgtEl)tgtEl.innerHTML=[
+    {l:'CALORIES',v:tgt.calories,s:'cal / day',c:'red'},
+    {l:'PROTEIN',v:tgt.protein_g+'g',s:'per day',c:'grn'},
+    {l:'CARBS',v:tgt.carbs_g+'g',s:'per day',c:'amb'},
+    {l:'FAT',v:tgt.fat_g+'g',s:'per day',c:'blu'}
+  ].map(i=>`<div class="stat"><div class="stat-l">${i.l}</div><div class="stat-v" style="color:var(--${i.c})">${i.v}</div><div class="stat-s">${i.s}</div></div>`).join('');
+  const{data:meals}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const tot={cal:0,pro:0,car:0,fat:0};
+  (meals||[]).forEach(m=>{tot.cal+=m.calories||0;tot.pro+=m.protein_g||0;tot.car+=m.carbs_g||0;tot.fat+=m.fat_g||0;});
+  const keys=[{k:'cal',tgt:tgt.calories,unit:'cal',col:'red'},{k:'pro',tgt:tgt.protein_g,unit:'g',col:'grn'},{k:'car',tgt:tgt.carbs_g,unit:'g',col:'amb'},{k:'fat',tgt:tgt.fat_g,unit:'g',col:'blu'}];
+  const barsEl=document.getElementById('nut-bars');
+  if(barsEl)barsEl.innerHTML=keys.map(k=>{
+    const cur=Math.round(tot[k.k]);const pct=Math.min(100,Math.round(cur/k.tgt*100));
+    return`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--t2)">${k.k.toUpperCase()}</span><span><span class="mono" style="font-weight:600">${cur}</span><span style="color:var(--t3);font-size:11px"> / ${k.tgt}${k.unit}</span></span></div><div class="pb"><div class="pbf" style="width:${pct}%;background:${pct>100?'var(--red)':'var(--'+k.col+')'}"></div></div></div>`;
+  }).join('');
+  const remEl=document.getElementById('nut-remaining');
+  if(remEl)remEl.innerHTML=keys.map(k=>{
+    const rem=k.tgt-Math.round(tot[k.k]);
+    return`<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">${k.k} left</div><div class="mono" style="font-size:13px;font-weight:600;color:${rem<0?'var(--red)':'var(--grn)'}">${Math.max(0,rem)}${k.unit}</div></div>`;
+  }).join('');
+  const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
+  const mEl=document.getElementById('meal-entries');
+  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>`<div class="meal-entry"><div class="meal-entry-name">${m.meal_name}</div><div class="meal-macros">${m.calories}cal - ${m.protein_g}P - ${m.carbs_g}C - ${m.fat_g}F</div><button class="meal-del" onclick="deleteMeal('${m.id}')">x</button></div>`).join('')
+    ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today. Hit + Log Meal to start.</div>':'');
+  const tabsEl=document.getElementById('nut-ref-tabs');const panelsEl=document.getElementById('nut-ref-panels');
+  if(tabsEl&&!tabsEl.children.length){
+    const cats=['breakfast_options','lunch_options','snack_options','dinner_options'];
+    const labels=['Breakfast','Lunch','Snack','Dinner'];
+    tabsEl.innerHTML=cats.map((c,i)=>`<button class="tb${i===0?' on':''}" onclick="setNutTab(this,'nrp-${i}')">${labels[i]}</button>`).join('');
+    panelsEl.innerHTML=cats.map((cat,i)=>{
+      const items=mPlan[cat]||[];
+      return`<div class="nut-panel" id="nrp-${i}" style="display:${i===0?'block':'none'}">${
+        items.map(m=>{
+          const safeName=m.name.replace(/'/g,'&#39;');
+          return`<div class="card-sm" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;cursor:pointer" onclick="quickLog('${safeName}',${m.cal},${m.protein},${m.carbs},${m.fat})">
+            <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div></div>
+            <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLog('${safeName}',${m.cal},${m.protein},${m.carbs},${m.fat})">+Log</button>
+          </div>`;
+        }).join('')||'<div style="color:var(--t3);font-size:12px">No meals in this plan.</div>'
+      }</div>`;
+    }).join('');
+  }
+}
+async function deleteMeal(id){
+  await sb.from('meal_logs').delete().eq('id',id).eq('user_id',PROFILE.id);
+  renderNutrition();toast('Meal removed');
+}
+async function addMealEntry(name,cal,pro,car,fat){
+  await sb.from('meal_logs').insert({user_id:PROFILE.id,log_date:todayStr(),meal_name:name,calories:+cal,protein_g:+pro,carbs_g:+car,fat_g:+fat});
+  renderNutrition();
+}
+function quickLog(name,cal,pro,car,fat){addMealEntry(name,cal,pro,car,fat);toast('Logged: '+name);}
+function openMealModal(){
+  openModal('meal-modal');
+  setMealTab('preset',document.querySelector('#mm-tabs .tb'));
+  updateMealList();
+  const cp=document.getElementById('c-prot-sel');
+  if(cp&&!cp.innerHTML){
+    cp.innerHTML=['Chicken Breast (6oz)','Chicken Thighs (7oz)','Ground Beef 90/10 (5oz)','Ground Turkey 93/7 (6oz)','Ribeye Steak (5oz)','Eggs (3 whole + 2 whites)'].map(p=>`<option>${p}</option>`).join('');
+    document.getElementById('c-side-sel').innerHTML=['Basmati Rice (3/4 cup)','Protein Pasta (1.5 cups)','Thin Bagel','5-Grain Bread (2 slices)','None'].map(s=>`<option>${s}</option>`).join('');
+    document.getElementById('c-season-sel').innerHTML=['Japanese BBQ Sauce','Shawarma Blend','Taco Seasoning','Italian Herb Rub','BBQ Dry Rub','Default (Salt+Pepper+Garlic)'].map(s=>`<option>${s}</option>`).join('');
+  }
+}
+function setMealTab(tab,btn){
+  mealTab=tab;
+  ['preset','custom','manual'].forEach(t=>{const el=document.getElementById('mm-'+t);if(el)el.style.display=t===tab?'block':'none';});
+  if(btn){document.querySelectorAll('#mm-tabs .tb').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+}
+function updateMealList(){
+  const cat=document.getElementById('mm-cat').value;
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const items=mPlan?.[cat]||[];
+  const el=document.getElementById('mm-list');if(!el)return;
+  el.innerHTML=items.map(m=>{
+    const sn=m.name.replace(/'/g,'&#39;');
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:5px;gap:10px">
+      <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P</div></div>
+      <button class="btn btn-g btn-xs" onclick="quickLogClose('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})">+ Log</button>
+    </div>`;
+  }).join('');
+}
+function quickLogClose(name,cal,pro,car,fat){addMealEntry(name,cal,pro,car,fat);closeModal('meal-modal');toast('Logged: '+name);}
+async function submitMeal(){
+  if(mealTab==='preset'){toast('Click a meal card to log it');return;}
+  if(mealTab==='custom'){
+    const prot=document.getElementById('c-prot-sel').value;const side=document.getElementById('c-side-sel').value;const season=document.getElementById('c-season-sel').value;
+    const name=prot+(side!=='None'?' + '+side:'')+' ('+season+')';
+    const cal=+document.getElementById('c-cal').value||0;const pro=+document.getElementById('c-pro').value||0;const car=+document.getElementById('c-car').value||0;const fat=+document.getElementById('c-fati').value||0;
+    if(!cal){toast('Enter calories for the meal');return;}
+    await addMealEntry(name,cal,pro,car,fat);closeModal('meal-modal');toast('Custom meal logged!');return;
+  }
+  const name=document.getElementById('m-name').value.trim();const cal=+document.getElementById('m-cal').value||0;const pro=+document.getElementById('m-pro').value||0;const car=+document.getElementById('m-car').value||0;const fat=+document.getElementById('m-fat').value||0;
+  if(!name){toast('Enter a meal name');return;}if(!cal){toast('Enter calories');return;}
+  await addMealEntry(name,cal,pro,car,fat);closeModal('meal-modal');toast('Logged: '+name);
+}
+function setNutTab(btn,panelId){
+  document.querySelectorAll('.nut-panel').forEach(p=>p.style.display='none');
+  const el=document.getElementById(panelId);if(el)el.style.display='block';
+  document.querySelectorAll('#nut-ref-tabs .tb').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+}
+
+// CALENDAR
+function setCalView(v){
+  calView=v;
+  ['month','week','day'].forEach(vv=>{const el=document.getElementById('cal-'+vv);if(el)el.style.display=vv===v?'block':'none';});
+  document.querySelectorAll('#cal-view-tabs .tb').forEach((b,i)=>b.classList.toggle('on',['month','week','day'][i]===v));
+  renderCal();
+}
+function calNav(d){
+  if(d===0)calDate=new Date();
+  else if(calView==='month')calDate.setMonth(calDate.getMonth()+d);
+  else if(calView==='week')calDate.setDate(calDate.getDate()+7*d);
+  else calDate.setDate(calDate.getDate()+d);
+  renderCal();
+}
+async function renderCal(){
+  if(calView==='month')await renderMonth();
+  else if(calView==='week')await renderWeek();
+  else await renderDay();
+}
+async function renderMonth(){
+  const el=document.getElementById('cal-month');if(!el)return;
+  const y=calDate.getFullYear(),m=calDate.getMonth();
+  const title=document.getElementById('cal-title');if(title)title.textContent=M12[m]+' '+y;
+  const first=new Date(y,m,1);const last=new Date(y,m+1,0);
+  const mS=y+'-'+String(m+1).padStart(2,'0')+'-01';
+  const mE=y+'-'+String(m+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
+  // Fetch events that START in this month OR span into this month
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+    .or(`event_date.gte.${mS},end_date.gte.${mS}`)
+    .lte('event_date',mE);
+  const ebd={};
+  (uEvs||[]).forEach(e=>{
+    // Add event to every day it spans
+    const start=new Date(e.event_date+'T12:00:00');
+    const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
+    const end=new Date(endStr+'T12:00:00');
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const ds=d.toLocaleDateString('en-CA');
+      if(ds>=mS&&ds<=mE){
+        if(!ebd[ds])ebd[ds]=[];
+        // Mark continuation days for visual distinction
+        ebd[ds].push({...e,_isStart:ds===e.event_date,_isEnd:ds===endStr,_isCont:ds!==e.event_date});
+      }
+    }
+  });
+  const wkP={1:'Workout',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
+  let html='<div class="cal-grid">';
+  D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
+  for(let i=0;i<first.getDay();i++){const d=new Date(y,m,1-first.getDay()+i);html+=`<div class="cal-day dim"><div class="cal-dn">${d.getDate()}</div></div>`;}
+  for(let day=1;day<=last.getDate();day++){
+    const ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    const isToday=ds===todayStr();const dow=new Date(ds+'T12:00:00').getDay();
+    const evs=[];
+    if(wkP[dow])evs.push({title:wkP[dow],event_type:'r'});
+    if(dow>=1&&dow<=5)evs.push({title:'Evening Walk',event_type:'g'});
+    if(dow===0)evs.push({title:'Meal Prep',event_type:'g'});
+    (ebd[ds]||[]).forEach(e=>evs.push(e));
+    html+=`<div class="cal-day${isToday?' today':''}" onclick="openEventModal('${ds}')"><div class="cal-dn">${day}</div>`;
+    evs.slice(0,3).forEach(e=>{
+      const isUserEv=!!e.id;
+      const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${e.id}')`:'';
+      html+=`<div class="cal-ev ${e.event_type||'b'}" ${isUserEv?`onclick="${clickHandler}" style="cursor:pointer" title="Click to edit"`:''}>${e.title}</div>`;
+    });
+    if(evs.length>3)html+=`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`;
+    html+='</div>';
+  }
+  const ep=6-last.getDay();for(let i=1;i<=ep;i++)html+=`<div class="cal-day dim"><div class="cal-dn">${i}</div></div>`;
+  html+='</div>';el.innerHTML=html;
+}
+async function renderWeek(){
+  const el=document.getElementById('cal-week');if(!el)return;
+  const title=document.getElementById('cal-title');
+  const sw=new Date(calDate);sw.setDate(calDate.getDate()-calDate.getDay());
+  const dates=Array.from({length:7},(_,i)=>{const d=new Date(sw);d.setDate(sw.getDate()+i);return d;});
+  if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
+  const wkP={1:'Upper Push',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
+  const hours=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).in('event_date',dates.map(d=>d.toISOString().split('T')[0]));
+  const ebd={};
+  (uEvs||[]).forEach(e=>{
+    // Add event to every day it spans
+    const start=new Date(e.event_date+'T12:00:00');
+    const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
+    const end=new Date(endStr+'T12:00:00');
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const ds=d.toLocaleDateString('en-CA');
+      if(ds>=mS&&ds<=mE){
+        if(!ebd[ds])ebd[ds]=[];
+        // Mark continuation days for visual distinction
+        ebd[ds].push({...e,_isStart:ds===e.event_date,_isEnd:ds===endStr,_isCont:ds!==e.event_date});
+      }
+    }
+  });
+  let html='<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:48px repeat(7,1fr);gap:2px;min-width:500px">';
+  html+='<div></div>'+dates.map(d=>{
+    const k=d.toISOString().split('T')[0];const isT=k===todayStr();
+    return`<div style="text-align:center;padding:7px 3px;font-size:11px;font-weight:600;color:${isT?'var(--red)':'var(--t3)'};cursor:pointer" onclick="calDate=new Date('${k}T12:00:00');setCalView('day')">${D7[d.getDay()]}<br><span style="font-size:14px;font-weight:700">${d.getDate()}</span></div>`;
+  }).join('');
+  hours.forEach(h=>{
+    const ampm=h<12?h+':00 AM':h===12?'12:00 PM':(h-12)+':00 PM';
+    html+=`<div style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace;text-align:right;padding-right:5px;height:40px;display:flex;align-items:flex-start;padding-top:3px">${ampm}</div>`;
+    dates.forEach(d=>{
+      const k=d.toISOString().split('T')[0];const isT=k===todayStr();const dow=d.getDay();
+      const evs=[];
+      if(h===6&&wkP[dow])evs.push({title:wkP[dow],event_type:'r'});
+      if(h===19&&dow>=1&&dow<=5)evs.push({title:'Walk',event_type:'g'});
+      if(h===11&&dow===0)evs.push({title:'Meal Prep',event_type:'g'});
+      (ebd[k]||[]).filter(e=>e.event_time&&parseInt(e.event_time)===h).forEach(e=>evs.push(e));
+      const cols={r:'var(--red-l)',g:'var(--grn-l)',a:'var(--amb-l)',b:'var(--blu-l)'};
+      html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>`<div style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'}">${e.title}</div>`).join('')}</div>`;
+    });
+  });
+  html+='</div></div>';el.innerHTML=html;
+}
+async function renderDay(){
+  const el=document.getElementById('cal-day');if(!el)return;
+  const title=document.getElementById('cal-title');
+  const ds=calDate.toISOString().split('T')[0];
+  if(title)title.textContent=D7L[calDate.getDay()]+', '+fmtD(calDate);
+  const sched=CONTENT.schedule?.templates?.['standard-commuter'];
+  const schedItems=sched?.weekday||[];
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).eq('event_date',ds);
+  const all=[...schedItems,...(uEvs||[]).map(e=>({time:e.event_time,title:e.title,type:e.event_type}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',d:'var(--b2)'};
+  el.innerHTML=all.map(e=>`<div class="ev-chip" style="margin-bottom:6px"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${e.time||e.event_time||''}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${e.title}</span></div>`).join('');
+}
+function openEventModal(dateStr,editId,eventData){
+  evEditId=editId||null;
+  const isEdit=!!editId;
+  document.getElementById('ev-modal-title').textContent=isEdit?'EDIT EVENT':'ADD EVENT';
+  document.getElementById('ev-id').value=editId||'';
+  const delBtn=document.getElementById('ev-delete-btn');if(delBtn)delBtn.style.display=isEdit?'inline-flex':'none';
+  if(isEdit&&eventData){
+    document.getElementById('ev-title').value=eventData.title||'';
+    document.getElementById('ev-date').value=eventData.event_date||todayStr();
+    document.getElementById('ev-time').value=eventData.event_time||'';
+    document.getElementById('ev-end-date').value=eventData.end_date||'';
+    document.getElementById('ev-allday').value=eventData.all_day?'1':'0';
+    document.getElementById('ev-type').value=eventData.event_type||'b';
+  }else{
+    document.getElementById('ev-title').value='';
+    document.getElementById('ev-date').value=dateStr||todayStr();
+    document.getElementById('ev-time').value='09:00';
+    document.getElementById('ev-end-date').value='';
+    document.getElementById('ev-allday').value='0';
+    document.getElementById('ev-type').value='b';
+  }
+  openModal('event-modal');
+}
+async function saveEvent(){
+  const title=document.getElementById('ev-title').value.trim();if(!title){toast('Enter a title');return;}
+  const startDate=document.getElementById('ev-date').value;if(!startDate){toast('Select a start date');return;}
+  const endDate=document.getElementById('ev-end-date').value;
+  const allDay=document.getElementById('ev-allday').value==='1';
+  const ev={
+    user_id:PROFILE.id,
+    event_date:startDate,
+    end_date:endDate&&endDate>startDate?endDate:null,
+    event_time:allDay?null:document.getElementById('ev-time').value,
+    all_day:allDay,
+    title,
+    event_type:document.getElementById('ev-type').value
+  };
+  if(evEditId){await sb.from('calendar_events').update(ev).eq('id',evEditId);}
+  else{await sb.from('calendar_events').insert(ev);}
+  closeModal('event-modal');
+  toast(evEditId?'Event updated!':'Event added!');
+  renderCal();
+}
+
+// RECIPES
+function renderSpice(){
+  const data=CONTENT.spice?.profiles;if(!data)return;
+  const tabsEl=document.getElementById('spice-tabs');const panelsEl=document.getElementById('spice-panels');
+  if(tabsEl&&tabsEl.children.length)return;
+  tabsEl.innerHTML=data.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${p.label.split(' ').slice(0,2).join(' ')}</button>`).join('');
+  panelsEl.innerHTML=data.map((p,i)=>`
+    <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
+      ${(p.recipes||[]).map(r=>{
+        const bc=r.color==='dim'?'d':r.color[0]||'d';
+        return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:14px;font-weight:600">${r.name}</div>
+            <span class="badge b-${bc}">${r.color}</span>
+          </div>
+          ${(r.rows||[]).map(row=>`
+            <div style="margin-bottom:7px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:3px">
+                ${row.spices.split(' - ').map(s=>{
+                  const isKey=/[0-9]|tsp|tbsp|min/.test(s)||s.includes('1/')||s.includes('2/')||s.includes('3/');
+                  return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;
+                }).join('')}
+              </div>
+            </div>`).join('')}
+          <div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+function setSpiceTab(idx){
+  document.querySelectorAll('.spice-panel').forEach(p=>p.style.display='none');
+  const el=document.getElementById('sp-'+idx);if(el)el.style.display='block';
+  document.querySelectorAll('#spice-tabs .tb').forEach((b,i)=>b.classList.toggle('on',i===idx));
+}
+
+// READING
+const GCOLS={'Self-improvement':'g','Philosophy':'b','Mindset':'b','Sci-fi':'r','Fiction':'a','Finance':'a','Strategy':'r','Psychology':'b','Fantasy':'g','Memoir':'d','Business':'b','Other':'d'};
+// Two-layer data model: book metadata (title, author, pages, month, why) comes from
+// CONTENT.books (Stage 6: will be migrated to DB). User state (rating, status, format)
+// comes from the book_progress table keyed by book_id. Custom ordering is in PROFILE.book_list_order.
+async function renderBooks(){
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const listData=CONTENT.books?.lists?.[listId];if(!listData)return;
+  const first=listData.books?.[0];
+  if(first){
+    const ct=document.getElementById('cur-book-title');const ca=document.getElementById('cur-book-author');
+    if(ct)ct.textContent=first.title;if(ca)ca.textContent=first.author+' - ~'+first.pages+' pages';
+  }
+  const rpVal=PROFILE.read_pct||0;
+  const rpEl=document.getElementById('read-pct');if(rpEl)rpEl.textContent=rpVal+'%';
+  const{data:bpData}=await sb.from('book_progress').select('*').eq('user_id',PROFILE.id);
+  const bpMap={};(bpData||[]).forEach(b=>bpMap[b.book_id]=b);
+  const books=PROFILE.book_list_order||listData.books;
+  const el=document.getElementById('book-list');if(!el)return;
+  el.innerHTML=books.map((bk)=>{
+    const meta=bpMap[bk.id]||{};const rating=meta.rating||0;const format=meta.format||'Physical';const status=meta.status||'Not Started';
+    const gcol=GCOLS[bk.genre]||'d';
+    const stars=Array.from({length:5},(_,si)=>`<span class="star${si<rating?' on':''}" onclick="setRating('${bk.id}',${si+1})">*</span>`).join('');
+    const statSel=`<select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:115px" onchange="setBookStatus('${bk.id}',this.value)"><option${status==='Not Started'?' selected':''}>Not Started</option><option${status==='In Progress'?' selected':''}>In Progress</option><option${status==='Complete'?' selected':''}>Complete</option><option${status==='Paused'?' selected':''}>Paused</option></select>`;
+    const fmtBtn=`<button class="btn btn-xs" style="background:${format==='Physical'?'var(--blu-l)':'var(--pur-l)'};color:${format==='Physical'?'var(--blu)':'var(--pur)'};border:none" onclick="toggleFormat('${bk.id}')">${format}</button>`;
+    const editCtrl=bookEditMode?`<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex-shrink:0"><div style="display:flex;gap:2px"><button onclick="moveBook('${bk.id}',-1)" style="background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t2);padding:2px 7px;cursor:pointer;font-size:11px">Up</button><button onclick="moveBook('${bk.id}',1)" style="background:var(--s3);border:1px solid var(--b1);border-radius:4px;color:var(--t2);padding:2px 7px;cursor:pointer;font-size:11px">Dn</button></div><button onclick="removeBook('${bk.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.2);color:var(--red);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600;margin-top:2px">Remove</button></div>`:'';
+    return`<div class="book-card" id="bkc-${bk.id}">
+      <div class="book-num${bk.month===1?' cur':''}">${bk.month||'?'}</div>
+      <div class="book-info">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div><div class="book-title">${bk.title}</div><div class="book-author">${bk.author} - ~${bk.pages} pages</div></div>
+          <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"><span class="badge b-${gcol}">${bk.genre}</span>${fmtBtn}${statSel}</div>
+        </div>
+        <div class="stars" style="margin:5px 0">${stars}</div>
+        <div class="book-why">${bk.why}</div>
+      </div>${editCtrl}
+    </div>`;
+  }).join('');
+  if(listData.year2_flagship)el.innerHTML+=`<div style="margin-top:12px;background:var(--amb-ll);border:1px dashed var(--amb);border-radius:var(--r2);padding:14px"><div style="font-size:10px;font-weight:700;letter-spacing:2px;color:var(--amb);margin-bottom:5px">YEAR 2 FLAGSHIP</div><div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;margin-bottom:2px">${listData.year2_flagship.title} -- ${listData.year2_flagship.author}</div><div style="font-size:12px;color:var(--t2);line-height:1.5">${listData.year2_flagship.note}</div></div>`;
+}
+async function updReadPct(d){
+  const v=Math.max(0,Math.min(100,(PROFILE.read_pct||0)+d));
+  PROFILE.read_pct=v;
+  await sb.from('profiles').update({read_pct:v}).eq('id',PROFILE.id);
+  const el=document.getElementById('read-pct');if(el)el.textContent=v+'%';
+}
+async function setRating(id,r){await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,rating:r});renderBooks();toast('Rated '+r+' stars');}
+async function toggleFormat(id){
+  const{data}=await sb.from('book_progress').select('format').eq('user_id',PROFILE.id).eq('book_id',id).single();
+  const nf=data?.format==='Audiobook'?'Physical':'Audiobook';
+  await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,format:nf});renderBooks();
+}
+async function setBookStatus(id,s){await sb.from('book_progress').upsert({user_id:PROFILE.id,book_id:id,status:s},{onConflict:'user_id,book_id'});toast('Status updated: '+s);await renderBooks();}
+function toggleBookEdit(){
+  bookEditMode=!bookEditMode;
+  const btn=document.getElementById('edit-books-btn');if(btn)btn.textContent=bookEditMode?'Done Editing':'Edit List';
+  const addBtn=document.getElementById('add-book-btn');if(addBtn)addBtn.style.display=bookEditMode?'inline-flex':'none';
+  renderBooks();
+}
+function moveBook(id,dir){
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const books=PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[];
+  const i=books.findIndex(b=>b.id===id);if(i<0)return;
+  const ni=i+dir;if(ni<0||ni>=books.length)return;
+  [books[i],books[ni]]=[books[ni],books[i]];
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
+  CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
+  renderBooks();
+}
+async function removeBook(id){
+  if(!await confirmDialog('Remove this book?'))return;
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const books=(PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[]).filter(b=>b.id!==id);
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
+  CONTENT.books.lists[PROFILE.assigned_reading_list||'self-improvement-first'].books=books;
+  renderBooks();toast('Book removed');
+}
+function addBook(){
+  const title=document.getElementById('bk-title').value.trim();if(!title){toast('Enter a title');return;}
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const books=PROFILE.book_list_order||CONTENT.books?.lists?.[listId]?.books||[];
+  books.push({id:'u'+Date.now(),month:+document.getElementById('bk-month').value||null,title,author:document.getElementById('bk-author').value||'Unknown',pages:document.getElementById('bk-pages').value||'?',genre:document.getElementById('bk-genre').value||'Other',why:document.getElementById('bk-why').value||''});
+  PROFILE.book_list_order=books;
+  sb.from('profiles').update({book_list_order:books}).eq('id',PROFILE.id);
+  closeModal('book-modal');renderBooks();toast('Book added: '+title);
+  ['bk-title','bk-author','bk-month','bk-pages','bk-genre','bk-why'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+}
+
+// FINANCIAL
+async function renderFinancial(){await renderDebtList();await renderSubList();await renderFinCal();await renderRoadmap();}
+async function renderDebtList(){
+  const{data:debts}=await sb.from('debt_tracker').select('*').eq('user_id',PROFILE.id);
+  const el=document.getElementById('debt-list');if(!el)return;
+  el.innerHTML=(debts||[]).map(d=>{
+    const mo=d.interest_rate?d.balance*(d.interest_rate/100/12):0;
+    const mos=d.monthly_payment>mo?Math.ceil(d.balance/(d.monthly_payment-mo)):'?';
+    return`<div class="fin-row"><div><div class="fin-name">${d.debt_name}</div><div class="fin-note">$${d.monthly_payment}/mo - ${d.interest_rate}% APR${typeof mos==='number'?' - ~'+mos+'mo payoff':''}</div></div><div style="display:flex;gap:5px;align-items:center"><div class="fin-amt" style="color:var(--red)">$${(d.balance||0).toLocaleString()}</div><button class="btn btn-o btn-xs" onclick="editDebt('${d.id}')">Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeDebt('${d.id}')">X</button></div></div>`;
+  }).join('')||'<div style="color:var(--t3);font-size:12px">No debts tracked.</div>';
+  const cc=(debts||[]).find(d=>d.debt_name?.toLowerCase().includes('HIGHINTEREST_CC'))||{balance:800};
+  const pct=Math.round(Math.max(0,(800-cc.balance)/800*100));
+  const pe=document.getElementById('cc-pct');const pb=document.getElementById('cc-bar');const cb=document.getElementById('d-cc-bal');
+  if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';if(cb)cb.textContent='$'+(cc.balance||0);
+}
+function openDebtModal(){debtEditId=null;document.getElementById('debt-modal-title').textContent='ADD DEBT';['d-name','d-bal','d-pay','d-rate','d-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('debt-edit-id').value='';openModal('debt-modal');}
+async function editDebt(id){
+  const{data:d}=await sb.from('debt_tracker').select('*').eq('id',id).single();if(!d)return;
+  debtEditId=id;document.getElementById('debt-modal-title').textContent='EDIT DEBT';
+  document.getElementById('d-name').value=d.debt_name;document.getElementById('d-bal').value=d.balance;
+  document.getElementById('d-pay').value=d.monthly_payment;document.getElementById('d-rate').value=d.interest_rate;
+  document.getElementById('d-due').value=d.due_day;document.getElementById('debt-edit-id').value=id;openModal('debt-modal');
+}
+async function saveDebt(){
+  const name=document.getElementById('d-name').value.trim();if(!name){toast('Enter a name');return;}
+  const debt={user_id:PROFILE.id,debt_name:name,balance:+document.getElementById('d-bal').value||0,monthly_payment:+document.getElementById('d-pay').value||0,interest_rate:+document.getElementById('d-rate').value||0,due_day:+document.getElementById('d-due').value||1};
+  const q=debtEditId?sb.from('debt_tracker').update(debt).eq('id',debtEditId):sb.from('debt_tracker').insert(debt);
+  const{error}=await q;
+  if(error){toast('Error saving debt: '+error.message);console.error('[debt] save failed:',error);return;}
+  closeModal('debt-modal');renderDebtList();renderFinCal();toast('Debt saved');
+}
+async function removeDebt(id){
+  if(!await confirmDialog('Remove this debt?'))return;
+  const{error}=await sb.from('debt_tracker').delete().eq('id',id);
+  if(error){toast('Error removing debt: '+error.message);console.error('[debt] remove failed:',error);return;}
+  renderDebtList();renderFinCal();toast('Removed');
+}
+async function renderSubList(){
+  const{data:subs}=await sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id);
+  const el=document.getElementById('sub-list');if(!el)return;
+  const ACOL={Keep:'g',Cancel:'r',Pause:'a',Review:'b'};
+  el.innerHTML=(subs||[]).map(s=>`<div class="fin-row"><div><div class="fin-name">${s.sub_name}</div><div class="fin-note">Due day ${s.renewal_day}</div></div><div style="display:flex;gap:5px;align-items:center"><span class="badge b-${ACOL[s.action]||'d'}">${s.action}</span><div class="fin-amt">$${(s.monthly_cost||0).toFixed(2)}</div><button class="btn btn-o btn-xs" onclick="editSub('${s.id}')">Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeSub('${s.id}')">X</button></div></div>`).join('')||'<div style="color:var(--t3);font-size:12px">No subscriptions.</div>';
+}
+function openSubModal(){subEditId=null;document.getElementById('sub-modal-title').textContent='ADD SUBSCRIPTION';['s-name','s-cost','s-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('s-action').value='Keep';document.getElementById('sub-edit-id').value='';openModal('sub-modal');}
+async function editSub(id){const{data:s}=await sb.from('subscription_tracker').select('*').eq('id',id).single();if(!s)return;subEditId=id;document.getElementById('sub-modal-title').textContent='EDIT SUBSCRIPTION';document.getElementById('s-name').value=s.sub_name;document.getElementById('s-cost').value=s.monthly_cost;document.getElementById('s-due').value=s.renewal_day;document.getElementById('s-action').value=s.action;document.getElementById('sub-edit-id').value=id;openModal('sub-modal');}
+async function saveSub(){
+  const name=document.getElementById('s-name').value.trim();if(!name){toast('Enter a name');return;}
+  const sub={user_id:PROFILE.id,sub_name:name,monthly_cost:+document.getElementById('s-cost').value||0,renewal_day:+document.getElementById('s-due').value||1,action:document.getElementById('s-action').value};
+  const q=subEditId?sb.from('subscription_tracker').update(sub).eq('id',subEditId):sb.from('subscription_tracker').insert(sub);
+  const{error}=await q;
+  if(error){toast('Error saving subscription: '+error.message);console.error('[sub] save failed:',error);return;}
+  closeModal('sub-modal');renderSubList();renderFinCal();toast('Saved: '+name);
+}
+async function removeSub(id){
+  if(!await confirmDialog('Remove subscription?'))return;
+  const{error}=await sb.from('subscription_tracker').delete().eq('id',id);
+  if(error){toast('Error removing subscription: '+error.message);console.error('[sub] remove failed:',error);return;}
+  renderSubList();renderFinCal();toast('Removed');
+}
+async function renderFinCal(){
+  const el=document.getElementById('fin-cal');if(!el)return;
+  const now=new Date();const y=now.getFullYear();const m=now.getMonth();
+  const hdr=document.getElementById('fin-cal-hdr');if(hdr)hdr.textContent=M12[m]+' '+y;
+  const first=new Date(y,m,1);const last=new Date(y,m+1,0);
+  const[{data:debts},{data:subs},{data:bills2}]=await Promise.all([
+    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),
+    sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),
+    sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),
+  ]);
+  const bMap={};
+  (debts||[]).forEach(d=>{if(!d.due_day)return;if(!bMap[d.due_day])bMap[d.due_day]=[];bMap[d.due_day].push({name:d.debt_name,c:'r'});});
+  (subs||[]).forEach(s=>{if(!s.renewal_day)return;if(!bMap[s.renewal_day])bMap[s.renewal_day]=[];bMap[s.renewal_day].push({name:s.sub_name,c:s.action==='Keep'?'b':'d'});});
+  (bills2||[]).forEach(b=>{if(!b.due_day)return;if(!bMap[b.due_day])bMap[b.due_day]=[];bMap[b.due_day].push({name:b.bill_name,c:'a'});});
+  let html='';D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
+  for(let i=0;i<first.getDay();i++)html+='<div></div>';
+  const cMap={r:'red',b:'blu',a:'amb',d:'t3'};
+  for(let day=1;day<=last.getDate();day++){
+    const isToday=day===now.getDate();const bills=bMap[day]||[];
+    html+=`<div style="min-height:56px;background:var(--s2);border:1px solid ${isToday?'var(--red)':'var(--b1)'};border-radius:6px;padding:4px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:2px;color:${isToday?'var(--red)':'var(--t3)'}">${day}</div>
+      ${bills.map(b=>`<div style="font-size:9px;padding:1px 4px;border-radius:3px;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--${cMap[b.c]||'t3'}-l);color:var(--${cMap[b.c]||'t3'})">${b.name}</div>`).join('')}
+    </div>`;
+  }
+  el.innerHTML=html;
+}
+async function renderRoadmap(){
+  const rdmData=CONTENT.schedule?.financial_roadmap?.['debt-payoff'];if(!rdmData)return;
+  const{data:rs}=await sb.from('roadmap_status').select('*').eq('user_id',PROFILE.id);
+  const rsMap={};(rs||[]).forEach(r=>rsMap[r.step_number]=r.status);
+  const el=document.getElementById('roadmap-list');if(!el)return;
+  el.innerHTML=rdmData.steps.map(s=>`<div class="card" style="margin-bottom:7px;border-left:3px solid var(--${s.col})"><div style="display:flex;gap:12px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--${s.col});line-height:1;flex-shrink:0">${s.num}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:3px"><div style="font-size:13px;font-weight:600">${s.action}</div><div style="display:flex;gap:6px;align-items:center"><span class="badge b-d">${s.timing}</span><select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:120px" onchange="saveRoadmap(${s.num},this.value)"><option${rsMap[s.num]==='Not Started'?' selected':''}>Not Started</option><option${rsMap[s.num]==='In Progress'?' selected':''}>In Progress</option><option${rsMap[s.num]==='Complete'?' selected':''}>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">${s.why}</div></div></div></div>`).join('');
+}
+async function saveRoadmap(num,val){await sb.from('roadmap_status').upsert({user_id:PROFILE.id,step_number:num,status:val});}
+
+// GOALS
+// App-level config — fixed goal reference list used for the Goals overview panel.
+// These are display-only; actual completion tracking is via habit_logs in Supabase.
+const GOALS_DATA=[
+  {sec:'FITNESS',col:'red',goals:[{freq:'Daily',g:'Wake up by 6 AM',p:'Critical'},{freq:'Daily',g:'Workout complete',p:'Critical'},{freq:'Daily',g:'HIIT finisher Mon/Wed/Fri',p:'Critical'},{freq:'Daily',g:'Knee rehab every session',p:'Critical'},{freq:'Daily',g:'Evening walk 30 min',p:'Critical'},{freq:'Daily',g:'Morning mobility 15 min',p:'High'},{freq:'Weekly',g:'5-6 workouts completed',p:'Critical'},{freq:'Weekly',g:'Monday weigh-in',p:'High'},{freq:'Monthly',g:'Lose 6-8 lbs',p:'Critical'},{freq:'Monthly',g:'Progressive overload on main lifts',p:'High'}]},
+  {sec:'NUTRITION',col:'grn',goals:[{freq:'Daily',g:'Hit protein target',p:'Critical'},{freq:'Daily',g:'Stay within calorie target',p:'Critical'},{freq:'Daily',g:'Log all meals before eating',p:'Critical'},{freq:'Daily',g:'120+ oz water',p:'High'},{freq:'Daily',g:'No processed food weekdays',p:'High'},{freq:'Daily',g:'No eating after 9 PM',p:'High'},{freq:'Weekly',g:'Sunday meal prep complete',p:'Critical'},{freq:'Monthly',g:'Zero energy drink months',p:'Critical'}]},
+  {sec:'READING',col:'blu',goals:[{freq:'Daily',g:'30 min reading at 9 PM',p:'Critical'},{freq:'Daily',g:'Audiobook during commute',p:'High'},{freq:'Monthly',g:'Complete 1 book',p:'Critical'},{freq:'Monthly',g:'3 key takeaways per book',p:'High'}]},
+  {sec:'FINANCIAL',col:'amb',goals:[{freq:'Daily',g:'No impulse spending',p:'High'},{freq:'Weekly',g:'Check CC balance',p:'Critical'},{freq:'Monthly',g:'Pay $305+ on CC debt',p:'Critical'},{freq:'Monthly',g:'Confirm no bank fee',p:'Critical'},{freq:'Monthly',g:'Review subscriptions',p:'Medium'}]},
+  {sec:'MINDSET',col:'pur',goals:[{freq:'Daily',g:'Screens off by 10 PM',p:'Critical'},{freq:'Daily',g:'In bed by 11:30 PM',p:'Critical'},{freq:'Daily',g:'Prep for tomorrow',p:'High'},{freq:'Weekly',g:'Sunday check-in',p:'High'},{freq:'Monthly',g:'Full plan reassess',p:'High'}]},
+];
+const FCOL={Daily:'g',Weekly:'a',Monthly:'r'};const PCOL={Critical:'r',High:'a',Medium:'d'};
+function renderGoals(){
+  const el=document.getElementById('goals-list');if(!el)return;
+  el.innerHTML=GOALS_DATA.map(gs=>`<div class="sh">${gs.sec}</div>${gs.goals.map(g=>`<div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px"><span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span><span style="flex:1;font-size:13px">${g.g}</span><span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span></div>`).join('')}<div style="height:8px"></div>`).join('');
+}
+function filterGoals(freq,btn){
+  document.querySelectorAll('.goal-item').forEach(el=>el.style.display=(freq==='All'||el.dataset.freq===freq)?'flex':'none');
+  document.querySelectorAll('#goals-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+}
+
+// IS IT WORTH IT
+function getWitRate(){return PROFILE.wit_hourly_rate||23;}
+function calcWit(){
+  const cost=parseFloat(document.getElementById('wit-cost')?.value);
+  const rate=getWitRate();
+  const resEl=document.getElementById('wit-result');
+  if(!cost||cost<=0){if(resEl)resEl.style.display='none';return;}
+  const hrs=cost/rate;
+  const tlEl=document.getElementById('wit-time-lbl');if(tlEl)tlEl.textContent=fmtWorkTime(hrs);
+  const rlEl=document.getElementById('wit-rate-lbl');if(rlEl)rlEl.textContent=rate.toFixed(2);
+  if(resEl)resEl.style.display='block';
+}
+function fmtWorkTime(hrs){
+  if(hrs<1/60)return'Less than 1 min';
+  if(hrs<1){const m=Math.round(hrs*60);return m+' min'+(m!==1?'s':'');}
+  const h=Math.floor(hrs);const m=Math.round((hrs-h)*60);
+  return h+'h'+(m>0?' '+m+'m':'');
+}
+function saveWitRate(){
+  const r=parseFloat(document.getElementById('wit-rate')?.value);
+  if(!r||r<=0){toast('Enter a valid hourly rate');return;}
+  PROFILE.wit_hourly_rate=r;
+  sb.from('profiles').update({wit_hourly_rate:r}).eq('id',PROFILE.id);
+  toast('Rate saved: $'+r+'/hr');calcWit();
+}
+function witDecide(decision){
+  const name=document.getElementById('wit-name')?.value.trim();
+  const cost=parseFloat(document.getElementById('wit-cost')?.value);
+  if(!name){toast('Enter an item name');return;}
+  if(!cost||cost<=0){toast('Enter a price');return;}
+  const key='wit_'+PROFILE.id+'_'+yearMonth();
+  const items=State.get(key)||[];
+  items.push({name,cost,decision,date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}),ts:Date.now()});
+  State.set(key,items);
+  document.getElementById('wit-name').value='';
+  document.getElementById('wit-cost').value='';
+  document.getElementById('wit-result').style.display='none';
+  toast(decision==='pass'?'Smart pass! $'+cost.toFixed(2)+' saved.':'Purchase logged.');
+  renderWit();
+}
+function deleteWitItem(idx){
+  const key='wit_'+PROFILE.id+'_'+yearMonth();
+  const items=State.get(key)||[];
+  items.splice(idx,1);State.set(key,items);
+  renderWit();toast('Item removed');
+}
+function renderWit(){
+  const rate=getWitRate();
+  const rateEl=document.getElementById('wit-rate');if(rateEl&&!rateEl.value)rateEl.value=rate;
+  const key='wit_'+PROFILE.id+'_'+yearMonth();
+  const items=State.get(key)||[];
+  const bought=items.filter(i=>i.decision==='buy');
+  const passed=items.filter(i=>i.decision==='pass');
+  const totalBought=bought.reduce((s,i)=>s+i.cost,0);
+  const totalSaved=passed.reduce((s,i)=>s+i.cost,0);
+  const winRate=items.length?Math.round(passed.length/items.length*100):0;
+  const hrsSaved=totalSaved/rate;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('wit-saved','$'+totalSaved.toFixed(2));set('wit-saved-sub',passed.length+' item'+(passed.length!==1?'s':'')+' passed');
+  set('wit-spent','$'+totalBought.toFixed(2));set('wit-spent-sub',bought.length+' item'+(bought.length!==1?'s':'')+' bought');
+  set('wit-winrate',winRate+'%');
+  set('wit-hrs-saved',hrsSaved<1?Math.round(hrsSaved*60)+'m':hrsSaved.toFixed(1)+'h');
+  const mhdr=document.getElementById('wit-month-hdr');
+  if(mhdr)mhdr.textContent=new Date().toLocaleString('default',{month:'long',year:'numeric'}).toUpperCase()+' LOG';
+  const tEl=document.getElementById('wit-table');if(!tEl)return;
+  if(!items.length){tEl.innerHTML='<div style="color:var(--t3);font-size:13px;padding:14px 0;text-align:center">No purchase decisions logged this month yet.<br><span style="font-size:12px">Use the calculator above to start tracking.</span></div>';return;}
+  tEl.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="border-bottom:2px solid var(--b1)">
+      <th style="text-align:left;padding:8px 6px;color:var(--t3);font-weight:600">DATE</th>
+      <th style="text-align:left;padding:8px 6px;color:var(--t3);font-weight:600">ITEM</th>
+      <th style="text-align:right;padding:8px 6px;color:var(--t3);font-weight:600">PRICE</th>
+      <th style="text-align:right;padding:8px 6px;color:var(--t3);font-weight:600">WORK TIME</th>
+      <th style="text-align:center;padding:8px 6px;color:var(--t3);font-weight:600">DECISION</th>
+      <th style="width:28px"></th>
+    </tr></thead>
+    <tbody>
+    ${[...items].reverse().map((item,ri)=>{
+      const idx=items.length-1-ri;const isBuy=item.decision==='buy';
+      return`<tr style="border-bottom:1px solid var(--b1)">
+        <td style="padding:9px 6px;color:var(--t3);white-space:nowrap;font-family:DM Mono,monospace">${item.date}</td>
+        <td style="padding:9px 6px;font-weight:500">${item.name}</td>
+        <td style="padding:9px 6px;text-align:right;font-family:DM Mono,monospace;font-weight:500">$${item.cost.toFixed(2)}</td>
+        <td style="padding:9px 6px;text-align:right;font-family:DM Mono,monospace;color:var(--amb)">${fmtWorkTime(item.cost/rate)}</td>
+        <td style="padding:9px 6px;text-align:center"><span class="badge b-${isBuy?'r':'g'}">${isBuy?'Bought':'Passed'}</span></td>
+        <td style="padding:9px 6px;text-align:right"><button onclick="deleteWitItem(${idx})" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">x</button></td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+    <tfoot><tr style="border-top:2px solid var(--b1)">
+      <td colspan="2" style="padding:10px 6px;font-size:12px;color:var(--t3)">${items.length} decision${items.length!==1?'s':''} this month</td>
+      <td colspan="2" style="padding:10px 6px;text-align:right;font-family:DM Mono,monospace;font-size:12px">
+        <span style="color:var(--grn)">$${totalSaved.toFixed(2)} saved</span> &nbsp;
+        <span style="color:var(--red)">$${totalBought.toFixed(2)} spent</span>
+      </td>
+      <td colspan="2" style="padding:10px 6px;text-align:center"><span class="badge b-${winRate>=50?'g':'r'}">${winRate}% win rate</span></td>
+    </tr></tfoot>
+  </table>`;
+}
+
+// ADMIN
+async function renderAdmin(){
+  if(PROFILE.role!=='admin'){document.getElementById('page-admin').innerHTML='<div style="color:var(--t3);padding:20px">Admin access required.</div>';return;}
+  const{data:users}=await sb.from('profiles').select('*').order('created_at');
+  const all=users||[];
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('a-total',all.length);set('a-admins',all.filter(u=>u.role==='admin').length);
+  set('a-standard',all.filter(u=>u.role==='standard').length);set('a-disabled',all.filter(u=>u.is_disabled).length);
+  const el=document.getElementById('user-list');if(!el)return;
+  el.innerHTML=all.map(u=>`
+    <div class="user-row">
+      <div class="user-av" style="background:${u.role==='admin'?'var(--red)':'var(--blu)'}">
+        ${(u.display_name||u.username||'U')[0].toUpperCase()}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">
+          <div style="font-size:13px;font-weight:600">${u.display_name||'--'}</div>
+          <span class="badge b-${u.role==='admin'?'r':'b'}">${u.role}</span>
+          ${u.is_disabled?'<span class="badge b-d">Disabled</span>':''}
+          ${u.force_password_reset?'<span class="badge b-a">Reset Pending</span>':''}
+          ${u.id===PROFILE.id?'<span class="badge b-g">You</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--t3)">@${u.username||'--'} - Joined ${new Date(u.created_at).toLocaleDateString()} - ${u.signup_complete?'Setup complete':'Questionnaire pending'}</div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--t2)">
+            <input type="checkbox" ${u.role==='admin'?'checked':''} style="accent-color:var(--red);width:14px;height:14px" onchange="toggleAdminRole('${u.id}',this.checked)" ${u.id===PROFILE.id?'disabled':''}>
+            Admin mode
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--t2)">
+            <input type="checkbox" ${u.is_disabled?'checked':''} style="accent-color:var(--amb);width:14px;height:14px" onchange="toggleDisable('${u.id}',this.checked)" ${u.id===PROFILE.id?'disabled':''}>
+            Disable account
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+        ${u.id!==PROFILE.id?`<button class="btn btn-o btn-xs" onclick="openResetPassModal('${u.id}')">Reset Password</button>`:''}
+      </div>
+    </div>`).join('');
+}
+async function toggleAdminRole(uid,isAdmin){await sb.from('profiles').update({role:isAdmin?'admin':'standard'}).eq('id',uid);toast(isAdmin?'Admin role granted':'Admin role removed');renderAdmin();}
+async function toggleDisable(uid,disabled){await sb.from('profiles').update({is_disabled:disabled}).eq('id',uid);toast(disabled?'Account disabled':'Account enabled');renderAdmin();}
+function openResetPassModal(uid){document.getElementById('rp-uid').value=uid;document.getElementById('rp-pass').value='';document.getElementById('rp-force').checked=true;document.getElementById('rp-err').style.display='none';openModal('reset-pass-modal');}
+async function adminResetPass(){
+  const uid=document.getElementById('rp-uid').value;
+  const pass=document.getElementById('rp-pass').value.trim();
+  const force=document.getElementById('rp-force').checked;
+  if(!pass){document.getElementById('rp-err').textContent='Enter a temporary password.';document.getElementById('rp-err').style.display='block';return;}
+  if(force)await sb.from('profiles').update({force_password_reset:true}).eq('id',uid);
+  closeModal('reset-pass-modal');
+  toast('Reset flag set. Go to Supabase Dashboard > Auth > Users to set their password to: '+pass,6000);
+}
+async function adminCreateUser(){
+  const errEl=document.getElementById('nu-err');errEl.style.display='none';
+  const display=document.getElementById('nu-display').value.trim();
+  const email=document.getElementById('nu-email').value.trim();
+  const pass=document.getElementById('nu-pass').value;
+  if(!display||!email||!pass){errEl.textContent='All fields required.';errEl.style.display='block';return;}
+  const{error}=await sb.auth.signUp({email,password:pass,options:{data:{display_name:display,role:'standard',force_password_reset:true}}});
+  if(error){errEl.textContent=error.message;errEl.style.display='block';return;}
+  closeModal('add-user-modal');toast('Account created. User must change password on first login.');
+  ['nu-display','nu-email','nu-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  renderAdmin();
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  // Clear stale content caches from old versions
+  for(let i=localStorage.length-1;i>=0;i--){
+    const k=localStorage.key(i);
+    if(k&&k.startsWith('cc_')&&!k.startsWith('cc_v4_'))State.delete(k);
+  }
+  // IMPORTANT: Do NOT call sb.auth.getSession() here.
+  // onAuthStateChange fires INITIAL_SESSION on every page load and handles all auth state.
+  // Calling getSession() here causes a race condition → blank screen on refresh.
+  // Safety net: if nothing has rendered after 5 seconds, show the login screen.
+  setTimeout(()=>{
+    const appVisible=document.getElementById('app')?.classList.contains('show');
+    const authVisible=[...document.querySelectorAll('.auth-screen')].some(e=>e.classList.contains('show'));
+    if(!appVisible&&!authVisible){
+      console.warn('[auth] 5s fallback triggered — showing login screen');
+      show('s-choose');
+    }
+  },5000);
+});
+
+
+// ── EDITABLE DASHBOARD STATS ────────────────────────────────────
+// Maps the legacy localStorage key names to their profiles table column names.
+const STAT_COL={tgt_weight:'target_weight',cal_target:'calorie_target',pro_target:'protein_target'};
+function editStat(elId, key, defaultVal, unit){
+  const el=document.getElementById(elId); if(!el)return;
+  const col=STAT_COL[key];
+  const cur=(col&&PROFILE[col]!=null?PROFILE[col]:null)||defaultVal;
+  el.innerHTML=`<input type="number" value="${cur}" step="any" style="width:80px;background:none;border:none;border-bottom:2px solid var(--red);color:inherit;font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveStat('${elId}','${key}','${unit}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  el.querySelector('input').select();
+}
+async function saveStat(elId,key,unit,value){
+  const v=parseFloat(value);
+  const col=STAT_COL[key];
+  if(!isNaN(v)&&v>0&&col){
+    PROFILE[col]=v;
+    await sb.from('profiles').update({[col]:v}).eq('id',PROFILE.id);
+  }
+  const display=(col&&PROFILE[col])||v||(key==='tgt_weight'?165:key==='cal_target'?1900:185);
+  const el=document.getElementById(elId);
+  if(el)el.textContent=display.toLocaleString()+(unit==='g'?'g':'');
+  toast('Saved: '+display+(unit==='g'?'g':' '+unit));
+}
+function loadDashStats(){
+  const tgt=PROFILE.target_weight||165;
+  const cal=PROFILE.calorie_target||1900;
+  const pro=PROFILE.protein_target||185;
+  const te=document.getElementById('d-tgt-wt'); if(te)te.textContent=tgt;
+  const ce=document.getElementById('d-cal-tgt'); if(ce)ce.textContent=cal.toLocaleString();
+  const pe=document.getElementById('d-pro-tgt'); if(pe)pe.textContent=pro+'g';
+  const ne=document.getElementById('nut-tgt-cal'); if(ne)ne.textContent=cal+'/day';
+  const npe=document.getElementById('nut-tgt-pro'); if(npe)npe.textContent=pro+'g/day';
+}
+
+// ── FINANCIAL DYNAMIC BOXES ─────────────────────────────────────
+async function updateFinancialBoxes(){
+  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
+  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(d.balance||0),0);
+  const totalPay=(debts||[]).reduce((s,d)=>s+(d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(s2.monthly_cost||0),0);
+  const totalMonthly=totalPay+totalSubs;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-total-debt','$'+totalDebt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+  set('fin-debt-ct',(debts||[]).length+' account'+(debts?.length!==1?'s':''));
+  set('fin-monthly-pay','$'+totalPay.toFixed(2));
+  set('fin-monthly-subs','$'+totalSubs.toFixed(2));
+  set('fin-subs-ct',(subs||[]).length+' subscription'+(subs?.length!==1?'s':''));
+  set('fin-total-monthly','$'+totalMonthly.toFixed(2));
+}
+
+// ── HABITS ADD/EDIT/REMOVE ──────────────────────────────────────
+let habitEditMode=false;
+const HABIT_COLORS={morning:'a',fitness:'r',nutrition:'g',mindset:'b',custom:'p'};
+
+function getUserHabitSecs(){
+  if(!PROFILE)return JSON.parse(JSON.stringify(HABIT_SECS));
+  const s=State.get('habits_'+PROFILE.id);
+  if(s!==null)return s;
+  return JSON.parse(JSON.stringify(HABIT_SECS));
+}
+function saveUserHabitSecs(secs){
+  State.set('habits_'+PROFILE.id,secs);
+}
+function toggleHabitEdit(){
+  habitEditMode=!habitEditMode;
+  const btn=document.getElementById('habit-edit-btn');
+  if(btn)btn.textContent=habitEditMode?'✅ Done':'✏️ Edit';
+  renderHabits();
+}
+function openAddHabit(cat){
+  document.getElementById('ah-label').value='';
+  document.getElementById('ah-cat').value=cat||'morning';
+  document.getElementById('ah-custom-cat-wrap').style.display='none';
+  document.getElementById('ah-cat').onchange=function(){
+    document.getElementById('ah-custom-cat-wrap').style.display=this.value==='custom'?'block':'none';
+  };
+  openModal('add-habit-modal');
+}
+function confirmAddHabit(){
+  const label=document.getElementById('ah-label').value.trim();
+  if(!label){toast('Enter a habit name');return;}
+  let cat=document.getElementById('ah-cat').value;
+  let catLabel=cat.charAt(0).toUpperCase()+cat.slice(1);
+  let catCol='b';
+  if(cat==='custom'){
+    cat=document.getElementById('ah-custom-cat').value.trim().toLowerCase().replace(/\s+/g,'-')||'custom';
+    catLabel=document.getElementById('ah-custom-cat').value.trim()||'Custom';
+  }else{
+    catCol=HABIT_COLORS[cat]||'b';
+  }
+  const secs=getUserHabitSecs();
+  let sec=secs.find(s=>s.cat===cat);
+  if(!sec){sec={cat,label:catLabel,col:catCol,habits:[]};secs.push(sec);}
+  sec.habits.push({id:'h_'+Date.now(),label});
+  saveUserHabitSecs(secs);
+  closeModal('add-habit-modal');
+  renderHabits();
+  toast('Habit added: '+label);
+}
+async function removeHabit(catIdx,habitIdx){
+  if(!await confirmDialog('Remove this habit?'))return;
+  const secs=getUserHabitSecs();
+  secs[catIdx].habits.splice(habitIdx,1);
+  if(secs[catIdx].habits.length===0)secs.splice(catIdx,1);
+  saveUserHabitSecs(secs);
+  renderHabits();toast('Habit removed');
+}
+
+// Override renderHabits to use getUserHabitSecs + edit mode
+const _origRenderHabits=renderHabits;
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');if(lbl)lbl.textContent=D7L[d.getDay()].toUpperCase()+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){const diff=Math.round((new Date(todayStr())-new Date(habitDate))/86400000);rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';}
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');
+  if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>`
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
+        ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+      </div>
+      ${sec.habits.map((h,hi)=>`
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" style="position:relative" onclick="if(!habitEditMode)toggleHabit('${h.id}')">
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
+          <div class="hl${habitEditMode?' ':''}${habitCache[h.id]?' done':''}">${h.label}</div>
+          <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0">${sec.cat}</span>
+          ${habitEditMode?`<button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 6px;cursor:pointer;font-size:11px;font-weight:700;margin-left:5px;flex-shrink:0">✕</button>`:''}
+        </div>`).join('')}
+      ${habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add Habit to ${sec.label}</button>`:''}
+    </div>`).join('')
+    +(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  renderCatProg();renderStreakBar();
+}
+
+// ── GOALS ADD/EDIT/REMOVE ────────────────────────────────────────
+let goalEditMode=false;
+function getUserGoalData(){
+  if(!PROFILE)return JSON.parse(JSON.stringify(GOALS_DATA));
+  const s=State.get('goals_'+PROFILE.id);
+  if(s!==null)return s;
+  return JSON.parse(JSON.stringify(GOALS_DATA));
+}
+function saveUserGoalData(data){State.set('goals_'+PROFILE.id,data);}
+function toggleGoalEdit(){
+  goalEditMode=!goalEditMode;
+  const btn=document.getElementById('goals-edit-btn');
+  if(btn)btn.textContent=goalEditMode?'✅ Done':'✏️ Edit Goals';
+  renderGoals();
+}
+function openAddGoal(){
+  document.getElementById('ag-label').value='';
+  openModal('add-goal-modal');
+}
+function confirmAddGoal(){
+  const g=document.getElementById('ag-label').value.trim();
+  if(!g){toast('Enter a goal description');return;}
+  const freq=document.getElementById('ag-freq').value;
+  const p=document.getElementById('ag-priority').value;
+  const sec=document.getElementById('ag-sec').value;
+  const data=getUserGoalData();
+  let s=data.find(d=>d.sec===sec);
+  if(!s){s={sec,col:'t2',goals:[]};data.push(s);}
+  s.goals.push({freq,g,p,id:'g_'+Date.now()});
+  saveUserGoalData(data);
+  closeModal('add-goal-modal');
+  renderGoals();
+  toast('Goal added!');
+}
+async function removeGoal(secIdx,goalIdx){
+  if(!await confirmDialog('Remove this goal?'))return;
+  const data=getUserGoalData();
+  data[secIdx].goals.splice(goalIdx,1);
+  if(data[secIdx].goals.length===0)data.splice(secIdx,1);
+  saveUserGoalData(data);
+  renderGoals();toast('Goal removed');
+}
+
+// Override renderGoals to support edit mode
+renderGoals=function(){
+  const el=document.getElementById('goals-list');if(!el)return;
+  const data=getUserGoalData();
+  el.innerHTML=data.map((gs,si)=>`
+    <div class="sh">${gs.sec}</div>
+    ${gs.goals.map((g,gi)=>`
+      <div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
+        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span>
+        <span style="flex:1;font-size:13px">${g.g}</span>
+        <span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span>
+        ${goalEditMode?`<button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0">✕</button>`:''}
+      </div>`).join('')}
+    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
+    <div style="height:4px"></div>`).join('')
+    +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
+}
+
+// ── WIT NET POSITION UPDATE ──────────────────────────────────────
+const _origRenderWit=renderWit;
+renderWit=function(){
+  _origRenderWit();
+  // Add net position calc
+  const key='wit_'+PROFILE.id+'_'+yearMonth();
+  const items=State.get(key)||[];
+  const bought=items.filter(i=>i.decision==='buy');
+  const passed=items.filter(i=>i.decision==='pass');
+  const totalBought=bought.reduce((s,i)=>s+i.cost,0);
+  const totalSaved=passed.reduce((s,i)=>s+i.cost,0);
+  const net=totalSaved-totalBought;
+  const netEl=document.getElementById('wit-net');
+  const netSub=document.getElementById('wit-net-sub');
+  const netCard=document.getElementById('wit-net-card');
+  if(netEl){
+    netEl.textContent=(net>=0?'+':'')+net.toFixed(2).replace(/^-/,'-$').replace(/^\+/,'+$');
+    if(!netEl.textContent.includes('$'))netEl.textContent=(net>=0?'+$':'-$')+Math.abs(net).toFixed(2);
+    netEl.style.color=net>0?'var(--grn)':net<0?'var(--red)':'var(--t2)';
+  }
+  if(netSub)netSub.textContent=net>0?'you are UP':net<0?'you are DOWN':'breakeven';
+  if(netCard)netCard.className='stat '+(net>0?'card-g':net<0?'card-r':'');
+}
+
+// ── ADMIN – REPLACE BROKEN CREATE USER WITH INVITE FLOW ─────────
+adminCreateUser=async function(){
+  const errEl=document.getElementById('nu-err');errEl.style.display='none';
+  const email=document.getElementById('nu-email').value.trim();
+  if(!email){errEl.textContent='Enter the email to invite.';errEl.style.display='block';return;}
+  // Copy invite info to clipboard
+  const msg='You have been invited to the Life Dashboard!\n\nURL: https://code-with-cisco.github.io/LifeDashboard/\nInvite Code: Memento Mori\n\nClick Create Account, enter the invite code when prompted, then register with your email ('+email+').';
+  try{await navigator.clipboard.writeText(msg);toast('Invite message copied to clipboard!');}
+  catch(e){toast('Invite URL: code-with-cisco.github.io/LifeDashboard — Code: Memento Mori');}
+  closeModal('add-user-modal');
+}
+
+// Patch the add user modal HTML dynamically
+const addUserModal=document.getElementById('add-user-modal');
+if(addUserModal){
+  const title=addUserModal.querySelector('.modal-title');
+  if(title)title.textContent='INVITE USER';
+  const body=addUserModal.querySelector('div[style*="font-size:12px"]');
+  if(body)body.innerHTML='Enter the email you want to invite. The invite message will be copied to your clipboard — paste it to them directly.';
+}
+
+// ── PATCH renderFinancial to call updateFinancialBoxes ───────────
+const _origRenderFinancial=renderFinancial;
+renderFinancial=async function(){
+  await _origRenderFinancial();
+  await updateFinancialBoxes();
+}
+const _origSaveDebt=saveDebt;
+saveDebt=async function(){await _origSaveDebt();await updateFinancialBoxes();}
+const _origRemoveDebt=removeDebt;
+removeDebt=async function(id){await _origRemoveDebt(id);await updateFinancialBoxes();}
+const _origSaveSub=saveSub;
+saveSub=async function(){await _origSaveSub();await updateFinancialBoxes();}
+const _origRemoveSub=removeSub;
+removeSub=async function(id){await _origRemoveSub(id);await updateFinancialBoxes();}
+
+// ── PATCH enterApp to load dash stats ───────────────────────────
+const _origEnterApp=enterApp;
+enterApp=async function(){
+  await _origEnterApp();
+  setTimeout(loadDashStats,200);
+}
+
+
+// ── FALLBACK MEALS (works even when data files are 404) ─────────
+const FALLBACK_MEALS={
+  breakfast_options:[
+    {name:'Egg & Turkey Scramble Rice Bowl',cal:505,protein:52,carbs:38,fat:14,instructions:'4oz turkey + 2 eggs + 2 whites + basmati rice. Pan sear, serve over rice.'},
+    {name:'Japanese BBQ Chicken Bowl',cal:490,protein:48,carbs:40,fat:12,instructions:'5oz leftover chicken + rice + 1 tbsp Japanese BBQ sauce. Fastest morning.'},
+    {name:'Kewpie Egg Salad Toast',cal:510,protein:28,carbs:42,fat:22,instructions:'4 boiled eggs + 1.5 tbsp Kewpie mayo. Mash. Serve on 2 slices 5-grain.'},
+    {name:'Overnight Oats + Scrambled Eggs',cal:505,protein:42,carbs:48,fat:16,instructions:'Prep oats night before. Morning: 3 eggs + 2 whites scrambled.'},
+    {name:'Thin Bagel + Egg Scramble',cal:480,protein:40,carbs:40,fat:16,instructions:'1 thin bagel + 3 eggs + 2 whites scrambled with Kerrygold.'},
+  ],
+  lunch_options:[
+    {name:'Chipotle Chicken Rice Bowl',cal:455,protein:46,carbs:42,fat:10,instructions:'5oz Costco chipotle chicken + 3/4 cup basmati + frozen broccoli.'},
+    {name:'Pan-Seared Chicken + Rice',cal:445,protein:46,carbs:42,fat:7,instructions:'6oz chicken breast + 3/4 cup rice + hot sauce. Simple and reliable.'},
+    {name:'Ground Turkey Protein Pasta',cal:490,protein:50,carbs:42,fat:12,instructions:'5oz 90/10 turkey + 1.5 cups protein macaroni + olive oil + garlic.'},
+    {name:'Egg Salad Sandwich',cal:470,protein:28,carbs:42,fat:20,instructions:'Kewpie egg salad on 5-grain bread. Add hard-boiled egg for more protein.'},
+  ],
+  snack_options:[
+    {name:'ON Gold Standard Whey Shake',cal:120,protein:24,carbs:3,fat:1,instructions:'1 scoop + 10-12oz cold water. Replaces the White Monster entirely.'},
+    {name:'Chobani Protein Yogurt Drink',cal:160,protein:20,carbs:20,fat:0,instructions:'Grab from fridge. Zero prep.'},
+  ],
+  dinner_options:[
+    {name:'Ribeye + Protein Pasta Aglio e Olio',cal:585,protein:52,carbs:44,fat:18,instructions:'5oz ribeye + 1.5 cups protein spaghetti. Sear hot 2-3 min/side.'},
+    {name:'Ground Beef Bolognese',cal:570,protein:53,carbs:48,fat:14,instructions:'5oz 90/10 beef + crushed tomatoes + Italian seasoning. Simmer 20 min.'},
+    {name:'Japanese BBQ Chicken Thighs + Rice',cal:575,protein:50,carbs:50,fat:14,instructions:'7oz thighs + 1.5 tbsp Japanese BBQ sauce + 1 cup basmati.'},
+    {name:'Chipotle Chicken + Protein Fettuccine',cal:560,protein:54,carbs:48,fat:12,instructions:'5oz Costco chicken + fettuccine + olive oil + garlic.'},
+    {name:'Ground Turkey Taco Bowl',cal:555,protein:52,carbs:44,fat:12,instructions:'6oz 90/10 turkey + homemade taco seasoning + rice + hot sauce.'},
+    {name:'Steak & Egg Rice Bowl',cal:580,protein:55,carbs:38,fat:19,instructions:'5oz ribeye/sirloin + 2 fried eggs + rice + Japanese BBQ sauce.'},
+  ]
+};
+
+// ── PATCH updateMealList to use fallback when data absent ────────
+updateMealList=function(){
+  const cat=document.getElementById('mm-cat')?.value||'breakfast_options';
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const items=mPlan?.[cat]||FALLBACK_MEALS[cat]||[];
+  const el=document.getElementById('mm-list');if(!el)return;
+  if(!items.length){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">No meals found. Upload data/ folder to GitHub to unlock full meal database.</div>';return;}
+  el.innerHTML=items.map(m=>{
+    const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:5px;gap:10px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0})" onmouseover="this.style.borderColor='var(--grn)'" onmouseout="this.style.borderColor='transparent'">
+      <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div></div>
+      <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0})">+ Log</button>
+    </div>`;
+  }).join('');
+};
+
+// ── FINANCIAL TAKE-HOME ─────────────────────────────────────────
+function editTakeHome(){
+  const el=document.getElementById('fin-take-home');if(!el)return;
+  const cur=PROFILE.take_home_pay||3370;
+  el.innerHTML=`<input type="number" value="${cur}" step="1" style="width:90px;background:none;border:none;border-bottom:2px solid var(--grn);color:var(--grn);font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveTakeHome(this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  el.querySelector('input').select();
+}
+function saveTakeHome(value){
+  const v=parseFloat(value);
+  if(!isNaN(v)&&v>0){
+    PROFILE.take_home_pay=v;
+    sb.from('profiles').update({take_home_pay:v}).eq('id',PROFILE.id);
+  }
+  updateFinancialBoxes();
+}
+updateFinancialBoxes=async function(){
+  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
+  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
+  const totalPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
+  const expenses=totalPay+totalSubs;
+  const takeHome=PROFILE.take_home_pay||3370;
+  const freeCash=takeHome-expenses;
+  const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-take-home',fmt(takeHome));
+  set('fin-expenses',fmt(expenses));
+  set('fin-free-cash',fmt(freeCash));
+  const fce=document.getElementById('fin-free-cash');
+  if(fce)fce.style.color=freeCash>=0?'var(--amb)':'var(--red)';
+  set('fin-total-debt',fmt(totalDebt));
+  set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
+};
+
+// ── QUESTIONNAIRE — ADD PROFILE INFO STEP ───────────────────────
+// Add body_profile as first Q step (inject into existing array)
+const BODY_PROFILE_STEP={
+  id:'body_profile',
+  title:'Tell us about yourself',
+  sub:'Personalizes your targets, progress tracking, and calorie goals.',
+  type:'inputs',
+  inputs:[
+    {id:'age',label:'Age',type:'number',placeholder:'28',unit:'years',min:16,max:80},
+    {id:'gender',label:'Gender',type:'select',opts:['Male','Female','Non-binary','Prefer not to say']},
+    {id:'cur_weight',label:'Current Weight',type:'number',placeholder:'220',unit:'lbs',required:true},
+    {id:'goal_weight',label:'Goal Weight (target)',type:'number',placeholder:'165',unit:'lbs',required:true},
+  ]
+};
+Q_STEPS.unshift(BODY_PROFILE_STEP);
+
+// Extend renderQStep to handle 'inputs' type
+const _origRenderQStep=renderQStep;
+renderQStep=function(){
+  const s=Q_STEPS[qStep];
+  document.getElementById('q-prog-fill').style.width=Math.round(qStep/Q_STEPS.length*100)+'%';
+  document.getElementById('q-back').style.display=qStep>0?'block':'none';
+  document.getElementById('q-next').textContent=qStep===Q_STEPS.length-1?'Build My Dashboard':'Continue';
+  document.getElementById('q-next').disabled=false;
+  if(s.type==='inputs'){
+    document.getElementById('q-steps').innerHTML=`
+      <div class="q-step show">
+        <div class="q-num">QUESTION ${qStep+1} OF ${Q_STEPS.length}</div>
+        <div class="q-title">${s.title}</div>
+        <div class="q-sub">${s.sub}</div>
+        <div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">
+          ${s.inputs.map(inp=>`
+            <div>
+              <div style="font-size:11px;font-weight:600;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${inp.label}${inp.unit?' ('+inp.unit+')':''}${inp.required?' *':''}</div>
+              ${inp.type==='select'
+                ?`<select class="inp sel" id="qi-${inp.id}" style="background:var(--s3)">
+                    <option value="">Select...</option>
+                    ${(inp.opts||[]).map(o=>`<option value="${o}"${qAnswers[inp.id]===o?' selected':''}>${o}</option>`).join('')}
+                  </select>`
+                :`<div style="display:flex;align-items:center;gap:10px">
+                    <input class="inp" id="qi-${inp.id}" type="${inp.type||'text'}" placeholder="${inp.placeholder||''}" value="${qAnswers[inp.id]||''}" ${inp.min!==undefined?'min='+inp.min:''} ${inp.max!==undefined?'max='+inp.max:''} style="flex:1">
+                    ${inp.unit?`<span style="font-size:13px;color:var(--t3);white-space:nowrap">${inp.unit}</span>`:''}
+                  </div>`
+              }
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }else{
+    _origRenderQStep();
+  }
+};
+
+// Extend qNext to handle 'inputs' type
+const _origQNext=qNext;
+qNext=async function(){
+  const s=Q_STEPS[qStep];
+  if(s.type==='inputs'){
+    // Read input values into qAnswers
+    (s.inputs||[]).forEach(inp=>{
+      const el=document.getElementById('qi-'+inp.id);
+      if(el)qAnswers[inp.id]=el.value;
+    });
+    // Validate required
+    const missing=(s.inputs||[]).find(inp=>inp.required&&!qAnswers[inp.id]);
+    if(missing){toast('Please fill in: '+missing.label);return;}
+    if(qStep<Q_STEPS.length-1){qStep++;renderQStep();}
+    else await completeQuestionnaire();
+  }else{
+    await _origQNext();
+  }
+};
+
+// Extend completeQuestionnaire to save weight data
+const _origCompleteQ=completeQuestionnaire;
+completeQuestionnaire=async function(){
+  // Save weight targets before completing — persist to DB so they survive cross-device
+  const _wtUpdates={};
+  if(qAnswers.goal_weight)_wtUpdates.target_weight=+qAnswers.goal_weight;
+  if(qAnswers.cur_weight)_wtUpdates.start_weight=+qAnswers.cur_weight;
+  if(Object.keys(_wtUpdates).length){
+    Object.assign(PROFILE,_wtUpdates);
+    await sb.from('profiles').update(_wtUpdates).eq('id',PROFILE.id);
+  }
+  // Log starting weight as first entry
+  if(qAnswers.cur_weight){
+    await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:+qAnswers.cur_weight}).then(()=>{}).catch(()=>{});
+  }
+  await _origCompleteQ();
+};
+
+// ── EDIT EXISTING HABITS ─────────────────────────────────────────
+let _editingHabit=null; // {si, hi}
+const _origConfirmAddHabit=confirmAddHabit;
+confirmAddHabit=function(){
+  const label=document.getElementById('ah-label')?.value.trim();
+  if(!label){toast('Enter a habit name');return;}
+  if(_editingHabit){
+    const secs=getUserHabitSecs();
+    secs[_editingHabit.si].habits[_editingHabit.hi].label=label;
+    saveUserHabitSecs(secs);_editingHabit=null;
+    const btn=document.querySelector('#add-habit-modal .btn-r');if(btn)btn.textContent='Add Habit';
+    closeModal('add-habit-modal');renderHabits();toast('Habit updated!');
+  }else{
+    _origConfirmAddHabit();
+  }
+};
+function editHabit(si,hi){
+  const secs=getUserHabitSecs();const h=secs[si].habits[hi];
+  const lbl=document.getElementById('ah-label');if(lbl)lbl.value=h.label;
+  const cat=document.getElementById('ah-cat');if(cat)cat.value=secs[si].cat;
+  _editingHabit={si,hi};
+  const btn=document.querySelector('#add-habit-modal .btn-r');if(btn)btn.textContent='Update Habit';
+  openModal('add-habit-modal');
+}
+
+// Override habit render to add edit button
+const _prevRenderHabits=renderHabits;
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');if(lbl)lbl.textContent=D7L[d.getDay()].toUpperCase()+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){const diff=Math.round((new Date(todayStr())-new Date(habitDate))/86400000);rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';}
+  const{data:hData}=await sb.from('habit_logs').select('habit_id,completed').eq('user_id',PROFILE.id).eq('log_date',habitDate);
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>`
+    <div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="sh" style="margin-bottom:0;flex:1">${sec.label}</div>
+        ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sec.cat}')">+ Add</button>`:''}
+      </div>
+      ${sec.habits.map((h,hi)=>`
+        <div class="hcheck${habitCache[h.id]?' done':''}" id="hc-${h.id}" onclick="if(!${habitEditMode})toggleHabit('${h.id}')">
+          <div class="hbox" id="hb-${h.id}">${habitCache[h.id]?'✓':''}</div>
+          <div class="hl">${h.label}</div>
+          <span class="badge b-${sec.col}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sec.cat}</span>
+          ${habitEditMode?`<div style="display:flex;gap:3px;margin-left:5px">
+            <button onclick="event.stopPropagation();editHabit(${si},${hi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+            <button onclick="event.stopPropagation();removeHabit(${si},${hi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+          </div>`:''}
+        </div>`).join('')}
+      ${habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sec.cat}')">+ Add to ${sec.label}</button>`:''}
+    </div>`).join('')
+    +(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  renderCatProg();renderStreakBar();
+};
+
+// ── EDIT EXISTING GOALS ──────────────────────────────────────────
+let _editingGoal=null;
+const _origConfirmAddGoal=confirmAddGoal;
+confirmAddGoal=function(){
+  const g=document.getElementById('ag-label')?.value.trim();
+  if(!g){toast('Enter a goal description');return;}
+  const freq=document.getElementById('ag-freq')?.value;
+  const p=document.getElementById('ag-priority')?.value;
+  const secVal=document.getElementById('ag-sec')?.value;
+  const data=getUserGoalData();
+  if(_editingGoal){
+    const goal=data[_editingGoal.si]?.goals?.[_editingGoal.gi];
+    if(goal){goal.g=g;goal.freq=freq;goal.p=p;}
+    saveUserGoalData(data);_editingGoal=null;
+    const btn=document.querySelector('#add-goal-modal .btn-r');if(btn)btn.textContent='Add Goal';
+    closeModal('add-goal-modal');renderGoals();toast('Goal updated!');
+  }else{
+    _origConfirmAddGoal();
+  }
+};
+function editGoal(si,gi){
+  const data=getUserGoalData();const goal=data[si]?.goals?.[gi];
+  if(!goal)return;
+  const lbl=document.getElementById('ag-label');if(lbl)lbl.value=goal.g;
+  const freq=document.getElementById('ag-freq');if(freq)freq.value=goal.freq||'Daily';
+  const pri=document.getElementById('ag-priority');if(pri)pri.value=goal.p||'High';
+  const sec=document.getElementById('ag-sec');if(sec)sec.value=data[si].sec||'CUSTOM';
+  _editingGoal={si,gi};
+  const btn=document.querySelector('#add-goal-modal .btn-r');if(btn)btn.textContent='Update Goal';
+  openModal('add-goal-modal');
+}
+// Override renderGoals with edit button
+renderGoals=function(){
+  const el=document.getElementById('goals-list');if(!el)return;
+  const data=getUserGoalData();
+  el.innerHTML=data.map((gs,si)=>`
+    <div class="sh">${gs.sec}</div>
+    ${gs.goals.map((g,gi)=>`
+      <div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
+        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span>
+        <span style="flex:1;font-size:13px">${g.g}</span>
+        <span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span>
+        ${goalEditMode?`<div style="display:flex;gap:3px">
+          <button onclick="editGoal(${si},${gi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+        </div>`:''}
+      </div>`).join('')}
+    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
+    <div style="height:4px"></div>`).join('')
+    +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
+};
+
+
+// ── MACRO DATABASE (per-unit nutritional data) ──────────────────
+const MACRO_PROT={
+  chicken_breast:{cal:47,pro:8.8,car:0,fat:1.0,label:'Chicken Breast',unit:'oz'},
+  chicken_thighs:{cal:55,pro:6.4,car:0,fat:2.9,label:'Chicken Thighs',unit:'oz'},
+  ground_beef:{cal:63,pro:8.0,car:0,fat:3.0,label:'Ground Beef 90/10',unit:'oz'},
+  ground_turkey:{cal:56,pro:8.0,car:0,fat:2.7,label:'Ground Turkey 93/7',unit:'oz'},
+  ribeye:{cal:70,pro:6.5,car:0,fat:4.8,label:'Ribeye Steak',unit:'oz'},
+  sirloin:{cal:55,pro:8.5,car:0,fat:2.2,label:'Sirloin Steak',unit:'oz'},
+  eggs:{cal:70,pro:6,car:0.4,fat:5,label:'Eggs',unit:'egg'},
+  egg_whites:{cal:17,pro:3.6,car:0.2,fat:0,label:'Egg Whites',unit:'white'},
+};
+const MACRO_SIDE={
+  basmati_rice:{cal:200,pro:4,car:45,fat:0.4,label:'Basmati Rice',unit:'cup'},
+  protein_pasta:{cal:170,pro:28,car:26,fat:2,label:'Protein Pasta',unit:'cup'},
+  thin_bagel:{cal:110,pro:5,car:22,fat:1,label:'Thin Bagel',unit:'each'},
+  '5grain_bread':{cal:70,pro:3,car:12,fat:1,label:'5-Grain Bread',unit:'slice'},
+  sweet_potato:{cal:103,pro:2,car:24,fat:0.1,label:'Sweet Potato',unit:'medium'},
+  oats:{cal:150,pro:5,car:27,fat:3,label:'Oats',unit:'cup'},
+};
+
+function calcCustomMacros(){
+  const pk=document.getElementById('c-prot-sel')?.value;
+  const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+  const sk=document.getElementById('c-side-sel')?.value;
+  const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+  const prow=MACRO_PROT[pk]||{cal:0,pro:0,car:0,fat:0};
+  const sidew=MACRO_SIDE[sk]||{cal:0,pro:0,car:0,fat:0};
+  const tc=Math.round(prow.cal*pa+sidew.cal*sa);
+  const tp=Math.round((prow.pro*pa+sidew.pro*sa)*10)/10;
+  const tcar=Math.round((prow.car*pa+sidew.car*sa)*10)/10;
+  const tf=Math.round((prow.fat*pa+sidew.fat*sa)*10)/10;
+  const setV=(id,v)=>{const el=document.getElementById(id);if(el&&!el.dataset.manual)el.value=v;};
+  setV('c-cal',tc);setV('c-pro',tp);setV('c-car',tcar);setV('c-fati',tf);
+  // Update side unit label
+  const su=document.getElementById('c-side-unit');
+  if(su)su.textContent=MACRO_SIDE[sk]?.unit||'cups';
+  // Auto-name
+  const ne=document.getElementById('c-meal-name');
+  if(ne&&!ne.value){
+    const parts=[];
+    if(pa&&prow.label)parts.push(pa+(prow.unit==='oz'?'oz ':'x ')+prow.label);
+    if(sa&&sidew.label)parts.push(sa+(sidew.unit==='cup'?'c ':'x ')+sidew.label);
+    const s=document.getElementById('c-season-sel')?.value;
+    if(s&&s!=='Default (S+P+Garlic)')parts.push('('+s+')');
+    ne.placeholder=parts.join(' + ')||'Auto-generated from selections';
+  }
+}
+// Mark manually-edited macro fields so auto-calc doesn't overwrite
+['c-cal','c-pro','c-car','c-fati'].forEach(id=>{
+  document.addEventListener('DOMContentLoaded',()=>{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener('input',()=>{el.dataset.manual='1';});
+  });
+});
+
+// ── PATCH submitMeal for new custom tab ─────────────────────────
+submitMeal=async function(){
+  if(mealTab==='preset'){toast('Click a meal card or its + Log button to log it');return;}
+  if(mealTab==='manual'){toast('Use Custom Entry tab');return;}
+  if(mealTab==='custom'){
+    const pk=document.getElementById('c-prot-sel')?.value;
+    const customName=document.getElementById('c-meal-name')?.value.trim();
+    const prow=MACRO_PROT[pk]||{};
+    const sk=document.getElementById('c-side-sel')?.value;
+    const sidew=MACRO_SIDE[sk]||{};
+    const season=document.getElementById('c-season-sel')?.value||'';
+    const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+    const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+    const name=customName||(
+      [pa&&prow.label?pa+'oz '+prow.label:'',sa&&sidew.label?sa+(sidew.unit==='cup'?'c ':'x ')+sidew.label:'',season&&season!=='Default (S+P+Garlic)'?'('+season+')':''].filter(Boolean).join(' + ')||'Custom Meal'
+    );
+    const cal=+document.getElementById('c-cal')?.value||0;
+    const pro=+document.getElementById('c-pro')?.value||0;
+    const car=+document.getElementById('c-car')?.value||0;
+    const fat=+document.getElementById('c-fati')?.value||0;
+    if(!cal&&!pro){toast('Select ingredients or enter macros manually');return;}
+    // Clear manual flags on close
+    ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
+    await addMealEntry(name,cal,pro,car,fat);closeModal('meal-modal');toast('Logged: '+name);
+    return;
+  }
+};
+
+// ── PATCH openMealModal to reset custom form ─────────────────────
+const _origOpenMealModal=openMealModal;
+openMealModal=function(){
+  _origOpenMealModal();
+  // Reset custom form state
+  ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';delete el.dataset.manual;}});
+  const cn=document.getElementById('c-meal-name');if(cn)cn.value='';
+};
+
+// ── NUTRITION PAGE — FRACTION-STYLE PROGRESS BOXES ──────────────
+renderNutrition=async function(){
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  if(!mPlan)return;
+  const tgt=mPlan.targets;
+  // Fetch consumed meals first
+  const{data:meals2}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const tot={cal:0,pro:0,car:0,fat:0};
+  (meals2||[]).forEach(m=>{tot.cal+=m.calories||0;tot.pro+=m.protein_g||0;tot.car+=m.carbs_g||0;tot.fat+=m.fat_g||0;});
+  // Fraction-style progress boxes
+  const tgtEl=document.getElementById('nut-targets');
+  if(tgtEl){
+    const macros=[
+      {l:'CALORIES',cur:Math.round(tot.cal),tgt:tgt.calories,unit:'cal',c:'red'},
+      {l:'PROTEIN',cur:Math.round(tot.pro),tgt:tgt.protein_g,unit:'g',c:'grn'},
+      {l:'CARBS',cur:Math.round(tot.car),tgt:tgt.carbs_g,unit:'g',c:'amb'},
+      {l:'FAT',cur:Math.round(tot.fat),tgt:tgt.fat_g,unit:'g',c:'blu'},
+    ];
+    tgtEl.innerHTML=macros.map(m=>{
+      const pct=Math.min(100,Math.round(m.cur/m.tgt*100));
+      const over=m.cur>m.tgt;
+      const rem=m.tgt-m.cur;
+      return`<div class="stat" style="padding:14px 16px">
+        <div class="stat-l" style="margin-bottom:6px">${m.l}</div>
+        <div style="display:flex;align-items:baseline;gap:4px;line-height:1;margin-bottom:6px">
+          <span style="font-family:Bebas Neue,sans-serif;font-size:30px;letter-spacing:1px;color:${over?'var(--red)':'var(--'+m.c+')'}">${m.cur.toLocaleString()}</span>
+          <span style="font-size:12px;color:var(--t3)">/ ${m.tgt.toLocaleString()}${m.unit}</span>
+        </div>
+        <div class="pb" style="height:8px;margin-bottom:5px"><div class="pbf" style="width:${pct}%;background:${over?'var(--red)':'var(--'+m.c+')'}"></div></div>
+        <div style="font-size:11px;font-family:DM Mono,monospace;color:${over?'var(--red)':pct>=95?'var(--grn)':'var(--t3)'}">
+          ${over?'+'+(m.cur-m.tgt)+m.unit+' over target':pct>=100?'Target reached!':rem+m.unit+' remaining ('+pct+'%)'}
+        </div>
+      </div>`;
+    }).join('');
+  }
+  // Clear the duplicate bars (now in boxes above)
+  const barsEl=document.getElementById('nut-bars');if(barsEl)barsEl.innerHTML='';
+  const remEl=document.getElementById('nut-remaining');if(remEl)remEl.innerHTML='';
+  // Meal entries list
+  const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
+  const mEl=document.getElementById('meal-entries');
+  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>`<div class="meal-entry"><div class="meal-entry-name">${m.meal_name}</div><div class="meal-macros">${m.calories}cal - ${m.protein_g}P - ${m.carbs_g}C - ${m.fat_g}F</div><button class="meal-del" onclick="deleteMeal('${m.id}')">x</button></div>`).join('')
+    ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today.</div>':'');
+  // Reference meal tabs
+  const tabsEl=document.getElementById('nut-ref-tabs');const panelsEl=document.getElementById('nut-ref-panels');
+  if(tabsEl&&!tabsEl.children.length){
+    const cats=['breakfast_options','lunch_options','snack_options','dinner_options'];
+    const labels=['Breakfast','Lunch','Snack','Dinner'];
+    tabsEl.innerHTML=cats.map((c2,i)=>`<button class="tb${i===0?' on':''}" onclick="setNutTab(this,'nrp-${i}')">${labels[i]}</button>`).join('');
+    panelsEl.innerHTML=cats.map((cat,i)=>{
+      const items=(mPlan[cat]||FALLBACK_MEALS[cat]||[]);
+      return`<div class="nut-panel" id="nrp-${i}" style="display:${i===0?'block':'none'}">${
+        items.map(m=>{
+          const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+          return`<div class="card-sm" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})" onmouseover="this.style.borderColor='var(--grn)'" onmouseout="this.style.borderColor='transparent'">
+            <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${m.instructions||''}</div></div>
+            <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})">+Log</button>
+          </div>`;
+        }).join('')||'<div style="color:var(--t3);font-size:12px">No meals in plan.</div>'
+      }</div>`;
+    }).join('');
+  }
+};
+
+// ── ICS CALENDAR IMPORT ─────────────────────────────────────────
+async function importICS(input){
+  const file=input.files?.[0];if(!file){return;}
+  toast('Reading '+file.name+'...');
+  const text=await file.text();
+  const events=parseICS(text);
+  if(!events.length){toast('No events found in file.');input.value='';return;}
+  let imported=0,skipped=0;
+  for(const ev of events){
+    if(!ev.date||!ev.title)continue;
+    const{error}=await sb.from('calendar_events').insert({
+      user_id:PROFILE.id,
+      event_date:ev.date,
+      event_time:ev.time||'09:00',
+      title:ev.title.slice(0,100),
+      event_type:'b',
+    });
+    if(!error)imported++;else skipped++;
+  }
+  toast(`Imported ${imported} event${imported!==1?'s':''} from ${file.name}${skipped?' ('+skipped+' skipped)':''}`);
+  input.value='';
+  renderCal();
+}
+function parseICS(text){
+  const events=[];let cur=null;
+  const lines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  for(let i=0;i<lines.length;i++){
+    let line=lines[i];
+    // Handle line folding (lines starting with space/tab are continuations)
+    while(i+1<lines.length&&(lines[i+1].startsWith(' ')||lines[i+1].startsWith('\t'))){
+      i++;line+=lines[i].slice(1);
+    }
+    if(line==='BEGIN:VEVENT'){cur={};}
+    else if(line==='END:VEVENT'){if(cur&&cur.date&&cur.title)events.push(cur);cur=null;}
+    else if(cur){
+      const colon=line.indexOf(':');if(colon<0)continue;
+      const key=line.slice(0,colon).split(';')[0].toUpperCase();
+      const val=line.slice(colon+1);
+      if(key==='SUMMARY')cur.title=val.replace(/\\n/g,' ').replace(/\\,/g,',').trim();
+      else if(key==='DTSTART'||key==='DTSTART'){
+        const clean=val.replace(/[TZ]/g,'').replace(/-/g,'');
+        if(clean.length>=8){
+          cur.date=clean.slice(0,4)+'-'+clean.slice(4,6)+'-'+clean.slice(6,8);
+          if(clean.length>=12)cur.time=clean.slice(8,10)+':'+clean.slice(10,12);
+        }
+      }
+    }
+  }
+  return events;
+}
+
+// ── PATCH setMealTab to handle removed manual tab ────────────────
+const _origSetMealTab=setMealTab;
+setMealTab=function(tab,btn){
+  if(tab==='manual')tab='custom'; // redirect legacy manual to custom
+  _origSetMealTab(tab,btn);
+};
+
+
+// ── HABIT LABEL LOOKUP (clean names for dashboard heatmap) ──────
+function getHabitLabel(id){
+  const secs=typeof getUserHabitSecs==='function'?getUserHabitSecs():(typeof HABIT_SECS!=='undefined'?HABIT_SECS:[]);
+  for(const sec of secs){
+    const h=(sec.habits||[]).find(h=>h.id===id);
+    if(h)return h.label;
+  }
+  const FB={wake:'Wake Up 6AM',hydrate:'16oz Water',mobility:'Mobility 15min',
+    workout:'Workout',hiit:'HIIT',kneerehab:'Knee Rehab',walk:'Evening Walk',
+    logged:'Log Meals',protein:'Hit Protein',calories:'Calorie Target',
+    noprocessed:'No Processed Food',water:'120+ oz Water',nolateeat:'No Eating 9PM+',
+    read:'Read 30min',prep:'Prep Tomorrow',screens:'Screens Off 10PM',sleep:'Bed 11:30PM'};
+  return FB[id]||(id.charAt(0).toUpperCase()+id.slice(1));
+}
+
+// ── PATCH renderDash to show proper habit labels in heatmap ──────
+const _origRenderDash=renderDash;
+renderDash=async function(){
+  await _origRenderDash();
+  // Re-render the habit heatmap with clean labels
+  const wdEl=document.getElementById('dash-week');if(!wdEl)return;
+  // The heatmap was already rendered in _origRenderDash, but with raw IDs.
+  // Patch labels by reading the current DOM and replacing the label cells
+  const rows=wdEl.querySelectorAll('div[style*="width:130px"]');
+  rows.forEach(el=>{
+    const id=el.textContent.trim();
+    const label=getHabitLabel(id);
+    if(label!==id){el.textContent=label;el.title=id;}
+  });
+};
+
+// ── ADD TODO TO NAV ──────────────────────────────────────────────
+// Insert todo before admin in NAV_ITEMS
+(function(){
+  const adminIdx=NAV_ITEMS.findIndex(n=>n.id==='admin');
+  const alreadyHas=NAV_ITEMS.some(n=>n.id==='todo');
+  if(!alreadyHas&&adminIdx>=0){
+    NAV_ITEMS.splice(adminIdx,0,{id:'todo',icon:'&#x1F4CB;',label:'To Do List'});
+  }
+  PT['todo']='TO DO LIST';
+  // Register render function
+  const origGoto=goto;
+  goto=function(pid){
+    origGoto(pid);
+    // renderTodo is registered in R map inside goto — patch it here
+  };
+})();
+// Register renderTodo in the routing map by patching goto
+const _origGoto=goto;
+goto=function(pid){
+  _origGoto(pid);
+  if(pid==='todo')renderTodo();
+};
+
+// ── TO DO LIST ───────────────────────────────────────────────────
+let todoFilter='All';
+const TODO_STATUS_COLORS={
+  'Not Started':'d','In Progress':'b','On Hold':'a','Urgent':'r',
+  'Important':'p','Not Urgent':'g','Done':'d'
+};
+
+async function renderTodo(){
+  const el=document.getElementById('todo-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
+  let items=[];
+  try{
+    const{data,error}=await sb.from('todo_items').select('*').eq('user_id',PROFILE.id).order('created_at',{ascending:false});
+    if(error){
+      // Table might not exist yet
+      if(error.code==='42P01'){
+        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7"><strong>One-time setup needed:</strong><br>Run this SQL in Supabase SQL Editor to enable the To Do List:<br><br><code style="background:var(--s3);padding:4px 8px;border-radius:4px;font-family:DM Mono,monospace;font-size:11px;display:block;margin-top:6px">CREATE TABLE IF NOT EXISTS public.todo_items (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT DEFAULT \'Not Started\', due_date DATE, completed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE public.todo_items ENABLE ROW LEVEL SECURITY; CREATE POLICY "Users own todos" ON public.todo_items FOR ALL USING (auth.uid() = user_id);</code></div>';
+        return;
+      }
+      throw error;
+    }
+    items=data||[];
+  }catch(e){console.error('todo error:',e);el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks. Check console.</div>';return;}
+
+  const filtered=todoFilter==='All'?items:items.filter(i=>i.status===todoFilter);
+  const pending=items.filter(i=>i.status!=='Done').length;
+  const done=items.filter(i=>i.status==='Done').length;
+
+  if(!filtered.length){
+    el.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--t3)">
+      <div style="font-size:32px;margin-bottom:10px">${todoFilter==='Done'?'&#x1F389;':'&#x1F4CB;'}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${todoFilter==='All'?'No tasks yet':'No '+todoFilter+' tasks'}</div>
+      <div style="font-size:12px">${todoFilter==='All'?'Hit + Add Task to get started.':'Change the filter to see other tasks.'}</div>
+    </div>`;
+    return;
+  }
+
+  // Stats row
+  let html=`<div class="g4" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v" style="color:var(--t1)">${items.length}</div><div class="stat-s">tasks</div></div>
+    <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+    <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+    <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${done}</div><div class="stat-s">completed</div></div>
+  </div>`;
+
+  filtered.forEach(item=>{
+    const sc=TODO_STATUS_COLORS[item.status]||'d';
+    const isDone=item.status==='Done';
+    const today=new Date();today.setHours(0,0,0,0);
+    let dueHtml='';
+    if(item.due_date){
+      const due=new Date(item.due_date+'T12:00:00');
+      const diff=Math.round((due-today)/86400000);
+      const dueStr=diff===0?'Due Today':diff<0?Math.abs(diff)+'d overdue':diff===1?'Due Tomorrow':'Due in '+diff+'d';
+      const dueCol=diff<0?'var(--red)':diff===0?'var(--amb)':'var(--t3)';
+      dueHtml=`<span style="font-size:11px;color:${dueCol};font-family:DM Mono,monospace;font-weight:${diff<=0?600:400}">${dueStr}</span>`;
+    }
+    html+=`<div class="card" style="margin-bottom:8px;border-left:3px solid var(--${sc});${isDone?'opacity:0.6':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
+            <span class="badge b-${sc}">${item.status}</span>
+            ${dueHtml}
+          </div>
+          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;align-items:center">
+          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:'<button class="btn btn-o btn-xs" onclick="markTodoUndone(\''+item.id+'\')">Undo</button>'}
+          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML=html;
+}
+
+function filterTodos(f,btn){
+  todoFilter=f;
+  document.querySelectorAll('#todo-filter-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  renderTodo();
+}
+
+function openTodoModal(id){
+  document.getElementById('todo-modal-title').textContent=id?'EDIT TASK':'ADD TASK';
+  document.getElementById('todo-edit-id').value=id||'';
+  if(!id){document.getElementById('todo-title').value='';document.getElementById('todo-desc').value='';document.getElementById('todo-status').value='Not Started';document.getElementById('todo-due').value='';}
+  openModal('todo-modal');
+}
+async function editTodo(id){
+  const{data}=await sb.from('todo_items').select('*').eq('id',id).single();
+  if(!data)return;
+  document.getElementById('todo-modal-title').textContent='EDIT TASK';
+  document.getElementById('todo-edit-id').value=id;
+  document.getElementById('todo-title').value=data.title||'';
+  document.getElementById('todo-desc').value=data.description||'';
+  document.getElementById('todo-status').value=data.status||'Not Started';
+  document.getElementById('todo-due').value=data.due_date||'';
+  openModal('todo-modal');
+}
+async function saveTodo(){
+  const title=document.getElementById('todo-title').value.trim();
+  if(!title){toast('Enter a task title');return;}
+  const id=document.getElementById('todo-edit-id').value;
+  const payload={user_id:PROFILE.id,title,description:document.getElementById('todo-desc').value.trim()||null,status:document.getElementById('todo-status').value,due_date:document.getElementById('todo-due').value||null};
+  if(id){await sb.from('todo_items').update(payload).eq('id',id);}
+  else{await sb.from('todo_items').insert(payload);}
+  closeModal('todo-modal');renderTodo();toast(id?'Task updated!':'Task added!');
+}
+async function markTodoDone(id){await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);renderTodo();toast('Task marked done!');}
+async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
+async function deleteTodo(id){if(!await confirmDialog('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
+
+// ── RECIPES — EDIT MODE ──────────────────────────────────────
+let spiceEditMode=false;
+function toggleSpiceEdit(){
+  spiceEditMode=!spiceEditMode;
+  const btn=document.getElementById('spice-edit-btn');if(btn)btn.textContent=spiceEditMode?'Done':'✏️ Edit';
+  const addBtn=document.getElementById('spice-add-btn');if(addBtn)addBtn.style.display=spiceEditMode?'inline-flex':'none';
+  renderSpice();
+}
+// Legacy read-only helpers — kept so any recipes stored in localStorage before the
+// DB migration still appear in edit lookups. New saves go to the recipes table via
+// the Stage 5 override of saveSpiceRecipe(); saveCustomSpice is no longer called.
+function getCustomSpice(){
+  return State.get('custom_spice_'+PROFILE.id)||[];
+}
+function saveCustomSpice(arr){State.set('custom_spice_'+PROFILE.id,arr);}
+function openSpiceModal(profileId,editKey){
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  if(!editKey){
+    document.getElementById('sm-name').value='';document.getElementById('sm-profile').value=profileId||'basics';
+    document.getElementById('sm-color').value='green';document.getElementById('sm-dryrub').value='';
+    document.getElementById('sm-sauce').value='';document.getElementById('sm-method').value='';
+  }
+  openModal('spice-modal');
+}
+function saveSpiceRecipe(){
+  const name=document.getElementById('sm-name').value.trim();if(!name){toast('Enter a recipe name');return;}
+  const recipe={id:'sr_'+Date.now(),name,color:document.getElementById('sm-color').value,
+    rows:[],method:document.getElementById('sm-method').value.trim(),
+    profileId:document.getElementById('sm-profile').value};
+  const dryrub=document.getElementById('sm-dryrub').value.trim();
+  const sauce=document.getElementById('sm-sauce').value.trim();
+  if(dryrub)recipe.rows.push({label:'Dry Rub / Spices',spices:dryrub});
+  if(sauce)recipe.rows.push({label:'Sauce / Liquid',spices:sauce});
+  const editKey=document.getElementById('spice-edit-key').value;
+  const customs=getCustomSpice();
+  if(editKey){const idx=customs.findIndex(r=>r.id===editKey);if(idx>=0){recipe.id=editKey;customs[idx]=recipe;}else customs.push(recipe);}
+  else customs.push(recipe);
+  saveCustomSpice(customs);closeModal('spice-modal');spiceEditMode=true;renderSpice();toast('Recipe saved!');
+}
+async function removeSpiceRecipe(id){
+  if(!await confirmDialog('Remove this recipe?'))return;
+  const customs=getCustomSpice().filter(r=>r.id!==id);
+  saveCustomSpice(customs);renderSpice();toast('Recipe removed');
+}
+// Override renderSpice to merge custom recipes and support edit mode
+renderSpice=function(){
+  const baseData=CONTENT.spice?.profiles;if(!baseData)return;
+  const customs=getCustomSpice();
+  // Deep clone base and add custom recipes to the right profile
+  const profiles=baseData.map(p=>({...p,recipes:[...(p.recipes||[]),...customs.filter(r=>r.profileId===p.id)]}));
+  const tabsEl=document.getElementById('spice-tabs');const panelsEl=document.getElementById('spice-panels');
+  tabsEl.innerHTML=profiles.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${p.label.split(' ').slice(0,2).join(' ')}</button>`).join('');
+  panelsEl.innerHTML=profiles.map((p,i)=>`
+    <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
+      ${spiceEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${p.id}')">+ Add Recipe to ${p.label.split(' ').slice(0,2).join(' ')}</button>`:''}
+      ${(p.recipes||[]).map(r=>{
+        const bc=r.color==='dim'?'d':r.color[0]||'d';
+        const isCustom=customs.some(c=>c.id===r.id);
+        return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:14px;font-weight:600">${r.name}</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              <span class="badge b-${bc}">${r.color}</span>
+              ${spiceEditMode?`<button onclick="openSpiceModal('${r.profileId||r.profile_id}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x270F;&#xFE0F;</button>`:''}
+              ${spiceEditMode&&isCustom?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>`:''}
+            </div>
+          </div>
+          ${(r.rows||[]).map(row=>`<div style="margin-bottom:7px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').map(s=>{const isKey=/[0-9]|tsp|tbsp|min/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;}).join('')}</div>
+          </div>`).join('')}
+          <div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method||''}</div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+  setSpiceTab(0);
+};
+
+// ── CUSTOM PROTEIN/SIDE OPTIONS IN MEAL BUILDER ──────────────────
+function getCustomProteins(){return State.get('custom_proteins_'+PROFILE.id)||{};}
+function getCustomSides(){return State.get('custom_sides_'+PROFILE.id)||{};}
+function openCustomProteinModal(type){
+  document.getElementById('cp-type').value=type||'protein';
+  document.getElementById('cp-modal-title').textContent=type==='side'?'ADD CUSTOM SIDE':'ADD CUSTOM PROTEIN';
+  document.getElementById('cp-name').value='';
+  ['cp-cal','cp-pro','cp-car','cp-fat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  openModal('custom-protein-modal');
+}
+function saveCustomProtein(){
+  const name=document.getElementById('cp-name').value.trim();if(!name){toast('Enter a name');return;}
+  const type=document.getElementById('cp-type').value;
+  const cal=+document.getElementById('cp-cal').value||0;
+  const pro=+document.getElementById('cp-pro').value||0;
+  const car=+document.getElementById('cp-car').value||0;
+  const fat=+document.getElementById('cp-fat').value||0;
+  const key=name.toLowerCase().replace(/\s+/g,'_');
+  const entry={cal,pro,car,fat,label:name,unit:'oz'};
+  if(type==='side'){
+    const customs=getCustomSides();customs[key]=entry;
+    State.set('custom_sides_'+PROFILE.id,customs);
+    // Add to MACRO_SIDE runtime
+    if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=entry;
+    // Refresh side dropdown
+    const sel=document.getElementById('c-side-sel');
+    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+      const opt=document.createElement('option');opt.value=key;opt.textContent=name;
+      sel.insertBefore(opt,sel.querySelector('option[value="add_custom_side"]')||null);
+    }
+  }else{
+    const customs=getCustomProteins();customs[key]=entry;
+    State.set('custom_proteins_'+PROFILE.id,customs);
+    if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=entry;
+    const sel=document.getElementById('c-prot-sel');
+    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+      const opt=document.createElement('option');opt.value=key;opt.textContent=name;
+      sel.insertBefore(opt,sel.querySelector('option[value="add_custom"]')||null);
+    }
+  }
+  closeModal('custom-protein-modal');toast(name+' added to options!');
+}
+// Patch openMealModal to add custom options and "Add Custom" buttons to dropdowns
+const _prev_openMealModal=openMealModal;
+openMealModal=function(){
+  _prev_openMealModal();
+  setTimeout(()=>{
+    // Load custom proteins into selector
+    const protSel=document.getElementById('c-prot-sel');
+    if(protSel){
+      const cp=getCustomProteins();
+      Object.entries(cp).forEach(([key,val])=>{
+        if(!protSel.querySelector(`option[value="${key}"]`)){
+          const o=document.createElement('option');o.value=key;o.textContent=val.label;
+          if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=val;
+          protSel.appendChild(o);
+        }
+      });
+      if(!protSel.querySelector('option[value="add_custom"]')){
+        const div=document.createElement('option');div.value='add_custom';div.textContent='+ Add custom protein...';
+        div.style.color='var(--red)';protSel.appendChild(div);
+      }
+      protSel.onchange=function(){
+        if(this.value==='add_custom'){this.value='';openCustomProteinModal('protein');}
+        else calcCustomMacros();
+      };
+    }
+    // Load custom sides into selector
+    const sideSel=document.getElementById('c-side-sel');
+    if(sideSel){
+      const cs=getCustomSides();
+      Object.entries(cs).forEach(([key,val])=>{
+        if(!sideSel.querySelector(`option[value="${key}"]`)){
+          const o=document.createElement('option');o.value=key;o.textContent=val.label;
+          if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=val;
+          sideSel.appendChild(o);
+        }
+      });
+      if(!sideSel.querySelector('option[value="add_custom_side"]')){
+        const div=document.createElement('option');div.value='add_custom_side';div.textContent='+ Add custom side...';
+        sideSel.appendChild(div);
+      }
+      sideSel.onchange=function(){
+        if(this.value==='add_custom_side'){this.value='';openCustomProteinModal('side');}
+        else calcCustomMacros();
+      };
+    }
+  },50);
+};
+
+// ── PATCH buildNav to include Todo (rebuild after NAV_ITEMS update) ─
+const _prevBuildNav=buildNav;
+buildNav=function(){
+  // Make sure todo is in NAV_ITEMS
+  if(!NAV_ITEMS.some(n=>n.id==='todo')){
+    const adminIdx=NAV_ITEMS.findIndex(n=>n.id==='admin');
+    NAV_ITEMS.splice(adminIdx>=0?adminIdx:NAV_ITEMS.length-1,0,{id:'todo',icon:'&#x1F4CB;',label:'To Do List'});
+  }
+  PT['todo']='TO DO LIST';
+  _prevBuildNav();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 1 — Timezone detection, Push-back logic, Refresh fix
+// ════════════════════════════════════════════════════════════════
+
+// ── ITEM 8: Detect & save timezone after profile loads ───────────
+async function detectAndSaveTimezone(){
+  if(!PROFILE)return;
+  if(PROFILE.timezone)return; // already saved
+  const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if(!tz)return;
+  try{
+    await sb.from('profiles').update({timezone:tz}).eq('id',PROFILE.id);
+    PROFILE.timezone=tz;
+    console.log('[tz] detected and saved:',tz);
+  }catch(e){console.warn('[tz] could not save timezone:',e);}
+}
+
+// Patch enterApp to run timezone detection before rendering
+const _s1_origEnterApp=typeof enterApp==='function'?enterApp:null;
+enterApp=async function(){
+  if(_s1_origEnterApp)await _s1_origEnterApp();
+  await detectAndSaveTimezone();
+};
+
+// Also patch the onAuthStateChange profile load path to save timezone early
+// We do this by wrapping loadProfile
+const _s1_origLoadProfile=typeof loadProfile==='function'?loadProfile:null;
+if(_s1_origLoadProfile){
+  loadProfile=async function(session){
+    const profile=await _s1_origLoadProfile(session);
+    if(profile&&!profile.timezone){
+      const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if(tz){
+        try{
+          await sb.from('profiles').update({timezone:tz}).eq('id',profile.id);
+          profile.timezone=tz;
+        }catch(e){}
+      }
+    }
+    return profile;
+  };
+}
+
+// ── ITEM 4: Push-back logic with escalating responses ────────────
+async function pushBackTodo(id){
+  const{data:item}=await sb.from('todo_items')
+    .select('id,title,push_back_count,due_date,description,status')
+    .eq('id',id).maybeSingle();
+  if(!item)return;
+  const count=(item.push_back_count||0)+1;
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+
+  if(count===1){
+    // First push: move to tomorrow, no message of shame
+    const d=new Date();d.setDate(d.getDate()+1);
+    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
+    await sb.from('todo_items').update({due_date:dateStr,push_back_count:1}).eq('id',id);
+    toast('Pushed to tomorrow.');
+    renderTodo();
+    _refreshDashTodosIfVisible();
+  }else if(count===2){
+    // Second push: move to 2 days out, mild disappointment
+    const d=new Date();d.setDate(d.getDate()+2);
+    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
+    await sb.from('todo_items').update({due_date:dateStr,push_back_count:2}).eq('id',id);
+    toast("Seriously? Stop pushing this back.",4000);
+    renderTodo();
+    _refreshDashTodosIfVisible();
+  }else{
+    // Third+ push: force them to pick a real date
+    await sb.from('todo_items').update({push_back_count:count}).eq('id',id);
+    // Pre-fill the edit modal and add a warning banner
+    await editTodo(id);
+    setTimeout(()=>{
+      const titleEl=document.getElementById('todo-modal-title');
+      if(titleEl)titleEl.textContent='PICK A REAL DATE.';
+      const modal=document.querySelector('#todo-modal .modal');
+      if(modal&&!modal.querySelector('.pb-warning')){
+        const warn=document.createElement('div');
+        warn.className='pb-warning';
+        warn.style.cssText='background:var(--red-ll);border:1px solid rgba(232,64,64,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--red);font-weight:600;margin-bottom:12px;line-height:1.5';
+        warn.textContent="You've pushed this back too many times. Pick a date you'll actually do it and commit.";
+        modal.insertBefore(warn,modal.children[1]);
+      }
+    },60);
+  }
+}
+
+function _refreshDashTodosIfVisible(){
+  const dash=document.getElementById('page-dash');
+  if(dash&&(dash.classList.contains('active')||dash.style.display!=='none')){
+    if(typeof renderDashTodos==='function')renderDashTodos();
+  }
+}
+
+// ── REDEFINE renderTodo with Push Back button ────────────────────
+// (Replaces earlier definition — now includes push-back button)
+renderTodo=async function(){
+  const el=document.getElementById('todo-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
+  let items=[];
+  try{
+    const{data,error}=await sb.from('todo_items').select('*')
+      .eq('user_id',PROFILE.id).order('created_at',{ascending:false});
+    if(error){
+      if(error.code==='42P01'){
+        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7">Run <strong>todo_table.sql</strong> in Supabase SQL Editor to enable the To Do List.</div>';
+        return;
+      }
+      throw error;
+    }
+    items=data||[];
+  }catch(e){
+    el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks.</div>';
+    console.error('todo error:',e);return;
+  }
+
+  const filtered=todoFilter==='All'?items:items.filter(i=>i.status===todoFilter);
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  const todayLocal=new Date().toLocaleDateString('en-CA',{timeZone:tz});
+
+  if(!filtered.length){
+    const statsHtml=`<div class="g4" style="margin-bottom:14px">
+      <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v">${items.length}</div><div class="stat-s">tasks</div></div>
+      <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+      <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+      <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${items.filter(i=>i.status==='Done').length}</div><div class="stat-s">completed</div></div>
+    </div>`;
+    el.innerHTML=statsHtml+`<div style="text-align:center;padding:40px 20px;color:var(--t3)">
+      <div style="font-size:32px;margin-bottom:10px">${todoFilter==='Done'?'&#x1F389;':'&#x1F4CB;'}</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${todoFilter==='All'?'No tasks yet':'No '+todoFilter+' tasks'}</div>
+      <div style="font-size:12px">${todoFilter==='All'?'Hit + Add Task to get started.':'Change the filter to see other tasks.'}</div>
+    </div>`;
+    return;
+  }
+
+  const STATUS_COL={'Not Started':'d','In Progress':'b','On Hold':'a','Urgent':'r','Important':'p','Not Urgent':'g','Done':'d'};
+  const STATUS_ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5,'Done':6};
+  const sorted=[...filtered].sort((a,b)=>(STATUS_ORDER[a.status]||9)-(STATUS_ORDER[b.status]||9));
+
+  let html=`<div class="g4" style="margin-bottom:14px">
+    <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v">${items.length}</div><div class="stat-s">tasks</div></div>
+    <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
+    <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
+    <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${items.filter(i=>i.status==='Done').length}</div><div class="stat-s">completed</div></div>
+  </div>`;
+
+  sorted.forEach(item=>{
+    const sc=STATUS_COL[item.status]||'d';
+    const isDone=item.status==='Done';
+    let dueHtml='';
+    if(item.due_date){
+      const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
+      const dueStr=diff===0?'Due Today':diff<0?Math.abs(diff)+'d overdue':diff===1?'Due Tomorrow':'Due in '+diff+'d';
+      const dueCol=diff<0?'var(--red)':diff===0?'var(--amb)':'var(--t3)';
+      dueHtml=`<span style="font-size:11px;color:${dueCol};font-family:DM Mono,monospace;font-weight:${diff<=0?600:400}">${dueStr}</span>`;
+    }
+    const pbCount=item.push_back_count||0;
+    html+=`<div class="card" style="margin-bottom:8px;border-left:3px solid var(--${sc});${isDone?'opacity:0.55':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
+            <span class="badge b-${sc}">${item.status}</span>
+            ${dueHtml}
+            ${pbCount>0&&!isDone?`<span style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace">(pushed ${pbCount}x)</span>`:''}
+          </div>
+          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${item.id}')">Undo</button>`}
+          ${!isDone?`<button class="btn btn-o btn-xs" onclick="pushBackTodo('${item.id}')" title="Push to later">&#x23E9; Push</button>`:''}
+          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML=html;
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 2 — Schedule edit/delete/multi-day + Dashboard Todos panel
+// ════════════════════════════════════════════════════════════════
+
+// ── Open a user event for editing (called from calendar chip) ────
+async function openUserEvent(eventId){
+  if(!eventId)return;
+  const{data:ev,error}=await sb.from('calendar_events').select('*').eq('id',eventId).single();
+  if(error||!ev){toast('Could not load event');return;}
+  openEventModal(null,eventId,ev);
+}
+
+// ── Delete current event being edited ───────────────────────────
+async function deleteEvent(){
+  if(!evEditId){toast('No event selected');return;}
+  if(!await confirmDialog('Delete this event?'))return;
+  await sb.from('calendar_events').delete().eq('id',evEditId);
+  closeModal('event-modal');
+  toast('Event deleted');
+  renderCal();
+}
+
+// ── Multi-day event chip style override ─────────────────────────
+// Patch renderMonth to show continuation chips differently
+const _s2_origRenderMonth=renderMonth;
+renderMonth=async function(){
+  await _s2_origRenderMonth();
+  // After render, style continuation chips
+  document.querySelectorAll('.cal-ev[data-cont="1"]').forEach(el=>{
+    el.style.opacity='0.7';
+    el.style.borderLeft='3px solid rgba(255,255,255,.3)';
+  });
+};
+
+// ── DASHBOARD — Today's Todos Panel ─────────────────────────────
+async function renderDashTodos(){
+  const el=document.getElementById('dash-todos-list');if(!el)return;
+  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
+  const todayLocal=new Date().toLocaleDateString('en-CA',{timeZone:tz});
+
+  let items=[];
+  try{
+    // Fetch todos that are due today or overdue, not Done
+    const{data,error}=await sb.from('todo_items').select('*')
+      .eq('user_id',PROFILE.id)
+      .neq('status','Done')
+      .lte('due_date',todayLocal)
+      .order('status');
+    if(error&&error.code==='42P01'){
+      el.innerHTML='<div style="font-size:11px;color:var(--t3)">Set up To Do List tab first.</div>';
+      return;
+    }
+    if(error)throw error;
+    items=data||[];
+  }catch(e){el.innerHTML='<div style="font-size:11px;color:var(--t3)">—</div>';return;}
+
+  if(!items.length){
+    el.innerHTML=`<div style="text-align:center;padding:24px 10px">
+      <div style="font-size:24px;margin-bottom:8px">&#x1F389;</div>
+      <div style="font-size:13px;font-weight:600;color:var(--grn)">Nothing To Do.</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px">All done — good work.</div>
+    </div>`;
+    return;
+  }
+
+  // Sort: Urgent → Important → In Progress → Not Started → On Hold → Not Urgent
+  const ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5};
+  const STATUS_COL={'Urgent':'r','Important':'p','In Progress':'b','Not Started':'d','On Hold':'a','Not Urgent':'g'};
+  items.sort((a,b)=>(ORDER[a.status]||9)-(ORDER[b.status]||9));
+
+  el.innerHTML=items.map(item=>{
+    const sc=STATUS_COL[item.status]||'d';
+    const isOverdue=item.due_date<todayLocal;
+    const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
+    const dueLabel=diff===0?'Today':Math.abs(diff)+'d overdue';
+    return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--b1);min-width:0">
+      <span class="badge b-${sc}" style="flex-shrink:0;font-size:9px;padding:2px 5px">${item.status}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.title}</div>
+        <div style="font-size:10px;color:${isOverdue?'var(--red)':'var(--amb)'};font-family:DM Mono,monospace">${dueLabel}</div>
+      </div>
+      <div style="display:flex;gap:3px;flex-shrink:0">
+        <button onclick="dashMarkDone('${item.id}')" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700">&#x2713;</button>
+        <button onclick="pushBackTodo('${item.id}')" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow">&#x23E9;</button>
+      </div>
+    </div>`;
+  }).join('')+`<div style="margin-top:8px;text-align:center"><a href="#" onclick="goto('todo');return false" style="font-size:11px;color:var(--t3)">View all tasks →</a></div>`;
+}
+
+async function dashMarkDone(id){
+  await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);
+  renderDashTodos();
+  // Also refresh full todo list if visible
+  if(document.getElementById('page-todo')?.classList.contains('active'))renderTodo();
+  toast('Done! 💪');
+}
+
+// Patch renderDash to also render the todo panel
+const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
+renderDash=async function(){
+  if(_s2_origRenderDash)await _s2_origRenderDash();
+  await renderDashTodos();
+};
+
+// Patch goto to render todos when switching to dash
+const _s2_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s2_origGoto)_s2_origGoto(pid);
+  if(pid==='dash')setTimeout(renderDashTodos,100);
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 3 — Financial: Bills, 5-box header, updated calculations
+// ════════════════════════════════════════════════════════════════
+
+// ── BILLS CRUD ───────────────────────────────────────────────────
+async function renderBillsList(){
+  const{data:bills,error}=await sb.from('bills_tracker').select('*')
+    .eq('user_id',PROFILE.id).order('due_day',{ascending:true});
+  const el=document.getElementById('bill-list');if(!el)return;
+  if(!bills?.length){
+    el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:4px 0">No bills tracked.</div>';
+    return;
+  }
+  el.innerHTML=bills.map(b=>`
+    <div class="fin-row">
+      <div>
+        <div class="fin-name">${b.bill_name}</div>
+        <div class="fin-note">Due day ${b.due_day}${b.is_variable?' &middot; variable':' &middot; fixed'}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-size:15px;font-weight:700;color:var(--amb);font-family:DM Mono,monospace">$${(+b.amount).toFixed(2)}</div>
+        <button class="fin-edit" onclick="openBillModal('${b.id}')">&#x270F;&#xFE0F;</button>
+        <button class="fin-del" onclick="removeBill('${b.id}')">&#x2715;</button>
+      </div>
+    </div>`).join('');
+}
+
+function openBillModal(editId){
+  document.getElementById('bill-modal-title').textContent=editId?'EDIT BILL':'ADD BILL';
+  document.getElementById('bill-edit-id').value=editId||'';
+  if(!editId){
+    document.getElementById('bill-name').value='';
+    document.getElementById('bill-amount').value='';
+    document.getElementById('bill-due-day').value='1';
+    document.getElementById('bill-variable').value='0';
+  }else{
+    // Fetch and pre-fill
+    sb.from('bills_tracker').select('*').eq('id',editId).single().then(({data})=>{
+      if(!data)return;
+      document.getElementById('bill-name').value=data.bill_name||'';
+      document.getElementById('bill-amount').value=data.amount||'';
+      document.getElementById('bill-due-day').value=data.due_day||1;
+      document.getElementById('bill-variable').value=data.is_variable?'1':'0';
+    });
+  }
+  openModal('bill-modal');
+}
+
+async function saveBill(){
+  const name=document.getElementById('bill-name').value.trim();
+  if(!name){toast('Enter a bill name');return;}
+  const amount=+document.getElementById('bill-amount').value||0;
+  const dueDay=+document.getElementById('bill-due-day').value||1;
+  const isVariable=document.getElementById('bill-variable').value==='1';
+  const editId=document.getElementById('bill-edit-id').value;
+  const payload={user_id:PROFILE.id,bill_name:name,amount,due_day:dueDay,is_variable:isVariable};
+  if(editId){
+    await sb.from('bills_tracker').update(payload).eq('id',editId);
+    toast('Bill updated!');
+  }else{
+    await sb.from('bills_tracker').insert(payload);
+    toast('Bill added!');
+  }
+  closeModal('bill-modal');
+  await renderBillsList();
+  await updateFinancialBoxes();
+}
+
+async function removeBill(id){
+  if(!await confirmDialog('Remove this bill?'))return;
+  const{error}=await sb.from('bills_tracker').delete().eq('id',id);
+  if(error){toast('Error removing bill: '+error.message);console.error('[bill] remove failed:',error);return;}
+  await renderBillsList();
+  await updateFinancialBoxes();
+  toast('Bill removed');
+}
+
+// ── UPDATED updateFinancialBoxes (5-box: includes bills) ─────────
+updateFinancialBoxes=async function(){
+  const results=await Promise.allSettled([
+    sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id),
+    sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id),
+    sb.from('bills_tracker').select('amount,due_day').eq('user_id',PROFILE.id),
+  ]);
+  const debts=results[0].status==='fulfilled'?results[0].value.data||[]:[];
+  const subs=results[1].status==='fulfilled'?results[1].value.data||[]:[];
+  const bills=results[2].status==='fulfilled'?results[2].value.data||[]:[]; results.forEach((r,i)=>{if(r.status==='rejected')console.error('[fin] financial query '+(i+1)+' failed:',r.reason);});
+  const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
+  const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
+  const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
+  const totalBills=(bills||[]).reduce((s,b)=>s+(+b.amount||0),0);
+  const takeHome=PROFILE.take_home_pay||3370;
+  // Free Cash = Take-Home - Bills - Subs - Debt Monthly Payments
+  const freeCash=takeHome-totalBills-totalSubs-totalDebtPay;
+  const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('fin-take-home',fmt(takeHome));
+  set('fin-bills-total',fmt(totalBills));
+  set('fin-bills-ct',(bills||[]).length+' bill'+((bills||[]).length!==1?'s':''));
+  set('fin-subs-total',fmt(totalSubs));
+  set('fin-subs-ct2',(subs||[]).length+' sub'+((subs||[]).length!==1?'s':''));
+  set('fin-free-cash',(freeCash<0?'-':'')+fmt(freeCash));
+  const fcEl=document.getElementById('fin-free-cash');
+  if(fcEl)fcEl.style.color=freeCash>=0?'var(--amb)':'var(--red)';
+  set('fin-total-debt',fmt(totalDebt));
+  set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
+  // Update debt progress bar — use first debt as reference if exists
+  if(debts?.length){
+    const topDebt=debts.reduce((a,b)=>(+b.balance>+a.balance?b:a),debts[0]);
+    const startKey='debt_start_'+PROFILE.id;
+    const startBal=State.get(startKey)||+topDebt.balance||1;
+    const pct=Math.round(Math.max(0,Math.min(100,(1-topDebt.balance/startBal)*100)));
+    const pctEl=document.getElementById('cc-pct');if(pctEl)pctEl.textContent=pct+'%';
+    const barEl=document.getElementById('cc-bar');if(barEl)barEl.style.width=pct+'%';
+    const lblEl=document.getElementById('cc-progress-label');
+    // Store starting balance on first load so progress is meaningful
+    if(State.get(startKey)===null)State.set(startKey,+topDebt.balance);
+  }
+};
+
+// ── UPDATED renderFinancial to include bills ─────────────────────
+renderFinancial=async function(){
+  const safe=async(fn,name)=>{try{await fn();}catch(e){console.error('[fin] '+name+':',e);}};
+  await safe(renderDebtList,'renderDebtList');
+  await safe(renderBillsList,'renderBillsList');
+  await safe(renderSubList,'renderSubList');
+  await safe(renderFinCal,'renderFinCal');
+  await safe(renderRoadmap,'renderRoadmap');
+  await safe(updateFinancialBoxes,'updateFinancialBoxes');
+};
+
+// Bills are now fetched inside the base renderFinCal — no override needed.
+
+// ── PATCH saveBill/removeDebt/removeSub hooks already in place ───
+// Wrap existing removeDebt and removeSub to also call updateFinancialBoxes
+const _s3_origRemoveDebt=typeof removeDebt==='function'?removeDebt:null;
+if(_s3_origRemoveDebt){
+  removeDebt=async function(id){
+    await _s3_origRemoveDebt(id);
+    await updateFinancialBoxes();
+  };
+}
+const _s3_origRemoveSub=typeof removeSub==='function'?removeSub:null;
+if(_s3_origRemoveSub){
+  removeSub=async function(id){
+    await _s3_origRemoveSub(id);
+    await updateFinancialBoxes();
+  };
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 4 — DB-powered content loading
+// ════════════════════════════════════════════════════════════════
+
+// Placeholder — overridden in Stage 5 with the full user_reading_list implementation.
+async function loadBooksFromDB(){return null;}
+
+/**
+ * Load template + user meals from DB and reshape into a {plans:{...}} object.
+ * Each plan key shares the same grouped meal options but has different macro targets.
+ * Returns null if the DB is empty. Hard-coded targets are defaults; per-user
+ * targets come from PROFILE.calorie_target / PROFILE.protein_target.
+ */
+async function loadMealsFromDB(){
+  const{data:meals,error}=await sb.from('meals').select('*').eq('is_template',true).order('meal_type').order('name');
+  if(error||!meals?.length)return null;
+  const grouped={};
+  // Default macro targets — overridden per-plan in the returned object below
+  const targets={calories:1900,protein_g:185,carbs_g:175,fat_g:55,sugar_max_g:35,water_oz:120};
+  meals.forEach(m=>{
+    const key=m.meal_type+'_options';
+    if(!grouped[key])grouped[key]=[];
+    grouped[key].push({name:m.name,cal:m.calories,protein:m.protein_g,carbs:m.carbs_g,fat:m.fat_g,instructions:m.instructions||'',tags:m.tags||[],id:m.id});
+  });
+  // Also include user-specific meals
+  if(PROFILE){
+    const{data:userMeals}=await sb.from('meals').select('*').eq('created_by',PROFILE.id).eq('is_template',false);
+    (userMeals||[]).forEach(m=>{
+      const key=m.meal_type+'_options';
+      if(!grouped[key])grouped[key]=[];
+      grouped[key].push({name:m.name,cal:m.calories,protein:m.protein_g,carbs:m.carbs_g,fat:m.fat_g,instructions:m.instructions||'',tags:m.tags||[],id:m.id,isCustom:true});
+    });
+  }
+  return{plans:{'high-protein-deficit':{id:'high-protein-deficit',name:'High Protein Deficit',targets,...grouped},'balanced-deficit':{id:'balanced-deficit',name:'Balanced Deficit',targets:{calories:1800,protein_g:160,carbs_g:180,fat_g:55},...grouped},'maintenance-muscle':{id:'maintenance-muscle',name:'Maintenance + Muscle',targets:{calories:2400,protein_g:200,carbs_g:250,fat_g:70},...grouped}}};
+}
+
+/**
+ * Load template workout plans from DB with their days via a nested join.
+ * Reshapes rows into an object keyed by plan_key. workout_plan_days are
+ * sorted by day_number so the weekly schedule displays in order regardless
+ * of insert sequence. Returns null on error or empty DB.
+ */
+async function loadWorkoutPlansFromDB(){
+  const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
+  if(error||!plans?.length)return null;
+  const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
+  // Keyed by plan_key (matches the shape expected by renderWorkout)
+  const plansObj={};
+  plans.forEach(p=>{
+    plansObj[p.plan_key]={
+      id:p.plan_key,plan_key:p.plan_key,name:p.name,description:p.description,
+      level:p.level,goal:p.goal,days_per_week:p.days_per_week,
+      days:(p.workout_plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(d=>({
+        day:d.day_number,day_name:d.day_name,focus:d.focus,
+        muscles:d.muscles||[],color:d.color||'b',has_hiit:d.has_hiit,
+        exercises:d.exercises||[],
+        hiit_finisher:d.hiit_finisher||null
+      }))
+    };
+  });
+  return{plans:plansObj,knee_rehab:knee};
+}
+
+/**
+ * Load all recipes from DB and group by profile_id (one flavor "profile" per cuisine
+ * style, e.g. Japanese, Mediterranean). Each profile contains an ordered list of
+ * named recipes with dry_rub and sauce ingredient arrays.
+ * Custom user recipes are stored in the same table with created_by = PROFILE.id
+ * and is_template = false, so they appear in the same SELECT.
+ * Returns null on error or empty DB.
+ */
+async function loadRecipesFromDB(){
+  try{
+    const recs=await API.recipes.list();
+    if(!recs?.length)return null;
+    // Group recipes by their flavor profile ID
+    const profileMap={};
+    recs.forEach(r=>{
+      if(!profileMap[r.profile_id]){
+        profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+      }
+      const rows=[];
+      if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+      if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+      profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
+    });
+    // Custom recipes are stored in the recipes table (created_by = PROFILE.id, is_template = false)
+    // and are already included in the SELECT above, so no localStorage fallback is needed.
+    return{profiles:Object.values(profileMap)};
+  }catch(e){return null;}
+}
+
+// Override the base loadAllContent with a DB-powered implementation.
+// All content comes from Supabase; books and schedule will be migrated in Stage 6.
+loadAllContent=async function(){
+  try{
+    const[mealsData,workoutsData,recipesData]=await Promise.all([
+      loadMealsFromDB(),
+      loadWorkoutPlansFromDB(),
+      loadRecipesFromDB()
+    ]);
+    CONTENT={
+      workouts:workoutsData||null,
+      meals:mealsData||null,
+      books:null,
+      spice:recipesData||null,
+      schedule:null
+    };
+    console.log('[content] loaded from Supabase DB ✓');
+  }catch(e){
+    console.warn('[content] DB load error:',e.message);
+    CONTENT={workouts:null,meals:null,books:null,spice:null,schedule:null};
+  }
+};
+
+// Helper: quick check whether DB content is available
+async function isDBContentReady(){
+  try{const{count}=await sb.from('meals').select('*',{count:'exact',head:true});return(count||0)>0;}
+  catch(e){return false;}
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// COMPREHENSIVE BUG FIXES — Habits, Financial, Spice, Reading
+// ════════════════════════════════════════════════════════════════
+
+// ── DEFINITIVE renderHabits (fixes onclick syntax error) ─────────
+renderHabits=async function(){
+  const d=new Date(habitDate+'T12:00:00');
+  const lbl=document.getElementById('h-date-lbl');
+  if(lbl)lbl.textContent=(typeof D7L!=='undefined'?D7L[d.getDay()].toUpperCase():'DAY')+', '+fmtD(d).toUpperCase();
+  const rel=document.getElementById('h-date-rel');
+  if(rel){
+    const diff=Math.round((new Date(todayStr()+'T12:00:00')-new Date(habitDate+'T12:00:00'))/86400000);
+    rel.textContent=diff===0?'Today':diff===1?'Yesterday':diff+' days ago';
+  }
+  let hData=null;
+  try{
+    const logs=await API.habits.getLogs(PROFILE.id,habitDate);
+    hData=logs;State.set('_cachedHabits_'+habitDate,logs);
+  }catch(e){
+    Logger.error('habits','renderHabits.catch',e);
+    hData=State.get('_cachedHabits_'+habitDate)||[];
+  }
+  habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
+  const secs=getUserHabitSecs();
+  const listEl=document.getElementById('h-habits-list');if(!listEl)return;
+  listEl.innerHTML=secs.map((sec,si)=>{
+    const sCat=escapeAttr(sec.cat);
+    const sLabel=escapeHtml(sec.label);
+    const rows=sec.habits.map((h,hi)=>{
+      const done=!!habitCache[h.id];
+      const hId=escapeAttr(h.id);
+      const toggleClick=habitEditMode?'':`toggleHabit('${hId}')`;
+      const editBtns=habitEditMode?
+        `<div style="display:flex;gap:3px;margin-left:5px">
+          <button onclick="event.stopPropagation();editHabit(${si},${hi})" aria-label="Edit habit" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="event.stopPropagation();removeHabit(${si},${hi})" aria-label="Remove habit" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+        </div>`:'';
+      return`<div class="hcheck${done?' done':''}" id="hc-${hId}" role="checkbox" aria-checked="${done}" tabindex="0" onclick="${toggleClick}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${toggleClick}}" style="cursor:${habitEditMode?'default':'pointer'}">
+        <div class="hbox" id="hb-${hId}">${done?'✓':''}</div>
+        <div class="hl">${escapeHtml(h.label)}</div>
+        <span class="badge b-${escapeAttr(sec.col)}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sCat}</span>
+        ${editBtns}
+      </div>`;
+    }).join('');
+    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sCat}')">+ Add to ${sLabel}</button>`:'';
+    const header=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div class="sh" style="margin-bottom:0;flex:1">${sLabel}</div>
+      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sCat}')">+ Add</button>`:''}
+    </div>`;
+    return`<div style="margin-bottom:14px">${header}${rows}${addBtn}</div>`;
+  }).join('')+(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
+  if(typeof renderCatProg==='function')renderCatProg();
+  if(typeof renderStreakBar==='function')renderStreakBar();
+};
+
+// ── FIX toggleHabit to also update dashboard heatmap cell ────────
+const _fixOrigToggleHabit=typeof toggleHabit==='function'?toggleHabit:null;
+toggleHabit=async function(hid){
+  if(_fixOrigToggleHabit)await _fixOrigToggleHabit(hid);
+  // Update the hcheck div styling directly for instant feedback
+  const hc=document.getElementById('hc-'+hid);
+  const hb=document.getElementById('hb-'+hid);
+  if(hc&&hb){
+    const isDone=!!habitCache[hid];
+    hc.classList.toggle('done',isDone);
+    hb.textContent=isDone?'✓':'';
+  }
+};
+
+// ── FIX openSpiceModal to handle DB recipes (has profile_id not profileId) ──
+const _origOpenSpiceModal=typeof openSpiceModal==='function'?openSpiceModal:null;
+openSpiceModal=function(profileId,editKey){
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  if(editKey){
+    // Try to find the recipe in current content
+    const profiles=CONTENT.spice?.profiles||[];
+    let found=null;
+    for(const p of profiles){
+      found=(p.recipes||[]).find(r=>r.id===editKey);
+      if(found){profileId=p.id;break;}
+    }
+    // Also check localStorage customs
+    if(!found){
+      const customs=State.get('custom_spice_'+PROFILE.id)||[];
+      found=customs.find(r=>r.id===editKey);
+    }
+    if(found){
+      const sm=document.getElementById('sm-name');if(sm)sm.value=found.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=profileId||found.profileId||found.profile_id||'basics';
+      // Extract dry rub and sauce from rows
+      const rows=found.rows||[];
+      const dry=rows.find(r=>r.label&&r.label.toLowerCase().includes('dry')||r.label&&r.label.toLowerCase().includes('spice'));
+      const sauce=rows.find(r=>r.label&&r.label.toLowerCase().includes('sauce')||r.label&&r.label.toLowerCase().includes('liquid'));
+      const sd=document.getElementById('sm-dryrub');if(sd)sd.value=(dry&&dry.spices)||found.dry_rub||'';
+      const ss=document.getElementById('sm-sauce');if(ss)ss.value=(sauce&&sauce.spices)||found.sauce||'';
+      const sm2=document.getElementById('sm-method');if(sm2)sm2.value=found.method||'';
+      const sc=document.getElementById('sm-color');if(sc)sc.value=found.color||found.color_tag||'green';
+    }
+  }else{
+    const fields=['sm-name','sm-dryrub','sm-sauce','sm-method'];
+    fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    const sp=document.getElementById('sm-profile');if(sp)sp.value=profileId||'basics';
+    const sc=document.getElementById('sm-color');if(sc)sc.value='green';
+  }
+  openModal('spice-modal');
+};
+
+// ── FIX saveSpiceRecipe to handle editing DB recipes (save as custom override) ──
+saveSpiceRecipe=function(){
+  const name=document.getElementById('sm-name')?.value.trim();
+  if(!name){toast('Enter a recipe name');return;}
+  const recipe={
+    id:document.getElementById('spice-edit-key')?.value||'sr_'+Date.now(),
+    name,
+    color:document.getElementById('sm-color')?.value||'green',
+    rows:[],
+    method:document.getElementById('sm-method')?.value.trim()||'',
+    profileId:document.getElementById('sm-profile')?.value||'basics'
+  };
+  const dryrub=document.getElementById('sm-dryrub')?.value.trim();
+  const sauce=document.getElementById('sm-sauce')?.value.trim();
+  if(dryrub)recipe.rows.push({label:'Dry Rub / Spices',spices:dryrub});
+  if(sauce)recipe.rows.push({label:'Sauce / Liquid',spices:sauce});
+  const editKey=document.getElementById('spice-edit-key')?.value;
+  const customs=getCustomSpice();
+  if(editKey){
+    const idx=customs.findIndex(r=>r.id===editKey);
+    if(idx>=0){customs[idx]=recipe;}else{customs.push(recipe);}
+  }else{customs.push(recipe);}
+  saveCustomSpice(customs);
+  closeModal('spice-modal');
+  spiceEditMode=true;
+  if(typeof renderSpice==='function')renderSpice();
+  toast('Recipe saved!');
+};
+
+// ── FIX Financial modals — ensure they open correctly ────────────
+// Re-define to add defensive null checks
+const _fixOpenDebtModal=typeof openDebtModal==='function'?openDebtModal:null;
+openDebtModal=function(editId){
+  const title=document.getElementById('debt-modal-title');
+  if(!title){console.error('debt-modal not found in DOM');toast('Reload page to add debts');return;}
+  if(_fixOpenDebtModal){_fixOpenDebtModal(editId);}
+  else{openModal('debt-modal');}
+};
+const _fixOpenSubModal=typeof openSubModal==='function'?openSubModal:null;
+openSubModal=function(editId){
+  const title=document.getElementById('sub-modal-title');
+  if(!title){console.error('sub-modal not found in DOM');toast('Reload page to add subscriptions');return;}
+  if(_fixOpenSubModal){_fixOpenSubModal(editId);}
+  else{openModal('sub-modal');}
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 5 — Meal Category Browsing, Search, Macro Filter
+// ════════════════════════════════════════════════════════════════
+
+// ── MEAL MODAL STATE ─────────────────────────────────────────────
+// Bundled into one object so mutations are explicit and easy to reset.
+const mealModal={
+  type:'all',          // 'all' | 'breakfast_options' | 'lunch_options' | 'snack_options' | 'dinner_options'
+  tagFilter:'',        // '' | 'chicken' | 'red-meat' | …
+  search:'',           // free-text search string
+  macroFilter:false,   // toggle macro-fit filtering
+  remaining:{cal:9999,pro:9999,car:9999,fat:9999}, // today's remaining macros
+};
+
+// ── GET ALL MEALS (flattened from CONTENT + FALLBACK) ────────────
+function getAllMealsFlat(){
+  const plan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const cats=['breakfast_options','lunch_options','snack_options','dinner_options'];
+  const seen=new Set();const all=[];
+  cats.forEach(cat=>{
+    const type=cat.replace('_options','');
+    const items=(plan&&plan[cat])||FALLBACK_MEALS[cat]||[];
+    items.forEach(m=>{
+      if(seen.has(m.name))return;
+      seen.add(m.name);
+      all.push({...m,_type:type});
+    });
+  });
+  return all;
+}
+
+// ── APPLY FILTERS ─────────────────────────────────────────────────
+function getFilteredMeals(){
+  let meals=getAllMealsFlat();
+  // Meal type filter
+  if(mealModal.type!=='all'){
+    const type=mealModal.type.replace('_options','');
+    meals=meals.filter(m=>m._type===type||(m.tags||[]).includes(type));
+  }
+  // Category tag filter
+  if(mealModal.tagFilter){
+    meals=meals.filter(m=>(m.tags||[]).includes(mealModal.tagFilter));
+  }
+  // Text search
+  if(mealModal.search){
+    const q=mealModal.search.toLowerCase().trim();
+    meals=meals.filter(m=>
+      m.name.toLowerCase().includes(q)||
+      (m.instructions||'').toLowerCase().includes(q)||
+      (m.tags||[]).some(t=>t.includes(q))
+    );
+  }
+  // Macro filter — only show meals that fit remaining calories
+  if(mealModal.macroFilter&&mealModal.remaining.cal<9000){
+    meals=meals.filter(m=>m.cal<=mealModal.remaining.cal*1.15); // 15% tolerance
+  }
+  // Sort: if macro filter active, sort by calorie fit then protein; otherwise by protein desc
+  if(mealModal.macroFilter&&mealModal.remaining.cal<9000){
+    meals.sort((a,b)=>{
+      const af=a.cal<=mealModal.remaining.cal,bf=b.cal<=mealModal.remaining.cal;
+      if(af&&!bf)return -1;if(!af&&bf)return 1;
+      return b.protein-a.protein;
+    });
+  }else{
+    meals.sort((a,b)=>(b.usage_count||0)-(a.usage_count||0)||b.protein-a.protein);
+  }
+  return meals;
+}
+
+// ── SET TAG FILTER ────────────────────────────────────────────────
+function setMmTag(tag,btn){
+  mealModal.tagFilter=tag;
+  document.querySelectorAll('.mm-tag-btn').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  updateMealList();
+}
+
+// ── TOGGLE MACRO FILTER ───────────────────────────────────────────
+function toggleMacroFilter(){
+  mealModal.macroFilter=!mealModal.macroFilter;
+  const btn=document.getElementById('mm-macro-btn');
+  if(btn){btn.textContent=mealModal.macroFilter?'✓ Macro filter ON':'Filter by macros';btn.style.background=mealModal.macroFilter?'var(--grn-l)':'';btn.style.color=mealModal.macroFilter?'var(--grn)':'';btn.style.borderColor=mealModal.macroFilter?'var(--grn)':'';}
+  updateMealList();
+}
+
+// ── UPDATE REMAINING DISPLAY ──────────────────────────────────────
+function updateRemainingDisplay(){
+  const ce=document.getElementById('mm-rem-cal');
+  const pe=document.getElementById('mm-rem-pro');
+  if(ce)ce.textContent=mealModal.remaining.cal>=9000?'—':Math.round(mealModal.remaining.cal);
+  if(pe)pe.textContent=mealModal.remaining.pro>=9000?'—':Math.round(mealModal.remaining.pro);
+}
+
+// ── FETCH TODAY'S REMAINING MACROS ───────────────────────────────
+async function fetchRemainingMacros(){
+  const plan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const tgt=plan?.targets||{calories:1900,protein_g:185,carbs_g:175,fat_g:55};
+  const{data:logs}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const consumed={cal:0,pro:0,car:0,fat:0};
+  (logs||[]).forEach(l=>{consumed.cal+=l.calories||0;consumed.pro+=l.protein_g||0;consumed.car+=l.carbs_g||0;consumed.fat+=l.fat_g||0;});
+  mealModal.remaining={
+    cal:Math.max(0,tgt.calories-consumed.cal),
+    pro:Math.max(0,tgt.protein_g-consumed.pro),
+    car:Math.max(0,tgt.carbs_g-consumed.car),
+    fat:Math.max(0,tgt.fat_g-consumed.fat)
+  };
+  updateRemainingDisplay();
+}
+
+// ── BUILD SINGLE MEAL ITEM HTML (pure template, no side-effects) ──
+/** @param {Object} m - meal object  @param {boolean} fits - passes macro filter */
+function buildMealItemHtml(m, fits){
+  const sn=escapeAttr(m.name);
+  const mId=escapeAttr(m.id||'');
+  const fitStyle=mealModal.macroFilter?(fits?'border-color:var(--grn)':'border-color:var(--red);opacity:0.7'):'';
+  const fitBadge=mealModal.macroFilter?`<span style="font-size:9px;font-family:DM Mono,monospace;color:${fits?'var(--grn)':'var(--red)'};">${fits?'✓ fits':'over'}</span>`:'';
+  const typeBadge=`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(m._type)}</span>`;
+  const tagBadges=(m.tags||[]).filter(t=>!['breakfast','lunch','snack','dinner'].includes(t)).slice(0,2).map(t=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(t)}</span>`).join('');
+  const borderOut=mealModal.macroFilter&&fits?'var(--grn)':mealModal.macroFilter?'var(--red)':'transparent';
+  return`<div role="button" tabindex="0" aria-label="Log ${sn}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')}" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${borderOut}'">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(m.name)}</div>
+      <div class="mono" style="font-size:11px;color:var(--t3);margin-bottom:4px">${m.cal}cal &middot; ${m.protein}g P &middot; ${m.carbs}g C &middot; ${m.fat}g F</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${typeBadge}${tagBadges}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+      ${fitBadge}
+      <button class="btn btn-g btn-xs" aria-label="Log ${sn}" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')">+ Log</button>
+    </div>
+  </div>`;
+}
+
+// ── DEFINITIVE updateMealList ─────────────────────────────────────
+const MEAL_PAGE_SIZE=50; // cap visible items; prevents DOM thrash on large libraries
+updateMealList=function(){
+  const allMeals=getFilteredMeals();
+  const el=document.getElementById('mm-list');if(!el)return;
+  const countEl=document.getElementById('mm-count');
+  if(countEl)countEl.textContent=allMeals.length+' meal'+(allMeals.length!==1?'s':'');
+  updateRemainingDisplay();
+  if(!allMeals.length){
+    el.innerHTML=`<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">
+      <div style="font-size:20px;margin-bottom:8px">&#x1F374;</div>
+      No meals match${mealModal.search?' "'+escapeHtml(mealModal.search)+'"':''}${mealModal.tagFilter?' in '+escapeHtml(mealModal.tagFilter):''}.
+      ${mealModal.macroFilter?'<br><span style="font-size:11px">Try turning off the macro filter.</span>':''}
+    </div>`;
+    return;
+  }
+  const meals=allMeals.slice(0,MEAL_PAGE_SIZE);
+  const html=meals.map(m=>{
+    const fits=!mealModal.macroFilter||mealModal.remaining.cal>=9000||m.cal<=mealModal.remaining.cal;
+    return buildMealItemHtml(m,fits);
+  }).join('');
+  const overflow=allMeals.length>MEAL_PAGE_SIZE?`<div style="text-align:center;padding:8px;font-size:11px;color:var(--t3)">${allMeals.length-MEAL_PAGE_SIZE} more — refine your search to narrow results.</div>`:'';
+  el.innerHTML=html+overflow;
+};
+// ── DEBOUNCED SEARCH HANDLERS ─────────────────────────────────────
+// Wrapping with debounce prevents a full DOM rebuild on every keystroke.
+// Arrow functions resolve updateMealList/renderLibrary at call-time so
+// late reassignments of those functions are picked up automatically.
+const _debouncedMealSearch=debounce(()=>updateMealList(),250);
+const _debouncedLibSearch=debounce(()=>renderLibrary(),300);
+
+// ── UPDATE quickLogClose to track usage + accept mealId ──────────
+const _s5_origQuickLogClose=quickLogClose;
+quickLogClose=function(name,cal,pro,car,fat,mealId){
+  addMealEntry(name,cal,pro,car,fat);
+  closeModal('meal-modal');
+  toast('Logged: '+name);
+  // Track usage in DB (non-blocking)
+  if(mealId){
+    sb.rpc('increment_meal_usage',{meal_id:mealId}).then(()=>{}).catch(()=>{});
+  }
+  // Refresh remaining macros
+  fetchRemainingMacros();
+};
+
+// Also patch quickLog (used from nutrition reference panel)
+const _s5_origQuickLog=typeof quickLog==='function'?quickLog:null;
+quickLog=function(name,cal,pro,car,fat,mealId){
+  addMealEntry(name,cal,pro,car,fat);
+  toast('Logged: '+name);
+  if(mealId)sb.rpc('increment_meal_usage',{meal_id:mealId}).then(()=>{}).catch(()=>{});
+  fetchRemainingMacros();
+};
+
+// ── UPDATE openMealModal to reset state + fetch remaining ─────────
+const _s5_origOpenMealModal=typeof openMealModal==='function'?openMealModal:null;
+openMealModal=function(){
+  // Reset filter state
+  mealModal.search='';mealModal.tagFilter='';mealModal.macroFilter=false;
+  const si=document.getElementById('mm-search');if(si)si.value='';
+  const ci=document.getElementById('mm-cat');if(ci)ci.value='all';
+  document.querySelectorAll('.mm-tag-btn').forEach(b=>{b.classList.toggle('on',b.textContent.trim()==='All');});
+  const mb=document.getElementById('mm-macro-btn');
+  if(mb){mb.textContent='Filter by macros';mb.style.background='';mb.style.color='';mb.style.borderColor='';}
+  // Open the modal
+  openModal('meal-modal');
+  setMealTab('preset',document.querySelector('#mm-tabs .tb'));
+  // Fetch remaining macros (async, non-blocking)
+  fetchRemainingMacros().then(()=>updateMealList());
+  updateMealList();
+};
+
+// ── RULE-BASED TAG SUGGESTION when adding custom meals to DB ──────
+function suggestMealTags(name, proteinKey, sideKey, mealType){
+  const tags=[mealType||''];
+  const nl=name.toLowerCase();
+  const tagRules=[
+    {tag:'chicken', words:['chicken','chipotle chicken']},
+    {tag:'red-meat', words:['beef','steak','ribeye','carne','sirloin','burger']},
+    {tag:'turkey', words:['turkey']},
+    {tag:'eggs', words:['egg','scramble']},
+    {tag:'rice-bowl', words:['rice','bowl']},
+    {tag:'pasta', words:['pasta','spaghetti','penne','fettuccine','meatball']},
+    {tag:'tacos', words:['taco','fajita','carne asada']},
+    {tag:'sandwich', words:['sandwich','wrap','bagel','bread','toast']},
+    {tag:'shake', words:['shake','whey','protein drink']},
+  ];
+  tagRules.forEach(r=>{if(r.words.some(w=>nl.includes(w)))tags.push(r.tag);});
+  if(proteinKey){const pk=proteinKey.toLowerCase();tagRules.forEach(r=>{if(r.words.some(w=>pk.includes(w))&&!tags.includes(r.tag))tags.push(r.tag);});}
+  if(sideKey&&(sideKey.includes('rice')||sideKey.includes('bowl'))&&!tags.includes('rice-bowl'))tags.push('rice-bowl');
+  if(sideKey&&(sideKey.includes('pasta')||sideKey.includes('penne'))&&!tags.includes('pasta'))tags.push('pasta');
+  return [...new Set(tags.filter(Boolean))];
+}
+
+// ── PATCH submitMeal (Custom Entry) to save to DB + suggest tags ──
+const _s5_origSubmitMeal=typeof submitMeal==='function'?submitMeal:null;
+submitMeal=async function(){
+  if(mealTab==='custom'){
+    const pk=document.getElementById('c-prot-sel')?.value;
+    const sk=document.getElementById('c-side-sel')?.value;
+    const customName=document.getElementById('c-meal-name')?.value.trim();
+    const prow=typeof MACRO_PROT!=='undefined'?MACRO_PROT[pk]||{}:{};
+    const sidew=typeof MACRO_SIDE!=='undefined'?MACRO_SIDE[sk]||{}:{};
+    const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
+    const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
+    const season=document.getElementById('c-season-sel')?.value||'';
+    const name=customName||([pa&&prow.label?pa+'oz '+prow.label:'',sa&&sidew.label?sa+(sidew.unit==='cup'?'c ':' ')+sidew.label:'',season&&season!=='Default (S+P+Garlic)'?'('+season+')':''].filter(Boolean).join(' + ')||'Custom Meal');
+    const cal=+document.getElementById('c-cal')?.value||0;
+    const pro=+document.getElementById('c-pro')?.value||0;
+    const car=+document.getElementById('c-car')?.value||0;
+    const fat=+document.getElementById('c-fati')?.value||0;
+    if(!cal&&!pro){toast('Select ingredients or enter macros');return;}
+    // Save to meals table in DB with auto-suggested tags
+    const tags=suggestMealTags(name,pk,sk,'');
+    try{
+      const{data:newMeal,error:mealErr}=await sb.from('meals').insert({
+        name,meal_type:'custom',calories:cal,protein_g:pro,carbs_g:car,fat_g:fat,
+        instructions:name,tags,is_template:false,created_by:PROFILE.id
+      }).select().single();
+      if(mealErr){console.error('[meal] insert failed:',mealErr.message);}
+      else if(newMeal){toast('Custom meal saved to your library!');}
+    }catch(e){console.error('[meal] unexpected error saving custom meal:',e.message);}
+    // Log it regardless
+    ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
+    await addMealEntry(name,cal,pro,car,fat);
+    closeModal('meal-modal');
+    toast('Logged: '+name);
+    fetchRemainingMacros();
+    return;
+  }
+  if(_s5_origSubmitMeal)await _s5_origSubmitMeal();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 6 — Books & Reading: DB-driven shelf + library browser
+// ════════════════════════════════════════════════════════════════
+
+// Book page state — grouped to make resets and mutations explicit.
+const bookState={
+  view:'shelf',        // 'shelf' | 'library'
+  genreFilter:'',      // active genre filter in library view
+  curBookId:null,      // UUID of currently-reading book
+  curBookPages:0,      // total page count of current book
+};
+
+// ── LOAD BOOKS FROM DB (proper format for renderBooks) ───────────
+loadBooksFromDB=async function(){
+  if(!PROFILE)return null;
+  const{data:userList,error}=await sb.from('user_reading_list')
+    .select('*,books!inner(*)')
+    .eq('user_id',PROFILE.id)
+    .order('month_plan',{nullsLast:true})
+    .order('created_at');
+  if(error||!userList?.length)return null;
+  const booksArr=userList.map((ul,idx)=>({
+    id:ul.book_id,             // UUID — used for all DB operations
+    _url_id:ul.id,             // user_reading_list row UUID
+    title:ul.books.title,
+    author:ul.books.author,
+    pages:ul.books.page_count||0,
+    genres:ul.books.genres||[],
+    genre:(ul.books.genres||[])[0]||'general',
+    difficulty:ul.books.difficulty,
+    description:ul.books.description||'',
+    month:ul.month_plan||(idx+1),
+    _position:idx+1,           // actual shelf position (not month)
+    status:ul.status||'To Be Read',
+    current_page:ul.current_page||0,
+    rating:ul.rating||0,
+    format:ul.format||'Physical',
+    started_at:ul.started_at,
+    finished_at:ul.finished_at,
+  }));
+  return{lists:{'self-improvement-first':{id:'self-improvement-first',name:'My Reading List',books:booksArr}}};
+};
+
+// ── SET BOOK VIEW (shelf vs library) ─────────────────────────────
+function setBookView(view,btn){
+  bookState.view=view;
+  document.querySelectorAll('#books-view-tabs .tb').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  const libCtrl=document.getElementById('lib-controls');
+  const shelfTitle=document.getElementById('reading-section-title');
+  const curWrap=document.getElementById('cur-book-wrap');
+  const editBtn=document.getElementById('edit-books-btn');
+  const addBtn=document.getElementById('add-book-btn');
+  const libList=document.getElementById('lib-list');
+  const bookList=document.getElementById('book-list');
+  if(view==='library'){
+    if(libCtrl)libCtrl.style.display='block';
+    if(curWrap)curWrap.style.display='none';
+    if(shelfTitle)shelfTitle.textContent='BOOK LIBRARY — 36+ TITLES';
+    if(editBtn)editBtn.style.display='none';
+    if(addBtn)addBtn.style.display='none';
+    if(bookList)bookList.style.display='none';
+    if(libList)libList.style.display='block';
+    renderLibrary();
+  }else{
+    if(libCtrl)libCtrl.style.display='none';
+    if(curWrap)curWrap.style.display='block';
+    if(shelfTitle)shelfTitle.textContent='READING PLAN';
+    if(editBtn)editBtn.style.display='';
+    if(bookList)bookList.style.display='block';
+    if(libList)libList.style.display='none';
+    renderBooks();
+  }
+}
+
+// ── SET LIBRARY GENRE FILTER ─────────────────────────────────────
+function setLibGenre(genre,btn){
+  bookState.genreFilter=genre;
+  document.querySelectorAll('#lib-genre-tags .mm-tag-btn').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+  renderLibrary();
+}
+
+// ── RENDER LIBRARY BROWSER ───────────────────────────────────────
+async function renderLibrary(){
+  const el=document.getElementById('lib-list');if(!el)return;
+  el.innerHTML='<div style="color:var(--t3);text-align:center;padding:20px">Loading library...</div>';
+  const search=(document.getElementById('lib-search')?.value||'').toLowerCase().trim();
+  // Fetch all template books
+  const{data:allBooks}=await sb.from('books').select('*').eq('is_template',true).order('title');
+  // Get user's shelf for "already added" check
+  const{data:userList}=await sb.from('user_reading_list').select('book_id').eq('user_id',PROFILE.id);
+  const onShelf=new Set((userList||[]).map(u=>u.book_id));
+  // Apply filters
+  let filtered=(allBooks||[]);
+  if(bookState.genreFilter)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(bookState.genreFilter)));
+  if(search)filtered=filtered.filter(b=>b.title.toLowerCase().includes(search)||b.author.toLowerCase().includes(search)||(b.description||'').toLowerCase().includes(search));
+  if(!filtered.length){el.innerHTML='<div style="color:var(--t3);text-align:center;padding:30px">No books match your filters.</div>';return;}
+  const DIFF_COL={light:'grn',medium:'amb',dense:'red'};
+  el.innerHTML=`<div style="font-size:11px;color:var(--t3);margin-bottom:10px">${filtered.length} book${filtered.length!==1?'s':''} in library</div>`+
+  filtered.map(b=>{
+    const added=onShelf.has(b.id);
+    const dcol=DIFF_COL[b.difficulty]||'d';
+    const genres=(b.genres||[]).slice(0,3).map(g=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${g}</span>`).join('');
+    return`<div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px">${b.title}</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:5px">${b.author} &middot; ${b.page_count||'?'} pages</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px">
+          <span class="badge b-${dcol}" style="font-size:9px">${b.difficulty||'medium'}</span>
+          ${genres}
+        </div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.5">${b.description||''}</div>
+      </div>
+      <div style="flex-shrink:0">
+        ${added?`<button class="btn btn-o btn-sm" disabled style="opacity:0.5;cursor:default">On Shelf</button>`:
+        `<button class="btn btn-r btn-sm" onclick="addToShelf('${b.id}','${b.title.replace(/'/g,"\\'")}')">+ Add</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ADD TO SHELF ──────────────────────────────────────────────────
+async function addToShelf(bookId,title){
+  const{data:existing}=await sb.from('user_reading_list').select('id').eq('user_id',PROFILE.id).eq('book_id',bookId).maybeSingle();
+  if(existing){toast('Already on your shelf!');return;}
+  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:bookId,status:'To Be Read',format:'Physical'});
+  toast('Added: '+title);
+  renderLibrary(); // refresh "On Shelf" buttons
+}
+
+// ── FETCH + SORT BOOKS (data only, no DOM) ────────────────────────
+/** Loads books from DB, merges into CONTENT, applies localStorage sort order.
+ * @returns {Array} sorted book array, or empty array on failure */
+async function fetchAndSortBooks(){
+  const fresh=await loadBooksFromDB();
+  if(fresh)CONTENT.books=fresh;
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const listData=CONTENT.books?.lists?.[listId];
+  if(!listData)return[];
+  const storedOrder=PROFILE.book_list_order||null;
+  let bks=listData.books||[];
+  if(storedOrder?.length){
+    const orderMap=Object.fromEntries(storedOrder.map((b,i)=>[b.id,i]));
+    bks=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
+  }
+  if(CONTENT.books?.lists?.[listId])CONTENT.books.lists[listId].books=bks;
+  return bks;
+}
+
+// ── UPDATE CURRENTLY-READING CARD (DOM only, no fetch) ───────────
+/** Populates the currently-reading hero card from a book object. */
+function renderCurrentlyReadingCard(reading){
+  if(!reading)return;
+  bookState.curBookId=reading.id;
+  bookState.curBookPages=reading.pages||0;
+  const pct=reading.pages>0?Math.round((reading.current_page||0)/reading.pages*100):0;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('cur-book-title',reading.title);
+  set('cur-book-author',reading.author+' · ~'+reading.pages+' pages');
+  set('cur-book-label','CURRENTLY READING — POSITION '+reading._position);
+  set('cur-book-desc',reading.description||'');
+  set('read-pct',pct+'%');
+  const pi=document.getElementById('cur-page-input');if(pi)pi.value=reading.current_page||'';
+  const pl=document.getElementById('cur-page-label');if(pl)pl.textContent='of '+reading.pages+' pages';
+}
+
+// ── BUILD SINGLE BOOK CARD HTML (pure template, no side-effects) ──
+/** @param {Object} bk  @param {number} idx - display index */
+function buildBookCardHtml(bk,idx){
+  const GCOLS2={fiction:'p',fantasy:'p','sci-fi':'blu','self-improvement':'grn',business:'amb',philosophy:'amb',stoicism:'amb',psychology:'blu',biography:'d',general:'d',health:'grn',productivity:'grn',memoir:'d'};
+  const statuses=['To Be Read','Reading','Read','Dropped'];
+  const gcol=GCOLS2[bk.genre]||'d';
+  const bkId=escapeAttr(bk.id);
+  const stars=Array.from({length:5},(_,si)=>`<span class="star${si<bk.rating?' on':''}" onclick="setRating('${bkId}',${si+1})" style="cursor:pointer" aria-label="Rate ${si+1} star">★</span>`).join('');
+  const statSel=`<select class="inp sel" aria-label="Reading status" style="font-size:11px;padding:3px 22px 3px 7px;width:118px" onchange="setBookStatus('${bkId}',this.value)">${statuses.map(s=>`<option${bk.status===s?' selected':''}>${escapeHtml(s)}</option>`).join('')}</select>`;
+  const fmtBtns=['Physical','Audiobook','Ebook'].map(f=>`<button class="btn btn-xs" aria-label="Format: ${f}" style="background:${bk.format===f?'var(--blu-l)':'var(--s3)'};color:${bk.format===f?'var(--blu)':'var(--t3)'};border:1px solid ${bk.format===f?'rgba(77,159,236,.3)':'var(--b2)'}" onclick="toggleFormat('${bkId}','${f}')">${f}</button>`).join('');
+  const pageRow=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+    <input type="number" value="${bk.current_page||0}" min="0" max="${bk.pages||9999}" class="inp" aria-label="Current page" style="width:70px;text-align:center;font-size:12px;padding:4px" onchange="savePageProgress('${bkId}',${bk.pages||0},this.value)" placeholder="page">
+    <span style="font-size:11px;color:var(--t3)">of ${bk.pages} pages</span>
+    ${bk.pages>0?`<div class="pb" style="flex:1;height:6px"><div class="pbf" style="width:${Math.min(100,Math.round((bk.current_page||0)/bk.pages*100))}%;background:var(--grn)"></div></div>`:''}
+  </div>`;
+  const editCtrl=bookEditMode?`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;margin-left:8px">
+    <button onclick="moveBook('${bkId}',-1)" class="btn btn-o btn-xs" aria-label="Move up">&uarr;</button>
+    <button onclick="moveBook('${bkId}',1)" class="btn btn-o btn-xs" aria-label="Move down">&darr;</button>
+    <button onclick="removeFromShelf('${bkId}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px" aria-label="Remove from shelf">&#x2715;</button>
+  </div>`:'';
+  return`<div style="display:flex;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:10px;overflow:hidden">
+    <div style="width:4px;background:var(--${gcol});flex-shrink:0"></div>
+    <div style="padding:14px;flex:1;min-width:0">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="font-family:Bebas Neue,sans-serif;font-size:28px;color:var(--${bk.status==='Reading'?'red':'t3'});line-height:1;min-width:28px;text-align:center">${idx+1}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(bk.title)}</div>
+          <div style="font-size:12px;color:var(--t3);margin-bottom:6px">${escapeHtml(bk.author)} &middot; ~${bk.pages} pages</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statSel}${fmtBtns}</div>
+          <div style="display:flex;gap:4px;margin-top:4px">${stars}</div>
+          ${pageRow}
+          ${bk.description?`<div style="font-size:11px;color:var(--t3);margin-top:6px;line-height:1.5">${escapeHtml(bk.description)}</div>`:''}
+        </div>
+        ${editCtrl}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── UPDATED renderBooks (orchestrator: fetch → sort → render) ─────
+renderBooks=async function(){
+  const bks=await fetchAndSortBooks();
+  if(!bks.length){
+    const el=document.getElementById('book-list');
+    if(el)el.innerHTML='<div style="color:var(--t3);padding:20px;text-align:center">No books on your shelf yet. Browse the Library tab to add some.</div>';
+    return;
+  }
+  const reading=bks.find(b=>b.status==='Reading')||bks[0];
+  renderCurrentlyReadingCard(reading);
+  const el=document.getElementById('book-list');if(!el)return;
+  el.innerHTML=bks.map((bk,idx)=>buildBookCardHtml(bk,idx)).join('');
+};
+// ── UPDATED interaction functions (write to user_reading_list) ────
+setBookStatus=async function(bookId,status){
+  const{error}=await sb.from('user_reading_list').update({status}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error updating status: '+error.message);console.error('[book] setBookStatus failed:',error);return;}
+  toast('Status: '+status);
+  await renderBooks();
+};
+setRating=async function(bookId,rating){
+  const{error}=await sb.from('user_reading_list').update({rating}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving rating: '+error.message);console.error('[book] setRating failed:',error);return;}
+  await renderBooks();
+};
+toggleFormat=async function(bookId,format){
+  const{error}=await sb.from('user_reading_list').update({format}).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving format: '+error.message);console.error('[book] toggleFormat failed:',error);return;}
+  await renderBooks();
+};
+
+// ── PAGE PROGRESS ─────────────────────────────────────────────────
+async function savePageProgress(bookId,totalPages,currentPage){
+  const cp=parseInt(currentPage)||0;
+  const tz=PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today=new Date().toLocaleDateString('en-CA',{timeZone:tz});
+  const updates={current_page:cp};
+  if(cp>0)updates.started_at=today;
+  if(totalPages>0&&cp>=totalPages){updates.finished_at=today;updates.status='Read';}
+  const{error}=await sb.from('user_reading_list').update(updates).eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error saving progress: '+error.message);console.error('[book] savePageProgress failed:',error);return;}
+  if(bookId===bookState.curBookId){
+    const pct=totalPages>0?Math.round(cp/totalPages*100):0;
+    const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
+  }
+}
+async function saveCurrentPage(val){
+  if(bookState.curBookId)await savePageProgress(bookState.curBookId,bookState.curBookPages,val);
+}
+
+// ── REMOVE FROM SHELF ─────────────────────────────────────────────
+async function removeFromShelf(bookId){
+  if(!await confirmDialog('Remove this book from your shelf?'))return;
+  const{error}=await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
+  if(error){toast('Error removing book: '+error.message);console.error('[book] removeFromShelf failed:',error);return;}
+  // Remove book from the persistent order list
+  if(PROFILE.book_list_order){
+    PROFILE.book_list_order=PROFILE.book_list_order.filter(b=>b.id!==bookId);
+    sb.from('profiles').update({book_list_order:PROFILE.book_list_order}).eq('id',PROFILE.id);
+  }
+  toast('Removed from shelf');
+  await renderBooks();
+}
+
+// ── ADD CUSTOM BOOK ───────────────────────────────────────────────
+function openAddCustomBook(){
+  openModal('book-modal');
+}
+// Patch saveBook to write to DB
+const _origSaveBook=typeof saveBook==='function'?saveBook:null;
+saveBook=async function(){
+  const title=document.getElementById('bk-title')?.value.trim();
+  const author=document.getElementById('bk-author')?.value.trim();
+  if(!title||!author){toast('Enter title and author');return;}
+  const pages=parseInt(document.getElementById('bk-pages')?.value)||0;
+  const genre=document.getElementById('bk-genre')?.value||'general';
+  const{data:newBook,error}=await sb.from('books').insert({title,author,genres:[genre],page_count:pages,is_template:false,created_by:PROFILE.id}).select().single();
+  if(error){toast('Error saving book');return;}
+  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:newBook.id,status:'To Be Read',format:'Physical'});
+  closeModal('book-modal');
+  toast('Book added to shelf!');
+  await renderBooks();
+};
+
+// ── PATCH goto to render library or shelf ─────────────────────────
+const _s6_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s6_origGoto)_s6_origGoto(pid);
+  if(pid==='reading'){
+    bookState.view='shelf';
+    setTimeout(()=>renderBooks(),100);
+  }
+};
+
+// ── PATCH moveBook to use position index not month ────────────────
+moveBook=function(id,dir){
+  const listId=PROFILE.assigned_reading_list||'self-improvement-first';
+  const bks=CONTENT.books?.lists?.[listId]?.books||[];
+  const stored=PROFILE.book_list_order||bks.map(b=>({id:b.id}));
+  const i=stored.findIndex(b=>b.id===id);
+  if(i<0)return;
+  const ni=i+dir;
+  if(ni<0||ni>=stored.length)return;
+  [stored[i],stored[ni]]=[stored[ni],stored[i]];
+  PROFILE.book_list_order=stored;
+  sb.from('profiles').update({book_list_order:stored}).eq('id',PROFILE.id);
+  // Also update CONTENT order
+  if(CONTENT.books?.lists?.[listId]){
+    const orderMap=Object.fromEntries(stored.map((b,idx)=>[b.id,idx]));
+    CONTENT.books.lists[listId].books=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
+  }
+  renderBooks();
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 7 — Workout Session Logging, History, Plan Builder
+// ════════════════════════════════════════════════════════════════
+
+// Workout logging state — grouped for clarity and reset safety.
+const workoutState={
+  existingSessionId:null, // ID of today's already-started session, if any
+  planBuilderDayCount:0,  // running day count in the plan builder UI
+};
+
+// ── POPULATE PLAN SELECTOR ────────────────────────────────────────
+function populatePlanSelector(){
+  const sel=document.getElementById('wk-plan-sel');if(!sel)return;
+  const plans=CONTENT.workouts?.plans;if(!plans)return;
+  const current=PROFILE.assigned_workout_plan||'shred-advanced';
+  sel.innerHTML=Object.entries(plans).map(([key,p])=>
+    `<option value="${key}"${key===current?' selected':''}>${p.name}</option>`
+  ).join('');
+}
+
+async function switchWorkoutPlan(planKey){
+  await sb.from('profiles').update({assigned_workout_plan:planKey}).eq('id',PROFILE.id);
+  PROFILE.assigned_workout_plan=planKey;
+  renderWorkout();
+  toast('Plan switched to '+CONTENT.workouts?.plans?.[planKey]?.name);
+}
+
+// Patch renderWorkout to also populate selector + history
+const _s7_origRW=typeof renderWorkout==='function'?renderWorkout:null;
+renderWorkout=function(){
+  if(_s7_origRW)_s7_origRW();
+  populatePlanSelector();
+  renderWorkoutHistory();
+};
+
+// ── UPDATED openLogModal (full sets/reps/weight) ──────────────────
+openLogModal=async function(i){
+  logDayIdx=i;
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  const day=wkData?.days?.[i];
+  const focus=day?.focus||'Day '+(i+1);
+  document.getElementById('log-title').textContent='LOG: '+focus.toUpperCase();
+  document.getElementById('log-day-info').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('log-duration').value='';
+  // Check for existing session today
+  const{data:existing}=await sb.from('workout_sessions')
+    .select('*,workout_exercise_logs(*)')
+    .eq('user_id',PROFILE.id).eq('session_date',todayStr()).eq('day_name',focus)
+    .maybeSingle();
+  workoutState.existingSessionId=existing?.id||null;
+  // Build prior-sets lookup
+  const prior={};
+  (existing?.workout_exercise_logs||[]).forEach(l=>{
+    if(!prior[l.exercise_name])prior[l.exercise_name]=[];
+    prior[l.exercise_name][l.set_number-1]={w:l.weight_lbs,r:l.reps_completed};
+  });
+  const exercises=day?.exercises||[];
+  const exEl=document.getElementById('log-exercises');
+  if(!exercises.length){
+    exEl.innerHTML='<div style="color:var(--t3);font-size:13px;text-align:center;padding:24px">&#x1F3C6; Rest day — log any notes below.</div>';
+  }else{
+    exEl.innerHTML=exercises.map((ex,ei)=>{
+      const sc=ex.sets||3;const tr=String(ex.reps||10);
+      const ps=prior[ex.name]||[];
+      const rows=Array.from({length:sc},(_,s)=>`
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+          <span style="font-size:11px;color:var(--t3);width:38px;flex-shrink:0">Set ${s+1}</span>
+          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${ps[s]?.w||''}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <span style="font-size:12px;color:var(--t3)">&#xD7;</span>
+          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${ps[s]?.r||tr}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+        </div>`).join('');
+      return`<div style="padding:12px;background:var(--s3);border-radius:var(--r);margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:13px;font-weight:700">${ex.name}</div>
+          <span class="mono" style="font-size:10px;color:var(--t3)">Target: ${sc} sets &#xD7; ${tr} reps</span>
+        </div>
+        ${ex.notes?`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;font-style:italic">${ex.notes}</div>`:''}
+        ${rows}
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('log-text').value=existing?.notes||'';
+  if(existing?.duration_minutes)document.getElementById('log-duration').value=existing.duration_minutes;
+  openModal('log-modal');
+};
+
+// ── UPDATED saveLog (sets/reps/weight + backward compat) ──────────
+saveLog=async function(){
+  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
+  const wkData=CONTENT.workouts?.plans?.[plan];
+  const day=wkData?.days?.[logDayIdx];
+  const focus=day?.focus||'Day '+(logDayIdx+1);
+  const notes=document.getElementById('log-text')?.value.trim()||'';
+  const duration=parseInt(document.getElementById('log-duration')?.value)||null;
+  const btn=document.querySelector('#log-modal .btn-r');
+  if(btn){btn.disabled=true;btn.textContent='Saving...';}
+  let sessionId=workoutState.existingSessionId;
+  if(sessionId){
+    await sb.from('workout_sessions').update({notes,duration_minutes:duration}).eq('id',sessionId);
+    await sb.from('workout_exercise_logs').delete().eq('session_id',sessionId);
+  }else{
+    const{data:s,error}=await sb.from('workout_sessions').insert({
+      user_id:PROFILE.id,session_date:todayStr(),day_name:focus,notes,duration_minutes:duration
+    }).select().single();
+    if(error||!s){if(btn){btn.disabled=false;btn.textContent='Save Session 💪';}toast('Error saving — check console');console.error(error);return;}
+    sessionId=s.id;
+  }
+  // Save exercise sets
+  const exercises=day?.exercises||[];
+  const logs=[];
+  exercises.forEach((ex,ei)=>{
+    for(let s=0;s<(ex.sets||3);s++){
+      const w=parseFloat(document.getElementById(`ex-${ei}-s${s}-w`)?.value)||null;
+      const r=parseInt(document.getElementById(`ex-${ei}-s${s}-r`)?.value)||null;
+      if(r||w)logs.push({session_id:sessionId,exercise_name:ex.name,set_number:s+1,reps_completed:r,weight_lbs:w});
+    }
+  });
+  if(logs.length)await sb.from('workout_exercise_logs').insert(logs);
+  // Backward compat: also update workout_logs
+  await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes},{onConflict:'user_id,log_date,day_index'});
+  closeModal('log-modal');
+  toast('Session saved! 💪');
+  renderWorkoutHistory();
+};
+
+// ── WORKOUT HISTORY ───────────────────────────────────────────────
+async function renderWorkoutHistory(){
+  const el=document.getElementById('wk-history');if(!el)return;
+  const{data:sessions,error}=await sb.from('workout_sessions')
+    .select('id,session_date,day_name,duration_minutes,notes,workout_exercise_logs(exercise_name,set_number,weight_lbs,reps_completed)')
+    .eq('user_id',PROFILE.id)
+    .order('session_date',{ascending:false})
+    .order('created_at',{ascending:false})
+    .limit(8);
+  if(error){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">Error loading history.</div>';return;}
+  if(!sessions?.length){
+    el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:12px 0;text-align:center">No sessions logged yet. Hit <strong>Log Session</strong> on any day to start tracking.</div>';
+    return;
+  }
+  el.innerHTML=sessions.map(s=>{
+    const date=new Date(s.session_date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const exNames=[...new Set((s.workout_exercise_logs||[]).map(l=>l.exercise_name))];
+    const totalSets=(s.workout_exercise_logs||[]).length;
+    const topSets=exNames.slice(0,3).map(name=>{
+      const sets=(s.workout_exercise_logs||[]).filter(l=>l.exercise_name===name);
+      const bestSet=sets.reduce((best,l)=>(!best||l.weight_lbs>best.weight_lbs)?l:best,null);
+      return`<span style="font-size:10px;color:var(--t2)">${name}${bestSet?.weight_lbs?' @ '+bestSet.weight_lbs+'lbs':''}</span>`;
+    }).join(' &middot; ');
+    return`<div style="padding:10px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">
+            <span style="font-family:DM Mono,monospace;font-size:11px;color:var(--t3)">${date}</span>
+            <span style="font-size:13px;font-weight:700">${s.day_name||'Session'}</span>
+          </div>
+          <div style="font-size:11px;color:var(--t3)">${exNames.length} exercise${exNames.length!==1?'s':''} &middot; ${totalSets} set${totalSets!==1?'s':''}${s.duration_minutes?' &middot; '+s.duration_minutes+'min':''}</div>
+          ${topSets?`<div style="margin-top:4px;line-height:1.6">${topSets}</div>`:''}
+        </div>
+        ${s.notes?`<div style="font-size:11px;color:var(--t2);max-width:180px;font-style:italic;text-align:right">"${s.notes}"</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── PLAN BUILDER ──────────────────────────────────────────────────
+function openPlanBuilder(){
+  workoutState.planBuilderDayCount=0;
+  document.getElementById('pb-name').value='';
+  document.getElementById('pb-desc').value='';
+  document.getElementById('pb-days').innerHTML='';
+  // Populate template options
+  const plans=CONTENT.workouts?.plans||{};
+  document.getElementById('pb-templates').innerHTML=Object.entries(plans).map(([key,p])=>
+    `<button class="btn btn-o btn-sm" onclick="importTemplate('${key}')">${p.name}</button>`
+  ).join('');
+  openModal('plan-builder-modal');
+}
+
+function addPlanDay(name='',focus='',exercises=''){
+  const i=workoutState.planBuilderDayCount++;
+  const div=document.createElement('div');
+  div.id=`pb-day-${i}`;
+  div.style.cssText='background:var(--s3);border-radius:var(--r);padding:12px;margin-bottom:8px';
+  div.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span style="font-size:12px;font-weight:600">Day ${i+1}</span>
+    <button onclick="this.closest('[id]').remove()" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>
+  </div>
+  <div class="g2" style="gap:8px;margin-bottom:8px">
+    <input class="inp" id="pb-day-${i}-name" placeholder="Day name (e.g. Monday)" value="${name}">
+    <input class="inp" id="pb-day-${i}-focus" placeholder="Focus (e.g. Upper Push)" value="${focus}">
+  </div>
+  <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Exercises (one per line, e.g. "Bench Press 4x8")</div>
+  <textarea class="inp" id="pb-day-${i}-ex" rows="4" placeholder="Incline DB Press 4x10\nOverhead Press 4x10\nLateral Raises 3x15" style="resize:vertical;font-family:DM Mono,monospace;font-size:11px">${exercises}</textarea>`;
+  document.getElementById('pb-days').appendChild(div);
+}
+
+async function importTemplate(planKey){
+  const plan=CONTENT.workouts?.plans?.[planKey];
+  if(!plan){toast('Plan not found');return;}
+  document.getElementById('pb-name').value=plan.name+' (Custom)';
+  document.getElementById('pb-desc').value=plan.description||'';
+  document.getElementById('pb-days').innerHTML='';
+  workoutState.planBuilderDayCount=0;
+  (plan.days||[]).forEach(d=>{
+    const exStr=(d.exercises||[]).map(e=>`${e.name} ${e.sets||3}x${e.reps||10}`).join('\n');
+    addPlanDay(d.day_name||'',d.focus||'',exStr);
+  });
+  toast('Template imported — customize then save');
+}
+
+function parseExerciseLine(line){
+  // Parse "Bench Press 4x8" → {name:'Bench Press', sets:4, reps:'8'}
+  const match=line.match(/^(.+?)\s+(\d+)\s*[xX\u00d7]\s*(\d+(?:-\d+|[\+])?)\s*(?:@(.+))?$/);
+  if(match)return{name:match[1].trim(),sets:parseInt(match[2]),reps:match[3].trim(),notes:match[4]?.trim()||''};
+  return{name:line.trim(),sets:3,reps:'10',notes:''};
+}
+
+async function savePlan(){
+  const name=document.getElementById('pb-name').value.trim();
+  if(!name){toast('Enter a plan name');return;}
+  const desc=document.getElementById('pb-desc').value.trim();
+  const days=[];
+  document.querySelectorAll('[id^="pb-day-"]').forEach(div=>{
+    const i=div.id.split('-')[2];
+    if(!i||isNaN(i))return;
+    const dayName=document.getElementById(`pb-day-${i}-name`)?.value.trim()||`Day ${+i+1}`;
+    const focus=document.getElementById(`pb-day-${i}-focus`)?.value.trim()||'';
+    const exRaw=document.getElementById(`pb-day-${i}-ex`)?.value.trim()||'';
+    const exercises=exRaw.split('\n').filter(l=>l.trim()).map(parseExerciseLine);
+    days.push({day_name:dayName,focus,exercises,muscles:[],color:'b',has_hiit:false});
+  });
+  if(!days.length){toast('Add at least one day');return;}
+  const{error}=await sb.from('user_workout_plans').insert({
+    user_id:PROFILE.id,template_id:null,name,description:desc,is_active:false,
+    custom_days:JSON.stringify(days)
+  });
+  if(error){toast('Error saving plan: '+error.message);return;}
+  closeModal('plan-builder-modal');
+  toast('Plan "'+name+'" saved!');
+  // Ask if user wants to activate it
+  if(await confirmDialog('Activate "'+name+'" as your current plan?')){
+    // Store as custom plan key
+    PROFILE.assigned_workout_plan='custom_'+Date.now();
+    // For now load it into CONTENT
+    if(CONTENT.workouts?.plans){
+      CONTENT.workouts.plans[PROFILE.assigned_workout_plan]={name,description:desc,days,plan_key:PROFILE.assigned_workout_plan};
+    }
+    await sb.from('profiles').update({assigned_workout_plan:PROFILE.assigned_workout_plan}).eq('id',PROFILE.id);
+    renderWorkout();
+  }
+}
+
+// ── goto patch: render history on workout tab open ────────────────
+const _s7_origGoto=typeof goto==='function'?goto:null;
+goto=function(pid){
+  if(_s7_origGoto)_s7_origGoto(pid);
+  if(pid==='workout')setTimeout(()=>{renderWorkout();},100);
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// STAGE 8 — Recipes: Nutritional Rating, DB-backed CRUD
+// ════════════════════════════════════════════════════════════════
+
+// ── NUTRITIONAL RATING ENGINE ─────────────────────────────────────
+// Thresholds agreed in planning session:
+function calcRecipeRating(cal, protein){ return RecipeService.rate(cal, protein); }
+const RATING_CONFIG={
+  'good':   {label:'Good',badge:'b-g',icon:'✅',desc:'High protein, lean calories'},
+  'so-so':  {label:'So-So',badge:'b-a',icon:'🟡',desc:'Moderate nutritional fit'},
+  'needs-care':{label:'Needs Care',badge:'b-r',icon:'⚠️',desc:'Low protein or high calorie'},
+};
+
+function previewRecipeRating(){
+  const cal=document.getElementById('sm-calories')?.value;
+  const pro=document.getElementById('sm-protein-g')?.value;
+  const rating=calcRecipeRating(cal,pro);
+  const el=document.getElementById('sm-rating-preview');if(!el)return;
+  if(!rating){el.style.color='var(--t3)';el.textContent='Enter macros to see nutritional rating';return;}
+  const cfg=RATING_CONFIG[rating];
+  el.style.color=rating==='good'?'var(--grn)':rating==='needs-care'?'var(--red)':'var(--amb)';
+  el.textContent=cfg.icon+' '+cfg.label+' — '+cfg.desc+(cal?' | '+cal+' cal':'')+(pro?' | '+pro+'g protein':'');
+}
+
+// ── DEFINITIVE renderSpice (DB + rating badges) ───────────────────
+renderSpice=function(){
+  const baseData=CONTENT.spice?.profiles;if(!baseData)return;
+  const tabsEl=document.getElementById('spice-tabs');
+  const panelsEl=document.getElementById('spice-panels');
+  if(!tabsEl||!panelsEl)return;
+  tabsEl.innerHTML=baseData.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`).join('');
+  panelsEl.innerHTML=baseData.map((p,i)=>`
+    <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
+      ${spiceEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${p.id||p.label}')">+ Add Recipe to ${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`:''}
+      ${(p.recipes||[]).map(r=>{
+        const rating=calcRecipeRating(r.calories_per_serving||r.cal,r.protein_g||r.pro);
+        const cfg=rating?RATING_CONFIG[rating]:null;
+        const isUserRecipe=!!(r.id&&!r._isTemplate);
+        const canDelete=isUserRecipe; // only user-created recipes can be deleted
+        const rows=r.rows||[];
+        if(r.dry_rub&&!rows.find(x=>x.spices===r.dry_rub))rows.unshift({label:'Dry Rub / Spices',spices:r.dry_rub});
+        if(r.sauce&&!rows.find(x=>x.spices===r.sauce))rows.push({label:'Sauce / Liquid',spices:r.sauce});
+        return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:14px;font-weight:600">${r.name}</div>
+              ${r.protein_src||r.proteinSrc?`<div style="font-size:11px;color:var(--t3);margin-top:2px">Protein: ${r.protein_src||r.proteinSrc}</div>`:''}
+            </div>
+            <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+              ${cfg?`<span class="badge ${cfg.badge}" style="font-size:10px;white-space:nowrap">${cfg.icon} ${cfg.label}</span>`:''}
+              ${r.calories_per_serving||r.cal?`<span class="mono" style="font-size:10px;color:var(--t3)">${r.calories_per_serving||r.cal}cal &middot; ${r.protein_g||r.pro||0}gP</span>`:''}
+              ${spiceEditMode?`<button onclick="openSpiceModal('${r.profile_id||r.profileId||p.id}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
+              ${spiceEditMode&&canDelete?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
+            </div>
+          </div>
+          ${rows.map(row=>`<div style="margin-bottom:7px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').filter(s=>s.trim()).map(s=>{const isKey=/[0-9]|tsp|tbsp/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;}).join('')}</div>
+          </div>`).join('')}
+          ${r.method?`<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method}</div>`:''}
+        </div>`;
+      }).join('')||`<div style="color:var(--t3);font-size:12px;padding:12px">No recipes in this profile.</div>`}
+    </div>`).join('');
+  setSpiceTab(0);
+};
+
+// ── UPDATED openSpiceModal (loads full DB recipe data) ────────────
+openSpiceModal=async function(profileId,editKey){
+  Logger.log('recipes','openSpiceModal.start',{profileId,editKey});
+  document.getElementById('spice-modal-title').textContent=editKey?'EDIT RECIPE':'ADD RECIPE';
+  document.getElementById('spice-edit-key').value=editKey||'';
+  document.getElementById('spice-edit-is-template').value='';
+  // Clear all fields
+  ['sm-name','sm-dryrub','sm-sauce','sm-method','sm-protein-src','sm-calories','sm-protein-g','sm-carbs','sm-fat-g'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  const pr=document.getElementById('sm-rating-preview');if(pr){pr.textContent='Enter macros to see nutritional rating';pr.style.color='var(--t3)';}
+  const spEl=document.getElementById('sm-profile');if(spEl)spEl.value=profileId||'basics';
+  if(editKey){
+    // Try to load from DB first
+    const rec=await API.recipes.get(editKey);
+    if(rec){
+      Logger.log('recipes','openSpiceModal.loaded_from_db',{id:rec.id,name:rec.name});
+      const n=document.getElementById('sm-name');if(n)n.value=rec.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=rec.profile_id||profileId||'basics';
+      const ps=document.getElementById('sm-protein-src');if(ps)ps.value=rec.protein_src||'';
+      const dr=document.getElementById('sm-dryrub');if(dr)dr.value=rec.dry_rub||'';
+      const sa=document.getElementById('sm-sauce');if(sa)sa.value=rec.sauce||'';
+      const me=document.getElementById('sm-method');if(me)me.value=rec.method||'';
+      const ca=document.getElementById('sm-calories');if(ca)ca.value=rec.calories_per_serving||'';
+      const pg=document.getElementById('sm-protein-g');if(pg)pg.value=rec.protein_g||'';
+      const cr=document.getElementById('sm-carbs');if(cr)cr.value=rec.carbs_g||'';
+      const fa=document.getElementById('sm-fat-g');if(fa)fa.value=rec.fat_g||'';
+      document.getElementById('spice-edit-is-template').value=rec.is_template?'1':'';
+      previewRecipeRating();
+      Logger.log('recipes','openSpiceModal.complete');
+      openModal('spice-modal');
+      return;
+    }
+    // Fall back to localStorage custom recipes
+    const customs=getCustomSpice();
+    const found=customs.find(r=>r.id===editKey);
+    if(found){
+      const n=document.getElementById('sm-name');if(n)n.value=found.name||'';
+      const sp=document.getElementById('sm-profile');if(sp)sp.value=found.profileId||profileId||'basics';
+      const rows=found.rows||[];
+      const dry=rows.find(r=>r.label?.toLowerCase().includes('dry')||r.label?.toLowerCase().includes('spice'));
+      const sauce=rows.find(r=>r.label?.toLowerCase().includes('sauce')||r.label?.toLowerCase().includes('liquid'));
+      const dr=document.getElementById('sm-dryrub');if(dr)dr.value=dry?.spices||'';
+      const sa=document.getElementById('sm-sauce');if(sa)sa.value=sauce?.spices||'';
+      const me=document.getElementById('sm-method');if(me)me.value=found.method||'';
+    }
+  }
+  Logger.log('recipes','openSpiceModal.complete');
+  openModal('spice-modal');
+};
+
+// ── UPDATED saveSpiceRecipe (writes to DB) ────────────────────────
+saveSpiceRecipe=async function(){
+  Logger.log('spice','saveRecipe.start');
+  const name=document.getElementById('sm-name')?.value.trim();
+  if(!name){Logger.log('spice','saveRecipe.validation_failed',{reason:'empty_name'});toast('Enter a recipe name');return;}
+  const editKey=document.getElementById('spice-edit-key')?.value;
+  const isTemplate=document.getElementById('spice-edit-is-template')?.value==='1';
+  const profileId=document.getElementById('sm-profile')?.value||'basics';
+  const dryrub=document.getElementById('sm-dryrub')?.value.trim()||null;
+  const sauce=document.getElementById('sm-sauce')?.value.trim()||null;
+  const method=document.getElementById('sm-method')?.value.trim()||null;
+  const proteinSrc=document.getElementById('sm-protein-src')?.value.trim()||null;
+  const cal=parseInt(document.getElementById('sm-calories')?.value)||null;
+  const pro=parseFloat(document.getElementById('sm-protein-g')?.value)||null;
+  const car=parseFloat(document.getElementById('sm-carbs')?.value)||null;
+  const fat=parseFloat(document.getElementById('sm-fat-g')?.value)||null;
+  const rating=calcRecipeRating(cal,pro)||'so-so';
+  const payload={
+    name,profile_id:profileId,profile_label:profileId.charAt(0).toUpperCase()+profileId.slice(1),
+    dry_rub:dryrub,sauce,method,protein_src:proteinSrc,
+    calories_per_serving:cal,protein_g:pro,carbs_g:car,fat_g:fat,
+    rating,color_tag:rating==='good'?'green':rating==='needs-care'?'red':'amber',
+    is_template:false,created_by:PROFILE.id
+  };
+  try{
+    if(editKey&&!isTemplate){
+      // Update existing user recipe in DB
+      await API.recipes.update(payload,editKey,PROFILE.id);
+    }else if(editKey&&isTemplate){
+      // Template recipe — save as NEW custom version (don't modify template)
+      payload.name=name+(name.includes('(Custom)')?'':'');
+      await API.recipes.insert(payload);
+      toast('Saved as your custom version');
+    }else{
+      // New recipe
+      await API.recipes.insert(payload);
+    }
+  }catch(e){Logger.error('spice','saveRecipe.db_error',e);toast('Error saving: '+e.message);console.error(e);return;}
+  Logger.log('spice','saveRecipe.success',{name,editKey});
+  // Refresh content from DB
+  const fresh=await loadRecipesFromDB();
+  if(fresh)CONTENT.spice=fresh;
+  closeModal('spice-modal');
+  spiceEditMode=true;
+  renderSpice();
+  toast(editKey&&!isTemplate?'Recipe updated!':'Recipe saved!');
+};
+
+// ── UPDATED removeSpiceRecipe (DB delete, user recipes only) ──────
+removeSpiceRecipe=async function(id){
+  // Check if it's a user recipe
+  const rec=await API.recipes.getMeta(id);
+  if(rec&&rec.is_template){toast("Library recipes can't be deleted — you can edit them instead");return;}
+  if(rec&&rec.created_by!==PROFILE.id){toast("Can only delete your own recipes");return;}
+  if(!await confirmDialog('Delete this recipe?'))return;
+  await API.recipes.delete(id);
+  const fresh=await loadRecipesFromDB();
+  if(fresh)CONTENT.spice=fresh;
+  renderSpice();
+  toast('Recipe deleted');
+};
+
+// ── UPDATED loadRecipesFromDB (marks template vs user recipes) ────
+loadRecipesFromDB=async function(){
+  Logger.log('recipes','loadFromDB.start');
+  try{
+    const recs=await API.recipes.list();
+    if(!recs?.length){Logger.log('recipes','loadFromDB.empty');return null;}
+    Logger.log('recipes','loadFromDB.success',{count:recs.length});
+    const profileMap={};
+    recs.forEach(r=>{
+      if(!profileMap[r.profile_id]){
+        profileMap[r.profile_id]={id:r.profile_id,label:r.profile_label||r.profile_id,recipes:[]};
+      }
+      const rows=[];
+      if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
+      if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
+      profileMap[r.profile_id].recipes.push({
+        ...r,rows,
+        profileId:r.profile_id,
+        _isTemplate:r.is_template,
+        _isUserRecipe:r.created_by===PROFILE?.id&&!r.is_template
+      });
+    });
+    const result={profiles:Object.values(profileMap)};
+    State.set('_cachedRecipes',result);
+    return result;
+  }catch(e){
+    Logger.error('recipes','loadFromDB.catch',e);
+    return State.get('_cachedRecipes');
+  }
+};
+

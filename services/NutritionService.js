@@ -1,6 +1,18 @@
 /**
- * NutritionService: Business logic for nutrition tracking.
- * No DOM manipulation. No direct sb.from() calls. Uses API module for data access.
+ * NutritionService — Business logic for nutrition tracking.
+ *
+ * PURPOSE: Pure business logic for macro calculations and plan targets.
+ *   No DOM manipulation, no sb.from() calls, no Logger calls.
+ *   Consumed by app.js; tested in test/NutritionService.test.js.
+ *
+ * PUBLIC INTERFACE:
+ *   NutritionService.getPlanTargets(planId)        → targets object
+ *   NutritionService.sumMacros(entries)            → {cal, pro, car, fat}
+ *   NutritionService.remaining(targets, consumed)  → {cal, pro, car, fat}
+ *   NutritionService.pctOfTarget(consumed, target) → 0–100
+ *
+ * CONNECTED TO: app.js (consumer)
+ *               test/NutritionService.test.js
  */
 window.NutritionService = {
 
@@ -12,15 +24,20 @@ window.NutritionService = {
 
   DEFAULT_TARGETS: {calories: 1900, protein_g: 185, carbs_g: 175, fat_g: 55, sugar_max_g: 35, water_oz: 120},
 
-  /** Return macro targets for a plan ID, falling back to defaults. */
+  /**
+   * Return macro targets for a nutrition plan, falling back to defaults if unknown.
+   * @param {string} planId - 'high-protein-deficit' | 'balanced-deficit' | 'maintenance-muscle'
+   * @returns {{calories:number, protein_g:number, carbs_g:number, fat_g:number, sugar_max_g:number, water_oz:number}}
+   */
   getPlanTargets: function(planId) {
     return this.PLAN_TARGETS[planId] || this.DEFAULT_TARGETS;
   },
 
   /**
    * Sum macro fields across an array of meal/log entries.
-   * Each entry may have: calories, protein_g, carbs_g, fat_g.
-   * Returns {cal, pro, car, fat}.
+   * Missing fields on individual entries are treated as 0.
+   * @param {Array<{calories?:number, protein_g?:number, carbs_g?:number, fat_g?:number}>} entries
+   * @returns {{cal:number, pro:number, car:number, fat:number}}
    */
   sumMacros: function(entries) {
     const totals = {cal: 0, pro: 0, car: 0, fat: 0};
@@ -34,10 +51,10 @@ window.NutritionService = {
   },
 
   /**
-   * Calculate remaining macros against targets.
-   * targets: {calories, protein_g, carbs_g, fat_g}
-   * consumed: {cal, pro, car, fat}
-   * Returns {cal, pro, car, fat} with values clamped to >= 0.
+   * Calculate remaining macros versus plan targets, clamped to >= 0.
+   * @param {{calories:number, protein_g:number, carbs_g:number, fat_g:number}} targets
+   * @param {{cal:number, pro:number, car:number, fat:number}} consumed
+   * @returns {{cal:number, pro:number, car:number, fat:number}}
    */
   remaining: function(targets, consumed) {
     return {
@@ -49,8 +66,10 @@ window.NutritionService = {
   },
 
   /**
-   * Calculate percent of target achieved for one macro.
-   * Returns 0–100 clamped value.
+   * Calculate what percentage of a macro target has been consumed, clamped to 0–100.
+   * @param {number} consumed - amount consumed
+   * @param {number} target   - target amount (returns 0 if target is falsy)
+   * @returns {number} integer 0–100
    */
   pctOfTarget: function(consumed, target) {
     if (!target) return 0;

@@ -1,13 +1,28 @@
 /**
- * API: Centralized data access layer for Supabase.
- * All sb.from() calls go through this module.
- * Methods that return data throw on error; caller wraps in try/catch.
- * Methods used as guards (getMeta, get) return null on error instead.
+ * api.js — Centralized Supabase data-access layer.
+ *
+ * PURPOSE: All sb.from() calls are funneled through this module.
+ *   Methods that return data throw on error so the caller can handle it.
+ *   Guard-style methods (get, getMeta, getForDate) return null on error
+ *   instead of throwing, to simplify optional lookups.
+ *
+ * PUBLIC INTERFACE:
+ *   API.recipes   — list, get, getMeta, insert, update, delete
+ *   API.habits    — getLogs, upsert
+ *   API.nutrition — log, getForDate
+ *
+ * CONNECTED TO: logs.js (Logger.log / Logger.error)
+ *               Supabase JS client (window.sb, initialized in app.js)
+ *               main.js, app.js (consumers)
  */
 window.API = {
 
   recipes: {
-    /** Returns raw array of all recipe rows ordered by profile/name. Throws on error. */
+    /**
+     * Return all recipe rows ordered by profile then name.
+     * @returns {Promise<Object[]>}
+     * @throws {Error} on Supabase error
+     */
     list: async function() {
       Logger.log('api', 'recipes.list.start');
       try {
@@ -21,7 +36,12 @@ window.API = {
       }
     },
 
-    /** Returns full recipe row or null. Returns null on error (does not throw). */
+    /**
+     * Return the full recipe row for an id, or null if not found.
+     * Does not throw — returns null on error.
+     * @param {string} id
+     * @returns {Promise<Object|null>}
+     */
     get: async function(id) {
       try {
         const {data, error} = await sb.from('recipes').select('*').eq('id', id).maybeSingle();
@@ -35,7 +55,11 @@ window.API = {
       }
     },
 
-    /** Returns {is_template, created_by} or null. Returns null on error (does not throw). */
+    /**
+     * Return {is_template, created_by} for an id, or null on error/not found.
+     * @param {string} id
+     * @returns {Promise<{is_template: boolean, created_by: string}|null>}
+     */
     getMeta: async function(id) {
       try {
         const {data, error} = await sb.from('recipes').select('is_template,created_by').eq('id', id).maybeSingle();
@@ -47,7 +71,12 @@ window.API = {
       }
     },
 
-    /** Inserts a new recipe row. Throws on error. */
+    /**
+     * Insert a new recipe row.
+     * @param {Object} payload - recipe fields matching the recipes table schema
+     * @returns {Promise<void>}
+     * @throws {Error} on Supabase error
+     */
     insert: async function(payload) {
       Logger.log('api', 'recipes.insert.start', {name: payload.name});
       try {
@@ -60,7 +89,14 @@ window.API = {
       }
     },
 
-    /** Updates a recipe row owned by ownerId. Throws on error. */
+    /**
+     * Update a recipe row, scoped to a specific owner to prevent cross-user edits.
+     * @param {Object} payload  - fields to update
+     * @param {string} id       - recipe id
+     * @param {string} ownerId  - user id; update is a no-op if owner does not match (RLS)
+     * @returns {Promise<void>}
+     * @throws {Error} on Supabase error
+     */
     update: async function(payload, id, ownerId) {
       Logger.log('api', 'recipes.update.start', {id});
       try {
@@ -73,7 +109,12 @@ window.API = {
       }
     },
 
-    /** Deletes a recipe by id. Throws on error. */
+    /**
+     * Delete a recipe by id.
+     * @param {string} id
+     * @returns {Promise<void>}
+     * @throws {Error} on Supabase error
+     */
     delete: async function(id) {
       Logger.log('api', 'recipes.delete.start', {id});
       try {
@@ -88,7 +129,13 @@ window.API = {
   },
 
   habits: {
-    /** Returns array of {habit_id, completed} rows for a user/date. Throws on error. */
+    /**
+     * Return habit log rows ({habit_id, completed}) for a user on a given date.
+     * @param {string} userId
+     * @param {string} date   - ISO date string (YYYY-MM-DD)
+     * @returns {Promise<Array<{habit_id: string, completed: boolean}>>}
+     * @throws {Error} on Supabase error
+     */
     getLogs: async function(userId, date) {
       Logger.log('api', 'habits.getLogs.start', {date});
       try {
@@ -105,7 +152,15 @@ window.API = {
       }
     },
 
-    /** Upserts a habit completion record. Throws on error. */
+    /**
+     * Upsert a habit completion record. Conflict key: user_id + log_date + habit_id.
+     * @param {string}  userId
+     * @param {string}  habitId
+     * @param {string}  date      - ISO date string (YYYY-MM-DD)
+     * @param {boolean} completed
+     * @returns {Promise<void>}
+     * @throws {Error} on Supabase error
+     */
     upsert: async function(userId, habitId, date, completed) {
       Logger.log('api', 'habits.upsert.start', {habitId, date, completed});
       try {
@@ -123,7 +178,12 @@ window.API = {
   },
 
   nutrition: {
-    /** Inserts a nutrition log entry. Throws on error. */
+    /**
+     * Insert a nutrition log entry and return the inserted entry.
+     * @param {Object} entry - nutrition_logs row (date, calories, protein_g, …)
+     * @returns {Promise<Object>} the original entry object
+     * @throws {Error} on Supabase error
+     */
     log: async function(entry) {
       Logger.log('api', 'nutrition.log.start', {date: entry.date});
       try {
@@ -137,7 +197,12 @@ window.API = {
       }
     },
 
-    /** Returns nutrition entry for a date or null. Returns null on error (does not throw). */
+    /**
+     * Return the nutrition log entry for a specific date, or null.
+     * Does not throw — returns null on error.
+     * @param {string} date - ISO date string (YYYY-MM-DD)
+     * @returns {Promise<Object|null>}
+     */
     getForDate: async function(date) {
       try {
         const {data, error} = await sb.from('nutrition_logs').select('*').eq('date', date).maybeSingle();

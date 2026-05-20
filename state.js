@@ -1,6 +1,30 @@
+/**
+ * state.js — Persistent application state backed by localStorage.
+ *
+ * PURPOSE: Typed, schema-validated read/write layer over localStorage.
+ *   Notifies registered listeners on any state change. All JSON
+ *   serialization/deserialization is handled internally.
+ *
+ * PUBLIC INTERFACE:
+ *   State.get(key)            — read and JSON-parse a key; null if missing/invalid
+ *   State.set(key, value)     — JSON-stringify and write; returns boolean success
+ *   State.setSafe(key, value) — schema-validate then write; returns boolean success
+ *   State.delete(key)         — remove a key; returns boolean success
+ *   State.getAll(prefix)      — read all keys with a prefix → {key: value}
+ *   State.keys(prefix)        — list all keys with a prefix → string[]
+ *   State.subscribe(listener) — register fn(key, value) called on any change
+ *
+ * CONNECTED TO: logs.js (Logger.error on failures)
+ *               api.js, app.js (primary consumers)
+ */
 window.State = {
   _subscribers: [],
 
+  /**
+   * Register a listener called whenever any key changes.
+   * @param {function(key: string, value: *): void} listener
+   * @returns {void}
+   */
   subscribe: function(listener) {
     if (typeof listener !== 'function') {
       Logger.error('state', 'subscribe.invalid_listener');
@@ -9,12 +33,23 @@ window.State = {
     this._subscribers.push(listener);
   },
 
+  /**
+   * Notify all registered subscribers of a state change.
+   * @param {string} key
+   * @param {*}      value - the new value (null if deleted)
+   * @returns {void}
+   */
   _notifySubscribers: function(key, value) {
     this._subscribers.forEach(listener => {
       try { listener(key, value); } catch(e) { Logger.error('state', '_notifySubscribers.error', e); }
     });
   },
 
+  /**
+   * Read a JSON-parsed value from localStorage.
+   * @param {string} key
+   * @returns {*} parsed value, or null if key is missing or JSON is invalid
+   */
   get: function(key) {
     try {
       const val = localStorage.getItem(key);
@@ -26,6 +61,12 @@ window.State = {
     }
   },
 
+  /**
+   * Write a value to localStorage as JSON and notify subscribers.
+   * @param {string} key
+   * @param {*}      value
+   * @returns {boolean} true on success, false if localStorage threw
+   */
   set: function(key, value) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -37,6 +78,13 @@ window.State = {
     }
   },
 
+  /**
+   * Validate value against the key's registered schema then write.
+   * Schema keys ending with '_' match any key that starts with that prefix.
+   * @param {string} key
+   * @param {*}      value
+   * @returns {boolean} true on success; false if validation or write fails
+   */
   setSafe: function(key, value) {
     let schema = this.schemas[key];
     if (!schema) {
@@ -54,6 +102,11 @@ window.State = {
     return this.set(key, value);
   },
 
+  /**
+   * Remove a key from localStorage and notify subscribers with null.
+   * @param {string} key
+   * @returns {boolean} true on success, false if localStorage threw
+   */
   delete: function(key) {
     try {
       localStorage.removeItem(key);
@@ -65,6 +118,11 @@ window.State = {
     }
   },
 
+  /**
+   * Read all localStorage keys that start with prefix.
+   * @param {string} prefix
+   * @returns {Object.<string, *>} map of {key: parsedValue}
+   */
   getAll: function(prefix) {
     const result = {};
     try {
@@ -81,6 +139,11 @@ window.State = {
     return result;
   },
 
+  /**
+   * List all localStorage key names matching an optional prefix.
+   * @param {string} [prefix] - if omitted, returns all keys
+   * @returns {string[]}
+   */
   keys: function(prefix) {
     const result = [];
     try {
