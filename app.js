@@ -343,7 +343,7 @@ sb.auth.onAuthStateChange(async(event,session)=>{
   if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
     if(!session){show('s-choose');return;}
     const profile=await loadProfile(session);
-    if(!profile)return;
+    if(!profile){show('s-choose');return;}
     if(profile.is_disabled){await sb.auth.signOut();show('s-choose');toast('Account disabled. Contact admin.',5000);return;}
     PROFILE=profile;
     if(profile.force_password_reset){show('s-fpr');return;}
