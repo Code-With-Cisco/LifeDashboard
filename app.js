@@ -3877,7 +3877,7 @@ function openAddCustomBook(){
 }
 // Patch saveBook to write to DB
 const _origSaveBook=typeof saveBook==='function'?saveBook:null;
-saveBook=async function(){
+window.saveBook=async function(){
   const title=document.getElementById('bk-title')?.value.trim();
   const author=document.getElementById('bk-author')?.value.trim();
   if(!title||!author){toast('Enter title and author');return;}
