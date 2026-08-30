@@ -1,0 +1,2 @@
+2026-08-17T01:32:09.5210871Z	PreToolUse:Edit|Write	builder	C:\Users\User\OneDrive\Documents\GitHub\LifeDashboard\test\guard-self-test.test.ts	BLOCK: Builder must not write tests or acceptance artifacts (test/guard-self-test.test.ts).
+2026-08-17T01:32:10.7297904Z	PreToolUse:PowerShell	builder	Set-Content -LiteralPath 'guard-self-test.txt' -Value blocked	BLOCK: PowerShell construct blocked: file-content cmdlet. Use Edit or Write for intentional file changes.
