@@ -29,7 +29,7 @@ jobs:
           cache: npm
 
       - name: Install and verify
-        run: npm ci --ignore-scripts && npm test -- --runInBand
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm test -- --runInBand
 
       - name: Build explicit public artifact
         env:
