@@ -16,27 +16,32 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate config.js from secrets
-        run: |
-          cat > config.js << 'EOF'
-          const CONFIG = Object.freeze({
-            supabaseUrl:  '${{ secrets.SUPABASE_URL }}',
-            supabaseKey:  '${{ secrets.SUPABASE_KEY }}',
-            signupCode:   '${{ secrets.SIGNUP_CODE }}',
-          });
-          EOF
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install and verify
+        run: npm ci --ignore-scripts && npm test -- --runInBand
+
+      - name: Build explicit public artifact
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: npm run build
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: dist
 
       - uses: actions/deploy-pages@v4
         id: deployment

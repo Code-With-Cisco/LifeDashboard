@@ -29,7 +29,8 @@ window.Logger = {
    */
   log: function(module, action, data) {
     const timestamp = new Date().toISOString();
-    const entry = {timestamp, module, action, level: 'INFO', data: data || null};
+    const scrub = window.SecurityService?.redact || (value => value);
+    const entry = {timestamp, module, action, level: 'INFO', data: data == null ? null : scrub(data)};
     console.log(`[${timestamp}] [${module}] ${action}`, data || '');
     this._history.push(entry);
     if (this._history.length > this._maxEntries) this._history.shift();
@@ -52,10 +53,13 @@ window.Logger = {
    */
   error: function(module, action, error) {
     const timestamp = new Date().toISOString();
+    const redactText = window.SecurityService?.redactText || (value => String(value));
     const entry = {
       timestamp, module, action, level: 'ERROR',
-      error: error?.message || String(error),
-      stack: error?.stack || null
+      error: redactText(error?.message || String(error)),
+      // Stack traces can contain URLs, tokens, and local paths. Keep them in the
+      // live console only; never persist them beside personal dashboard data.
+      stack: null
     };
     console.error(`[${timestamp}] [${module}] ${action} ERROR:`, error);
     this._history.push(entry);

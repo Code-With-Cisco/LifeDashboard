@@ -1,121 +1,53 @@
-# LifeDashboard — Architecture
+# LifeDashboard architecture
 
-## Overview
+## System boundary
 
-LifeDashboard is a single-page app (`index.html`) backed by Supabase. All user data lives in Supabase; static reference data (schedule, books year-plan metadata) comes from JSON files. There is no build step — open `index.html` in a browser.
+LifeDashboard is a static browser client backed by Supabase. GitHub Pages serves the public shell; Supabase Authentication and Row Level Security are the security boundary for personal records. The anonymous/publishable key is expected to be public and grants no privilege by itself.
 
-The JS layer is split across 9 focused modules loaded before `index.html`'s inline script. The inline script contains all UI logic and the staged loading pattern.
+```text
+Browser UI
+  ├─ SecurityService: escaping, identifier checks, log redaction
+  ├─ BriefingService: deterministic daily prioritization
+  ├─ domain services: recipes, habits, nutrition
+  ├─ API layer: user-scoped Supabase queries
+  └─ local cache: non-authoritative offline/UI state
+               |
+               v
+Supabase Auth + RLS-protected tables
 
----
-
-## Module Load Order
-
-```
-Supabase CDN
-  └── logs.js         Logger — console + localStorage log history
-       └── state.js   State — localStorage wrapper with schema validation
-            └── utils.js   DOM / ArrayUtils / StringUtils / FormatUtils helpers
-                 └── api.js     Supabase data access (recipes, habits, nutrition)
-                      └── render.js  Pure HTML template functions
-                           └── main.js    Orchestration: event delegation, page updates
-                                └── services/RecipeService.js   Recipe business logic
-                                └── services/HabitService.js    Habit business logic
-                                └── services/NutritionService.js Nutrition business logic
-  └── index.html inline script  (all UI logic, auth, staged loading)
+Future providers -> server-side connector broker -> normalized Supabase records
 ```
 
-Each module depends only on modules above it in the chain. Services have zero external dependencies — no DOM, no Supabase, no Logger calls.
+Privileged administration, OAuth token exchange, scheduled provider sync, and AI calls do not belong in the public client. They require a server-side function that revalidates the signed-in user and requested capability.
 
----
+## Load order
 
-## Staged Loading Pattern
+`index.html` loads Supabase, `config.js`, security and logging helpers, state/utilities/API/rendering modules, pure services, and finally `app.js`. SecurityService loads before any module that persists logs or renders user-controlled data.
 
-`index.html` uses a layered override pattern to progressively enhance base implementations:
+## Data flow
 
-```js
-// Base implementation (works without DB)
-renderHabits = function() { /* render from localStorage */ };
+1. Authentication establishes the user identity.
+2. API queries include the current user ID; database RLS must independently enforce that scope.
+3. Pure services calculate ratings, streaks, nutrition totals, and the command brief.
+4. UI renderers escape stored or remote text before placing it into HTML.
+5. Local storage is a cache, not an authorization boundary or source of truth.
 
-// STAGE 2: Override with DB-powered version
-const _origRenderHabits = renderHabits;
-renderHabits = async function() {
-  // fetch from Supabase, fall back to _origRenderHabits on error
-};
-```
+## Daily command brief
 
-This lets each stage build on prior stages without modifying them. New stages go at the bottom of the inline script.
+`BriefingService` accepts normalized tasks, today's calendar events, habit counts, and an optional workout. It ranks overdue and high-priority work deterministically, so the result is explainable and testable. A future AI narrator should receive this small output rather than unrestricted database access.
 
----
+## Current constraints
 
-## Data Flow
+- `app.js` remains a large legacy staged module with several historical overrides. New functionality should move toward small, tested modules rather than adding another override.
+- Some older API calls still live in `app.js`; migrate them into `api.js` as touched.
+- The database schema and RLS policies are not yet versioned in this repository. Export reviewed migrations before treating deployments as reproducible.
+- The static client cannot securely create users, reset arbitrary passwords, hold OAuth refresh tokens, or protect a shared invite code.
+- Unit coverage is strongest for pure services; auth, RLS, deployment, and browser flows still need integration tests.
 
-```
-User action
-  → index.html handler
-    → API.* (Supabase call, throws on error)
-      → Service.* (pure business logic on the returned data)
-        → Render.* (returns HTML string)
-          → DOM.setHTML() (writes to page)
-            → State.set() (persists to localStorage as cache/optimistic state)
-```
+## Supabase data domains
 
----
+The client currently references profiles, tasks, calendar events, habits, nutrition/meal logs, weight, workouts, recipes, books/reading lists, and finance records. Every table containing private data must have RLS enabled and policies tied to `auth.uid()`. See [SECURITY.md](SECURITY.md) for the release checklist.
 
-## Module Responsibilities
+## Graphify
 
-| File | Responsibility | Side effects |
-|------|---------------|--------------|
-| `logs.js` | Structured logging to console + localStorage | Writes `_app_logs` key |
-| `state.js` | localStorage wrapper: get/set/delete/validate | Writes any key, fires subscribers |
-| `utils.js` | Pure helpers: DOM, Array, String, Format | DOM writes via `DOM.*` |
-| `api.js` | All `sb.from()` calls — throws on error | Network requests |
-| `render.js` | Returns HTML strings, no DOM writes | None |
-| `main.js` | Event delegation, calls API → Render → DOM | DOM writes |
-| `services/RecipeService.js` | Rate, filter, suggest recipes | None |
-| `services/HabitService.js` | Completion %, streaks, day analysis | None |
-| `services/NutritionService.js` | Macro targets, sums, remaining | None |
-
----
-
-## State Management
-
-`State.js` wraps all localStorage access. Key naming conventions:
-
-| Prefix | Content |
-|--------|---------|
-| `cc_v4_*` | Content cache (meals, workouts, recipes from JSON) |
-| `habits_*` | Habit completion and list caches |
-| `goals_*` | User goal data |
-| `custom_*` | User-customized content |
-| `wit_*` | Work-in-time tracking data |
-| `debt_start_*` | Debt tracking data |
-| `_cachedRecipes` | Recipes loaded from Supabase |
-| `_cachedHabits` | Habits loaded from Supabase |
-| `_app_logs` | Logger history (written by Logger, not State) |
-
-`State.setSafe()` validates against schemas before writing. Unknown keys bypass validation and write directly.
-
----
-
-## Supabase Tables
-
-| Table | Purpose |
-|-------|---------|
-| `recipes` | User and template recipes with nutritional data |
-| `habit_logs` | Daily habit completion records (`user_id, log_date, habit_id, completed`) |
-| `nutrition_logs` | Daily nutrition entries |
-| `weight_logs` | Body weight over time |
-| `workout_logs` | Completed workout sessions |
-| `meal_logs` | Individual meal entries |
-| `profiles` | User preferences (calorie targets, protein targets, book ordering, etc.) |
-
-All user-preference data lives in `profiles` columns. No user-preference data is stored only in localStorage.
-
----
-
-## Static Data Files
-
-| File | Purpose | DB equivalent |
-|------|---------|---------------|
-| `books.json` | Book list with year-plan metadata (month, why) | Partial — `profiles.book_list_order` stores ordering only |
-| `schedule.json` | Reference schedule template | None — intentionally static |
+`graphify-out/graph.json` is the machine-readable knowledge graph, `GRAPH_REPORT.md` is the structural report, and `graph.html` is the interactive view. Rebuild the graph after architectural changes so repository analysis stays aligned with the code.

@@ -1,41 +1,50 @@
 # LifeDashboard
 
-A personal lifestyle dashboard for tracking habits, nutrition, recipes, workouts, finances, and more. Built as a single-page app backed by Supabase — no build step required.
+A private personal command center for habits, nutrition, recipes, workouts, finances, reading, goals, tasks, and calendar events. The home page now produces a deterministic daily command brief: what is due, what is on the calendar, habit progress, and the three best next actions.
 
-## Quick Start
+The browser application is static and uses Supabase for authentication and user-scoped data. It deliberately does not perform privileged account administration or store provider credentials.
 
-Open `index.html` in a browser. Supabase credentials are embedded in the file. All user data (habits, meals, recipes, weight, workouts) is stored in Supabase; the app falls back to localStorage cache when offline.
+## Local setup
 
-## Running Tests
+1. Install dependencies with `npm ci`.
+2. Copy `config.example.js` to the ignored `config.js`.
+3. Add your Supabase project URL and publishable/anonymous key. Never use a `service_role` key.
+4. Serve the repository with a local HTTP server and open it in a browser.
 
 ```bash
-npm install
-npm test                 # run all unit tests
-npm run test:coverage    # run with coverage report
+npm ci
+python -m http.server 8000
 ```
 
-Tests cover the three business-logic service modules (`services/`) and run entirely in Node.js — no browser or Supabase connection required.
+Self-signup is disabled by default. Provision users through a trusted server-side admin path, then use the sign-in screen.
 
-## Module Map
+## Verification and deployment
 
-| File | Purpose |
-|------|---------|
-| [logs.js](logs.js) | Structured logging — console + localStorage history |
-| [state.js](state.js) | localStorage wrapper with schema validation and change subscribers |
-| [utils.js](utils.js) | DOM helpers, array/string/format utilities |
-| [api.js](api.js) | Centralized Supabase data access (recipes, habits, nutrition) |
-| [render.js](render.js) | Pure HTML template functions |
-| [main.js](main.js) | Event delegation and page orchestration |
-| [services/RecipeService.js](services/RecipeService.js) | Recipe rating, filtering, and suggestions |
-| [services/HabitService.js](services/HabitService.js) | Habit completion tracking and streak calculation |
-| [services/NutritionService.js](services/NutritionService.js) | Macro target management and consumption tracking |
+```bash
+npm test -- --runInBand
+npm audit --audit-level=high
 
-The `index.html` inline script contains all UI logic and uses a staged loading pattern to progressively layer DB-driven behavior on top of base implementations.
+# Production build requires the public Supabase browser values.
+SUPABASE_URL=https://your-project.supabase.co \
+SUPABASE_KEY=your-publishable-key npm run build
+```
 
-## Architecture
+The build creates `dist/` from an explicit public-file allowlist. GitHub Pages deploys only that directory. Repository tools, tests, documentation, and local files are not published.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module dependency graph, data flow, staged loading pattern, and Supabase table reference.
+## Project map
 
-## Contributing
+| Area | Files |
+|---|---|
+| Application shell and UI behavior | `index.html`, `styles.css`, `app.js` |
+| Supabase access and orchestration | `api.js`, `main.js` |
+| Local state, logging, utilities | `state.js`, `logs.js`, `utils.js`, `render.js` |
+| Pure domain logic | `services/` |
+| Unit tests | `test/` |
+| Safe static build | `scripts/build-static.js` |
+| Codebase knowledge graph | `graphify-out/graph.html`, `graphify-out/GRAPH_REPORT.md` |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, where to add things, and commit conventions.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) before loading personal data, and [INTEGRATIONS.md](INTEGRATIONS.md) for the Jarvis-style roadmap.
+
+## Current direction
+
+The next architectural step is a small server-side connector broker for OAuth, scheduled sync, account invitations, and password administration. It should feed a minimal normalized summary into the dashboard. AI narration can be added after that boundary is in place; action-taking should always remain separately authorized and auditable.

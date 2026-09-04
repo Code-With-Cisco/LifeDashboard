@@ -4,6 +4,7 @@
   "description": "LifeStyle Dashboard",
   "main": "main.js",
   "scripts": {
+    "build": "node scripts/build-static.js",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },
@@ -12,7 +13,7 @@
     "url": "git+https://github.com/Code-With-Cisco/LifeDashboard.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Cisco",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {

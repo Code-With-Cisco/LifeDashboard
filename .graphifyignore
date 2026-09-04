@@ -1,0 +1,7 @@
+node_modules/
+coverage/
+dist/
+graphify-out/
+.claude/
+config.js
+.env*

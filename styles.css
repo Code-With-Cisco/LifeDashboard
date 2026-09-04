@@ -182,6 +182,16 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 .home-hero::before{content:"";position:absolute;top:-40px;right:-40px;width:180px;height:180px;background:radial-gradient(circle,rgba(232,64,64,.12),transparent 70%);pointer-events:none}
 .home-greeting{font-family:"Bebas Neue",sans-serif;font-size:38px;letter-spacing:2px;line-height:1;margin-bottom:3px}
 .home-date{font-size:12px;color:var(--t3);font-family:"DM Mono",monospace}
+.command-brief{background:linear-gradient(135deg,rgba(77,159,236,.09),rgba(34,201,122,.05));border:1px solid rgba(77,159,236,.24);border-radius:var(--r2);padding:16px;margin-bottom:18px}
+.brief-headline{font-family:"Bebas Neue",sans-serif;font-size:23px;letter-spacing:1.2px;margin-bottom:3px}
+.brief-summary{color:var(--t3);font-size:12px;margin-bottom:12px}
+.brief-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.brief-focus{display:flex;gap:9px;align-items:flex-start;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px}
+.brief-rank{font-family:"DM Mono",monospace;color:var(--blu);font-size:11px;padding-top:2px}
+.brief-kind{text-transform:uppercase;letter-spacing:.7px;color:var(--t3);font-size:9px}
+.brief-title{font-size:12px;font-weight:600;line-height:1.35;margin-top:2px}
+.brief-alert{margin-top:10px;padding:8px 10px;border-radius:var(--r);background:var(--amb-ll);color:var(--amb);font-size:11px}
+.brief-empty{color:var(--t3);font-size:12px;padding:8px 0}
 .loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--t3);font-size:13px;gap:10px}
 .spinner{width:20px;height:20px;border:2px solid var(--b2);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -189,7 +199,7 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
   #nav{display:none}#bnav{display:flex}
   #main{height:calc(100dvh - 58px)}
   #topbar{height:46px;padding:0 14px}.tb-menu{display:flex}
-  .page{padding:14px}.g2,.g4{grid-template-columns:1fr 1fr}
+  .page{padding:14px}.g2,.g4{grid-template-columns:1fr 1fr}.brief-grid{grid-template-columns:1fr}
 }
 @media(max-width:480px){.g2,.g4{grid-template-columns:1fr}}
 

@@ -2,7 +2,7 @@
 
 ## Dev Setup
 
-No build step required. Open `index.html` directly in a browser (or serve with any static file server if Supabase CORS policies require an origin).
+Use a local HTTP server for development. The production workflow runs an explicit static build before publishing.
 
 ### Step 1: Get your Supabase credentials
 
@@ -19,10 +19,10 @@ cp config.example.js config.js
 Open `config.js` and fill in your real values:
 
 ```js
-const CONFIG = Object.freeze({
+window.CONFIG = Object.freeze({
   supabaseUrl:  'https://your-project.supabase.co',
   supabaseKey:  'your-anon-key-here',
-  signupCode:   'your-signup-code-here',
+  allowSelfSignup: false,
 });
 ```
 
@@ -57,7 +57,7 @@ npm test          # run all tests
 npm run test:coverage  # run with coverage report
 ```
 
-Tests live in `test/` and cover the three service files in `services/`. They run in Node.js via Jest with a jsdom environment and have zero network dependencies.
+Tests live in `test/` and cover the pure service files in `services/`. They run in Node.js via Jest with a jsdom environment and have zero network dependencies.
 
 ## Commit Conventions
 
@@ -116,3 +116,11 @@ Files in `services/` must:
 - Have corresponding tests in `test/`
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module map and data flow.
+
+## Security rules
+
+- Never commit a Supabase `service_role` key, provider token, shared signup secret, or personal export.
+- Escape stored and provider-sourced text before inserting it into HTML; prefer `textContent` when practical.
+- Do not implement user administration, OAuth token exchange, or AI-provider calls in browser code.
+- Database changes must include reviewed RLS policies and cross-user isolation tests.
+- Run `npm audit --audit-level=high` and review [SECURITY.md](SECURITY.md) before deployment.

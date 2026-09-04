@@ -51,12 +51,7 @@ window.sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
  * @returns {string}
  */
 function escapeAttr(val){
-  return String(val==null?'':val)
-    .replace(/&/g,'&amp;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;');
+  return SecurityService.escapeAttr(val);
 }
 
 /**
@@ -65,11 +60,10 @@ function escapeAttr(val){
  * @returns {string}
  */
 function escapeHtml(val){
-  return String(val==null?'':val)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;');
+  return SecurityService.escapeHtml(val);
 }
+
+function safeIdentifier(val){return SecurityService.safeIdentifier(val);}
 
 /**
  * Returns a debounced version of fn that delays invocation until after
@@ -192,6 +186,13 @@ function show(id){
 function hideAuth(){document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('show'));}
 
 // AUTH
+function startSignup(){
+  if(CONFIG.allowSelfSignup!==true){
+    toast('Self-signup is disabled. Use a secure administrator invitation.',5000);
+    return;
+  }
+  show('s-signup');
+}
 async function doLogin(){
   const btn=document.getElementById('login-btn');
   const email=document.getElementById('l-email').value.trim();
@@ -203,11 +204,13 @@ async function doLogin(){
   if(error)showErr('login-err',error.message.includes('Invalid')?'Incorrect email or password.':error.message);
 }
 function checkCode(){
-  const val=document.getElementById('s-code-inp').value.trim();
-  if(val.toLowerCase()===CONFIG.signupCode.toLowerCase()){show('s-signup');}
-  else{showErr('code-err','Invalid invite code.');document.getElementById('s-code-inp').value='';}
+  startSignup();
 }
 async function doSignup(){
+  if(CONFIG.allowSelfSignup!==true){
+    showErr('signup-err','Self-signup is disabled. Ask the administrator for a secure invitation.');
+    return;
+  }
   const btn=document.getElementById('signup-btn');
   const display=document.getElementById('su-display').value.trim();
   const username=document.getElementById('su-user').value.trim().toLowerCase();
@@ -334,7 +337,10 @@ function showDbError(msg){
   const banner=document.createElement('div');
   banner.id='db-err-banner';
   banner.style.cssText='background:#1a0a0a;border:1px solid rgba(232,64,64,.4);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:12px;line-height:1.7;color:#E84040';
-  banner.innerHTML='<strong>Sign-in Error</strong><br>'+(msg||'Database issue detected.')+'<br><br>Run <strong>fix.sql</strong> in Supabase SQL Editor, then reload.';
+  const title=document.createElement('strong');title.textContent='Sign-in Error';
+  const instructions=document.createElement('span');
+  instructions.textContent=(msg||'Database issue detected.')+' Run the reviewed database repair migration, then reload.';
+  banner.append(title,document.createElement('br'),instructions);
   box.insertBefore(banner,box.firstChild);
 }
 
@@ -521,6 +527,25 @@ function goto(pid){
 function toggleMobileNav(){}
 
 // HOME
+function renderDailyBrief(brief){
+  const el=document.getElementById('home-command-brief');if(!el||!brief)return;
+  const kindLabel={task:'TASK',event:'CALENDAR',workout:'TRAINING'};
+  const focusHtml=brief.focus.length?brief.focus.map((item,index)=>`
+    <div class="brief-focus">
+      <div class="brief-rank">${index+1}</div>
+      <div style="min-width:0;flex:1">
+        <div class="brief-kind">${kindLabel[item.kind]||'FOCUS'} · ${escapeHtml(item.reason)}</div>
+        <div class="brief-title">${escapeHtml(item.title)}</div>
+      </div>
+    </div>`).join(''):'<div class="brief-empty">No deadline is driving the day. Pick one meaningful next action.</div>';
+  const alertsHtml=brief.alerts.map(alert=>`<div class="brief-alert">${escapeHtml(alert)}</div>`).join('');
+  el.innerHTML=`
+    <div class="brief-headline">${escapeHtml(brief.headline)}</div>
+    <div class="brief-summary">${escapeHtml(brief.summary)}</div>
+    <div class="brief-grid">${focusHtml}</div>
+    ${alertsHtml}`;
+}
+
 async function renderHome(){
   const doy=Math.floor((new Date()-new Date(new Date().getFullYear(),0,0))/86400000);
   const q=QUOTES[doy%QUOTES.length];const wd=WORDS[doy%WORDS.length];
@@ -541,7 +566,10 @@ async function renderHome(){
   const{data:wts}=await sb.from('weight_logs').select('weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(1);
   if(wts?.length)set('qs-wt',wts[0].weight_lbs);
   const{data:habits}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',todayStr());
-  set('qs-hab',(habits||[]).filter(h=>h.completed).length+'/17');
+  const completedHabits=(habits||[]).filter(h=>h.completed).length;
+  const totalHabits=(typeof getUserHabitSecs==='function'?getUserHabitSecs():HABIT_SECS)
+    .reduce((count,section)=>count+(section.habits||[]).length,0);
+  set('qs-hab',completedHabits+'/'+totalHabits);
   let streak=0;
   for(let i=0;i<14;i++){
     const d=new Date();d.setDate(d.getDate()-i);
@@ -549,20 +577,27 @@ async function renderHome(){
     if((dh||[]).filter(h=>h.completed).length>=10)streak++;else break;
   }
   set('qs-str',streak);
+  const [{data:ub_d},{data:ub_s},{data:evs},{data:briefTodos}]=await Promise.all([
+    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),
+    sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',PROFILE.id),
+    sb.from('calendar_events').select('*').eq('user_id',PROFILE.id),
+    sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',PROFILE.id).neq('status','Done'),
+  ]);
+  renderDailyBrief(BriefingService.build({
+    today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
+    habitTotal:totalHabits,workout:todayWk||null
+  }));
   const evEl=document.getElementById('home-events');
   if(evEl){
     const dayNum=new Date().getDate();
-    const{data:ub_d}=await sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id);
-    const{data:ub_s}=await sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',PROFILE.id);
     const allBills=[...(ub_d||[]).filter(d=>d.due_day).map(d=>({l:d.debt_name,d:d.due_day,c:'r'})),...(ub_s||[]).filter(s=>s.renewal_day).map(s=>({l:s.sub_name,d:s.renewal_day,c:'b'}))];
     const upcoming=allBills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({...b,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d'}));
-    const{data:evs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id);
     (evs||[]).forEach(e=>{
       const diff=Math.round((new Date(e.event_date+'T12:00:00')-new Date(new Date().toDateString()))/86400000);
       if(diff>=0&&diff<=3)upcoming.push({l:e.title,badge:diff===0?'Today':'In '+diff+'d',c:e.event_type||'b'});
     });
     evEl.innerHTML=upcoming.length
-      ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${e.c}" style="flex-shrink:0">${e.badge}</span><span style="font-size:13px">${e.l}</span></div>`).join('')
+      ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${e.c}" style="flex-shrink:0">${escapeHtml(e.badge)}</span><span style="font-size:13px">${escapeHtml(e.l)}</span></div>`).join('')
       :'<div style="font-size:12px;color:var(--t3)">No upcoming bills or events in the next 5 days.</div>';
   }
 }
@@ -963,9 +998,11 @@ async function renderMonth(){
     (ebd[ds]||[]).forEach(e=>evs.push(e));
     html+=`<div class="cal-day${isToday?' today':''}" onclick="openEventModal('${ds}')"><div class="cal-dn">${day}</div>`;
     evs.slice(0,3).forEach(e=>{
-      const isUserEv=!!e.id;
-      const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${e.id}')`:'';
-      html+=`<div class="cal-ev ${e.event_type||'b'}" ${isUserEv?`onclick="${clickHandler}" style="cursor:pointer" title="Click to edit"`:''}>${e.title}</div>`;
+      const eventId=safeIdentifier(e.id);
+      const isUserEv=!!eventId;
+      const eventType=['r','g','a','b'].includes(e.event_type)?e.event_type:'b';
+      const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${eventId}')`:'';
+      html+=`<div class="cal-ev ${eventType}" ${isUserEv?`onclick="${clickHandler}" style="cursor:pointer" title="Click to edit"`:''}>${escapeHtml(e.title)}</div>`;
     });
     if(evs.length>3)html+=`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`;
     html+='</div>';
@@ -978,6 +1015,8 @@ async function renderWeek(){
   const title=document.getElementById('cal-title');
   const sw=new Date(calDate);sw.setDate(calDate.getDate()-calDate.getDay());
   const dates=Array.from({length:7},(_,i)=>{const d=new Date(sw);d.setDate(sw.getDate()+i);return d;});
+  const rangeStart=dates[0].toLocaleDateString('en-CA');
+  const rangeEnd=dates[6].toLocaleDateString('en-CA');
   if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
   const wkP={1:'Upper Push',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
   const hours=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
@@ -990,7 +1029,7 @@ async function renderWeek(){
     const end=new Date(endStr+'T12:00:00');
     for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
       const ds=d.toLocaleDateString('en-CA');
-      if(ds>=mS&&ds<=mE){
+      if(ds>=rangeStart&&ds<=rangeEnd){
         if(!ebd[ds])ebd[ds]=[];
         // Mark continuation days for visual distinction
         ebd[ds].push({...e,_isStart:ds===e.event_date,_isEnd:ds===endStr,_isCont:ds!==e.event_date});
@@ -1013,7 +1052,7 @@ async function renderWeek(){
       if(h===11&&dow===0)evs.push({title:'Meal Prep',event_type:'g'});
       (ebd[k]||[]).filter(e=>e.event_time&&parseInt(e.event_time)===h).forEach(e=>evs.push(e));
       const cols={r:'var(--red-l)',g:'var(--grn-l)',a:'var(--amb-l)',b:'var(--blu-l)'};
-      html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>`<div style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'}">${e.title}</div>`).join('')}</div>`;
+      html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>`<div style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'}">${escapeHtml(e.title)}</div>`).join('')}</div>`;
     });
   });
   html+='</div></div>';el.innerHTML=html;
@@ -1028,7 +1067,7 @@ async function renderDay(){
   const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).eq('event_date',ds);
   const all=[...schedItems,...(uEvs||[]).map(e=>({time:e.event_time,title:e.title,type:e.event_type}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
   const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',d:'var(--b2)'};
-  el.innerHTML=all.map(e=>`<div class="ev-chip" style="margin-bottom:6px"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${e.time||e.event_time||''}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${e.title}</span></div>`).join('');
+  el.innerHTML=all.map(e=>`<div class="ev-chip" style="margin-bottom:6px"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${escapeHtml(e.title)}</span></div>`).join('');
 }
 function openEventModal(dateStr,editId,eventData){
   evEditId=editId||null;
@@ -1208,7 +1247,8 @@ async function renderDebtList(){
   el.innerHTML=(debts||[]).map(d=>{
     const mo=d.interest_rate?d.balance*(d.interest_rate/100/12):0;
     const mos=d.monthly_payment>mo?Math.ceil(d.balance/(d.monthly_payment-mo)):'?';
-    return`<div class="fin-row"><div><div class="fin-name">${d.debt_name}</div><div class="fin-note">$${d.monthly_payment}/mo - ${d.interest_rate}% APR${typeof mos==='number'?' - ~'+mos+'mo payoff':''}</div></div><div style="display:flex;gap:5px;align-items:center"><div class="fin-amt" style="color:var(--red)">$${(d.balance||0).toLocaleString()}</div><button class="btn btn-o btn-xs" onclick="editDebt('${d.id}')">Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeDebt('${d.id}')">X</button></div></div>`;
+    const debtId=safeIdentifier(d.id);
+    return`<div class="fin-row"><div><div class="fin-name">${escapeHtml(d.debt_name)}</div><div class="fin-note">$${Number(d.monthly_payment||0).toFixed(2)}/mo - ${Number(d.interest_rate||0).toFixed(2)}% APR${typeof mos==='number'?' - ~'+mos+'mo payoff':''}</div></div><div style="display:flex;gap:5px;align-items:center"><div class="fin-amt" style="color:var(--red)">$${Number(d.balance||0).toLocaleString()}</div><button class="btn btn-o btn-xs" onclick="editDebt('${debtId}')" ${debtId?'':'disabled'}>Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeDebt('${debtId}')" ${debtId?'':'disabled'}>X</button></div></div>`;
   }).join('')||'<div style="color:var(--t3);font-size:12px">No debts tracked.</div>';
   const cc=(debts||[]).find(d=>d.debt_name?.toLowerCase().includes('HIGHINTEREST_CC'))||{balance:800};
   const pct=Math.round(Math.max(0,(800-cc.balance)/800*100));
@@ -1241,7 +1281,7 @@ async function renderSubList(){
   const{data:subs}=await sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id);
   const el=document.getElementById('sub-list');if(!el)return;
   const ACOL={Keep:'g',Cancel:'r',Pause:'a',Review:'b'};
-  el.innerHTML=(subs||[]).map(s=>`<div class="fin-row"><div><div class="fin-name">${s.sub_name}</div><div class="fin-note">Due day ${s.renewal_day}</div></div><div style="display:flex;gap:5px;align-items:center"><span class="badge b-${ACOL[s.action]||'d'}">${s.action}</span><div class="fin-amt">$${(s.monthly_cost||0).toFixed(2)}</div><button class="btn btn-o btn-xs" onclick="editSub('${s.id}')">Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeSub('${s.id}')">X</button></div></div>`).join('')||'<div style="color:var(--t3);font-size:12px">No subscriptions.</div>';
+  el.innerHTML=(subs||[]).map(s=>{const subId=safeIdentifier(s.id);return`<div class="fin-row"><div><div class="fin-name">${escapeHtml(s.sub_name)}</div><div class="fin-note">Due day ${Number(s.renewal_day)||'--'}</div></div><div style="display:flex;gap:5px;align-items:center"><span class="badge b-${ACOL[s.action]||'d'}">${escapeHtml(s.action)}</span><div class="fin-amt">$${Number(s.monthly_cost||0).toFixed(2)}</div><button class="btn btn-o btn-xs" onclick="editSub('${subId}')" ${subId?'':'disabled'}>Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeSub('${subId}')" ${subId?'':'disabled'}>X</button></div></div>`;}).join('')||'<div style="color:var(--t3);font-size:12px">No subscriptions.</div>';
 }
 function openSubModal(){subEditId=null;document.getElementById('sub-modal-title').textContent='ADD SUBSCRIPTION';['s-name','s-cost','s-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('s-action').value='Keep';document.getElementById('sub-edit-id').value='';openModal('sub-modal');}
 async function editSub(id){const{data:s}=await sb.from('subscription_tracker').select('*').eq('id',id).single();if(!s)return;subEditId=id;document.getElementById('sub-modal-title').textContent='EDIT SUBSCRIPTION';document.getElementById('s-name').value=s.sub_name;document.getElementById('s-cost').value=s.monthly_cost;document.getElementById('s-due').value=s.renewal_day;document.getElementById('s-action').value=s.action;document.getElementById('sub-edit-id').value=id;openModal('sub-modal');}
@@ -1423,59 +1463,47 @@ async function renderAdmin(){
   set('a-total',all.length);set('a-admins',all.filter(u=>u.role==='admin').length);
   set('a-standard',all.filter(u=>u.role==='standard').length);set('a-disabled',all.filter(u=>u.is_disabled).length);
   const el=document.getElementById('user-list');if(!el)return;
-  el.innerHTML=all.map(u=>`
+  el.innerHTML=all.map(u=>{
+    const uid=safeIdentifier(u.id);
+    const isAdmin=u.role==='admin';
+    const displayName=escapeHtml(u.display_name||'--');
+    const username=escapeHtml(u.username||'--');
+    const joined=Number.isNaN(new Date(u.created_at).getTime())?'Unknown':new Date(u.created_at).toLocaleDateString();
+    return`
     <div class="user-row">
-      <div class="user-av" style="background:${u.role==='admin'?'var(--red)':'var(--blu)'}">
-        ${(u.display_name||u.username||'U')[0].toUpperCase()}
+      <div class="user-av" style="background:${isAdmin?'var(--red)':'var(--blu)'}">
+        ${escapeHtml((u.display_name||u.username||'U')[0].toUpperCase())}
       </div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">
-          <div style="font-size:13px;font-weight:600">${u.display_name||'--'}</div>
-          <span class="badge b-${u.role==='admin'?'r':'b'}">${u.role}</span>
+          <div style="font-size:13px;font-weight:600">${displayName}</div>
+          <span class="badge b-${isAdmin?'r':'b'}">${isAdmin?'admin':'standard'}</span>
           ${u.is_disabled?'<span class="badge b-d">Disabled</span>':''}
           ${u.force_password_reset?'<span class="badge b-a">Reset Pending</span>':''}
           ${u.id===PROFILE.id?'<span class="badge b-g">You</span>':''}
         </div>
-        <div style="font-size:11px;color:var(--t3)">@${u.username||'--'} - Joined ${new Date(u.created_at).toLocaleDateString()} - ${u.signup_complete?'Setup complete':'Questionnaire pending'}</div>
+        <div style="font-size:11px;color:var(--t3)">@${username} - Joined ${escapeHtml(joined)} - ${u.signup_complete?'Setup complete':'Questionnaire pending'}</div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--t2)">
-            <input type="checkbox" ${u.role==='admin'?'checked':''} style="accent-color:var(--red);width:14px;height:14px" onchange="toggleAdminRole('${u.id}',this.checked)" ${u.id===PROFILE.id?'disabled':''}>
+            <input type="checkbox" ${isAdmin?'checked':''} style="accent-color:var(--red);width:14px;height:14px" onchange="toggleAdminRole('${uid}',this.checked)" ${u.id===PROFILE.id||!uid?'disabled':''}>
             Admin mode
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--t2)">
-            <input type="checkbox" ${u.is_disabled?'checked':''} style="accent-color:var(--amb);width:14px;height:14px" onchange="toggleDisable('${u.id}',this.checked)" ${u.id===PROFILE.id?'disabled':''}>
+            <input type="checkbox" ${u.is_disabled?'checked':''} style="accent-color:var(--amb);width:14px;height:14px" onchange="toggleDisable('${uid}',this.checked)" ${u.id===PROFILE.id||!uid?'disabled':''}>
             Disable account
           </label>
         </div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        ${u.id!==PROFILE.id?`<button class="btn btn-o btn-xs" onclick="openResetPassModal('${u.id}')">Reset Password</button>`:''}
-      </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 async function toggleAdminRole(uid,isAdmin){await sb.from('profiles').update({role:isAdmin?'admin':'standard'}).eq('id',uid);toast(isAdmin?'Admin role granted':'Admin role removed');renderAdmin();}
 async function toggleDisable(uid,disabled){await sb.from('profiles').update({is_disabled:disabled}).eq('id',uid);toast(disabled?'Account disabled':'Account enabled');renderAdmin();}
-function openResetPassModal(uid){document.getElementById('rp-uid').value=uid;document.getElementById('rp-pass').value='';document.getElementById('rp-force').checked=true;document.getElementById('rp-err').style.display='none';openModal('reset-pass-modal');}
 async function adminResetPass(){
-  const uid=document.getElementById('rp-uid').value;
-  const pass=document.getElementById('rp-pass').value.trim();
-  const force=document.getElementById('rp-force').checked;
-  if(!pass){document.getElementById('rp-err').textContent='Enter a temporary password.';document.getElementById('rp-err').style.display='block';return;}
-  if(force)await sb.from('profiles').update({force_password_reset:true}).eq('id',uid);
-  closeModal('reset-pass-modal');
-  toast('Reset flag set. Go to Supabase Dashboard > Auth > Users to set their password to: '+pass,6000);
+  toast('Password administration is disabled in the browser client. Use a reviewed server-side invitation function.',6000);
 }
 async function adminCreateUser(){
-  const errEl=document.getElementById('nu-err');errEl.style.display='none';
-  const display=document.getElementById('nu-display').value.trim();
-  const email=document.getElementById('nu-email').value.trim();
-  const pass=document.getElementById('nu-pass').value;
-  if(!display||!email||!pass){errEl.textContent='All fields required.';errEl.style.display='block';return;}
-  const{error}=await sb.auth.signUp({email,password:pass,options:{data:{display_name:display,role:'standard',force_password_reset:true}}});
-  if(error){errEl.textContent=error.message;errEl.style.display='block';return;}
-  closeModal('add-user-modal');toast('Account created. User must change password on first login.');
-  ['nu-display','nu-email','nu-pass'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  renderAdmin();
+  toast('Secure invitations require a server-side function. Browser-created users are intentionally disabled.',6000);
 }
 window.addEventListener('DOMContentLoaded',()=>{
   // Clear stale content caches from old versions
@@ -1722,25 +1750,10 @@ renderWit=function(){
   if(netCard)netCard.className='stat '+(net>0?'card-g':net<0?'card-r':'');
 }
 
-// ── ADMIN – REPLACE BROKEN CREATE USER WITH INVITE FLOW ─────────
+// Browser clients must never mint accounts or distribute reusable invite codes.
+// A future server-side connector can replace this notice with one-time invites.
 adminCreateUser=async function(){
-  const errEl=document.getElementById('nu-err');errEl.style.display='none';
-  const email=document.getElementById('nu-email').value.trim();
-  if(!email){errEl.textContent='Enter the email to invite.';errEl.style.display='block';return;}
-  // Copy invite info to clipboard
-  const msg='You have been invited to the Life Dashboard!\n\nURL: https://code-with-cisco.github.io/LifeDashboard/\nInvite Code: Memento Mori\n\nClick Create Account, enter the invite code when prompted, then register with your email ('+email+').';
-  try{await navigator.clipboard.writeText(msg);toast('Invite message copied to clipboard!');}
-  catch(e){toast('Invite URL: code-with-cisco.github.io/LifeDashboard — Code: Memento Mori');}
-  closeModal('add-user-modal');
-}
-
-// Patch the add user modal HTML dynamically
-const addUserModal=document.getElementById('add-user-modal');
-if(addUserModal){
-  const title=addUserModal.querySelector('.modal-title');
-  if(title)title.textContent='INVITE USER';
-  const body=addUserModal.querySelector('div[style*="font-size:12px"]');
-  if(body)body.innerHTML='Enter the email you want to invite. The invite message will be copied to your clipboard — paste it to them directly.';
+  toast('Secure invitations require a server-side function. Browser-created users are intentionally disabled.',6000);
 }
 
 // ── PATCH renderFinancial to call updateFinancialBoxes ───────────
@@ -2026,22 +2039,28 @@ function editGoal(si,gi){
   openModal('add-goal-modal');
 }
 // Override renderGoals with edit button
+function openAddGoalForSection(sectionIndex){
+  const section=getUserGoalData()[Number(sectionIndex)];
+  const input=document.getElementById('ag-sec');
+  if(input&&section)input.value=section.sec||'';
+  openAddGoal();
+}
 renderGoals=function(){
   const el=document.getElementById('goals-list');if(!el)return;
   const data=getUserGoalData();
   el.innerHTML=data.map((gs,si)=>`
-    <div class="sh">${gs.sec}</div>
+    <div class="sh">${escapeHtml(gs.sec)}</div>
     ${gs.goals.map((g,gi)=>`
-      <div class="goal-item" data-freq="${g.freq}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
-        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${g.freq}</span>
-        <span style="flex:1;font-size:13px">${g.g}</span>
-        <span class="badge b-${PCOL[g.p]||'d'}">${g.p}</span>
+      <div class="goal-item" data-freq="${escapeAttr(g.freq)}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:5px">
+        <span class="badge b-${FCOL[g.freq]||'d'}" style="flex-shrink:0;width:52px;justify-content:center">${escapeHtml(g.freq)}</span>
+        <span style="flex:1;font-size:13px">${escapeHtml(g.g)}</span>
+        <span class="badge b-${PCOL[g.p]||'d'}">${escapeHtml(g.p)}</span>
         ${goalEditMode?`<div style="display:flex;gap:3px">
           <button onclick="editGoal(${si},${gi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
           <button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
         </div>`:''}
       </div>`).join('')}
-    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="document.getElementById('ag-sec').value='${gs.sec}';openAddGoal()" style="margin-bottom:8px;width:100%">+ Add to ${gs.sec}</button>`:''}
+    ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="openAddGoalForSection(${si})" style="margin-bottom:8px;width:100%">+ Add to ${escapeHtml(gs.sec)}</button>`:''}
     <div style="height:4px"></div>`).join('')
     +(goalEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-top:6px" onclick="openAddGoal()">+ Add New Goal</button>`:'');
 };
@@ -2180,7 +2199,7 @@ renderNutrition=async function(){
   // Meal entries list
   const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
   const mEl=document.getElementById('meal-entries');
-  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>`<div class="meal-entry"><div class="meal-entry-name">${m.meal_name}</div><div class="meal-macros">${m.calories}cal - ${m.protein_g}P - ${m.carbs_g}C - ${m.fat_g}F</div><button class="meal-del" onclick="deleteMeal('${m.id}')">x</button></div>`).join('')
+  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>{const mealId=safeIdentifier(m.id);return`<div class="meal-entry"><div class="meal-entry-name">${escapeHtml(m.meal_name)}</div><div class="meal-macros">${Number(m.calories)||0}cal - ${Number(m.protein_g)||0}P - ${Number(m.carbs_g)||0}C - ${Number(m.fat_g)||0}F</div>${mealId?`<button class="meal-del" onclick="deleteMeal('${mealId}')">x</button>`:''}</div>`;}).join('')
     ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today.</div>':'');
   // Reference meal tabs
   const tabsEl=document.getElementById('nut-ref-tabs');const panelsEl=document.getElementById('nut-ref-panels');
@@ -2192,16 +2211,21 @@ renderNutrition=async function(){
       const items=(mPlan[cat]||FALLBACK_MEALS[cat]||[]);
       return`<div class="nut-panel" id="nrp-${i}" style="display:${i===0?'block':'none'}">${
         items.map(m=>{
-          const sn=m.name.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
-          return`<div class="card-sm" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;cursor:pointer;border:1px solid transparent;transition:border .15s" onclick="quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})" onmouseover="this.style.borderColor='var(--grn)'" onmouseout="this.style.borderColor='transparent'">
-            <div><div style="font-size:13px;font-weight:600">${m.name}</div><div class="mono" style="font-size:11px;color:var(--t3)">${m.cal} cal - ${m.protein}g P - ${m.carbs}g C - ${m.fat}g F</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${m.instructions||''}</div></div>
-            <button class="btn btn-g btn-xs" onclick="event.stopPropagation();quickLog('${sn}',${m.cal},${m.protein},${m.carbs},${m.fat})">+Log</button>
+          return`<div class="card-sm" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;border:1px solid transparent;transition:border .15s">
+            <div><div style="font-size:13px;font-weight:600">${escapeHtml(m.name)}</div><div class="mono" style="font-size:11px;color:var(--t3)">${Number(m.cal)||0} cal - ${Number(m.protein)||0}g P - ${Number(m.carbs)||0}g C - ${Number(m.fat)||0}g F</div><div style="font-size:11px;color:var(--t3);margin-top:2px">${escapeHtml(m.instructions||'')}</div></div>
+            <button class="btn btn-g btn-xs" onclick="quickLogPlanMeal('${cat}',${items.indexOf(m)})">+Log</button>
           </div>`;
         }).join('')||'<div style="color:var(--t3);font-size:12px">No meals in plan.</div>'
       }</div>`;
     }).join('');
   }
 };
+
+function quickLogPlanMeal(category,index){
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
+  const meal=(mPlan?.[category]||FALLBACK_MEALS[category]||[])[Number(index)];
+  if(meal)quickLog(meal.name,Number(meal.cal)||0,Number(meal.protein)||0,Number(meal.carbs)||0,Number(meal.fat)||0);
+}
 
 // ── ICS CALENDAR IMPORT ─────────────────────────────────────────
 async function importICS(input){
@@ -2763,6 +2787,7 @@ renderTodo=async function(){
   sorted.forEach(item=>{
     const sc=STATUS_COL[item.status]||'d';
     const isDone=item.status==='Done';
+    const itemId=safeIdentifier(item.id);
     let dueHtml='';
     if(item.due_date){
       const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
@@ -2775,18 +2800,18 @@ renderTodo=async function(){
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
-            <span class="badge b-${sc}">${item.status}</span>
+            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${escapeHtml(item.title)}</div>
+            <span class="badge b-${sc}">${escapeHtml(item.status)}</span>
             ${dueHtml}
             ${pbCount>0&&!isDone?`<span style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace">(pushed ${pbCount}x)</span>`:''}
           </div>
-          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
+          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${escapeHtml(item.description)}</div>`:''}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${item.id}')">Undo</button>`}
-          ${!isDone?`<button class="btn btn-o btn-xs" onclick="pushBackTodo('${item.id}')" title="Push to later">&#x23E9; Push</button>`:''}
-          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
-          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
+          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${itemId}')" ${itemId?'':'disabled'}>&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${itemId}')" ${itemId?'':'disabled'}>Undo</button>`}
+          ${!isDone?`<button class="btn btn-o btn-xs" onclick="pushBackTodo('${itemId}')" title="Push to later" ${itemId?'':'disabled'}>&#x23E9; Push</button>`:''}
+          <button class="btn btn-o btn-xs" onclick="editTodo('${itemId}')" ${itemId?'':'disabled'}>&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${itemId}')" ${itemId?'':'disabled'}>&#x2715;</button>
         </div>
       </div>
     </div>`;
@@ -2867,18 +2892,19 @@ async function renderDashTodos(){
 
   el.innerHTML=items.map(item=>{
     const sc=STATUS_COL[item.status]||'d';
+    const itemId=safeIdentifier(item.id);
     const isOverdue=item.due_date<todayLocal;
     const diff=Math.round((new Date(item.due_date+'T12:00:00')-new Date(todayLocal+'T12:00:00'))/86400000);
     const dueLabel=diff===0?'Today':Math.abs(diff)+'d overdue';
     return`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--b1);min-width:0">
-      <span class="badge b-${sc}" style="flex-shrink:0;font-size:9px;padding:2px 5px">${item.status}</span>
+      <span class="badge b-${sc}" style="flex-shrink:0;font-size:9px;padding:2px 5px">${escapeHtml(item.status)}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.title}</div>
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.title)}</div>
         <div style="font-size:10px;color:${isOverdue?'var(--red)':'var(--amb)'};font-family:DM Mono,monospace">${dueLabel}</div>
       </div>
       <div style="display:flex;gap:3px;flex-shrink:0">
-        <button onclick="dashMarkDone('${item.id}')" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700">&#x2713;</button>
-        <button onclick="pushBackTodo('${item.id}')" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow">&#x23E9;</button>
+        <button onclick="dashMarkDone('${itemId}')" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700" ${itemId?'':'disabled'}>&#x2713;</button>
+        <button onclick="pushBackTodo('${itemId}')" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow" ${itemId?'':'disabled'}>&#x23E9;</button>
       </div>
     </div>`;
   }).join('')+`<div style="margin-top:8px;text-align:center"><a href="#" onclick="goto('todo');return false" style="font-size:11px;color:var(--t3)">View all tasks →</a></div>`;
@@ -2923,13 +2949,13 @@ async function renderBillsList(){
   el.innerHTML=bills.map(b=>`
     <div class="fin-row">
       <div>
-        <div class="fin-name">${b.bill_name}</div>
+        <div class="fin-name">${escapeHtml(b.bill_name)}</div>
         <div class="fin-note">Due day ${b.due_day}${b.is_variable?' &middot; variable':' &middot; fixed'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <div style="font-size:15px;font-weight:700;color:var(--amb);font-family:DM Mono,monospace">$${(+b.amount).toFixed(2)}</div>
-        <button class="fin-edit" onclick="openBillModal('${b.id}')">&#x270F;&#xFE0F;</button>
-        <button class="fin-del" onclick="removeBill('${b.id}')">&#x2715;</button>
+        <button class="fin-edit" onclick="openBillModal('${safeIdentifier(b.id)}')" ${safeIdentifier(b.id)?'':'disabled'}>&#x270F;&#xFE0F;</button>
+        <button class="fin-del" onclick="removeBill('${safeIdentifier(b.id)}')" ${safeIdentifier(b.id)?'':'disabled'}>&#x2715;</button>
       </div>
     </div>`).join('');
 }
@@ -3185,6 +3211,10 @@ async function isDBContentReady(){
 // ════════════════════════════════════════════════════════════════
 
 // ── DEFINITIVE renderHabits (fixes onclick syntax error) ─────────
+function openAddHabitForSection(sectionIndex){
+  const section=getUserHabitSecs()[Number(sectionIndex)];
+  if(section)openAddHabit(section.cat||'custom');
+}
 renderHabits=async function(){
   const d=new Date(habitDate+'T12:00:00');
   const lbl=document.getElementById('h-date-lbl');
@@ -3206,11 +3236,12 @@ renderHabits=async function(){
   const secs=getUserHabitSecs();
   const listEl=document.getElementById('h-habits-list');if(!listEl)return;
   listEl.innerHTML=secs.map((sec,si)=>{
-    const sCat=escapeAttr(sec.cat);
+    const sCat=escapeHtml(sec.cat);
     const sLabel=escapeHtml(sec.label);
+    const color=['r','g','a','b','p','d'].includes(sec.col)?sec.col:'d';
     const rows=sec.habits.map((h,hi)=>{
       const done=!!habitCache[h.id];
-      const hId=escapeAttr(h.id);
+      const hId=safeIdentifier(h.id);
       const toggleClick=habitEditMode?'':`toggleHabit('${hId}')`;
       const editBtns=habitEditMode?
         `<div style="display:flex;gap:3px;margin-left:5px">
@@ -3220,14 +3251,14 @@ renderHabits=async function(){
       return`<div class="hcheck${done?' done':''}" id="hc-${hId}" role="checkbox" aria-checked="${done}" tabindex="0" onclick="${toggleClick}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${toggleClick}}" style="cursor:${habitEditMode?'default':'pointer'}">
         <div class="hbox" id="hb-${hId}">${done?'✓':''}</div>
         <div class="hl">${escapeHtml(h.label)}</div>
-        <span class="badge b-${escapeAttr(sec.col)}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sCat}</span>
+        <span class="badge b-${color}" style="margin-left:auto;flex-shrink:0;min-width:56px;justify-content:center">${sCat}</span>
         ${editBtns}
       </div>`;
     }).join('');
-    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabit('${sCat}')">+ Add to ${sLabel}</button>`:'';
+    const addBtn=habitEditMode?`<button class="btn btn-o btn-xs" style="margin-top:5px;width:100%" onclick="openAddHabitForSection(${si})">+ Add to ${sLabel}</button>`:'';
     const header=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
       <div class="sh" style="margin-bottom:0;flex:1">${sLabel}</div>
-      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabit('${sCat}')">+ Add</button>`:''}
+      ${habitEditMode?`<button class="btn btn-r btn-xs" onclick="openAddHabitForSection(${si})">+ Add</button>`:''}
     </div>`;
     return`<div style="margin-bottom:14px">${header}${rows}${addBtn}</div>`;
   }).join('')+(habitEditMode?`<button class="btn btn-o btn-sm" style="width:100%;margin-top:6px" onclick="openAddHabit('custom')">+ New Category</button>`:'');
@@ -3446,15 +3477,23 @@ async function fetchRemainingMacros(){
 
 // ── BUILD SINGLE MEAL ITEM HTML (pure template, no side-effects) ──
 /** @param {Object} m - meal object  @param {boolean} fits - passes macro filter */
-function buildMealItemHtml(m, fits){
-  const sn=escapeAttr(m.name);
-  const mId=escapeAttr(m.id||'');
+const mealActionRegistry=new Map();
+function quickLogMealFromRegistry(token){
+  const meal=mealActionRegistry.get(token);
+  if(meal)quickLogClose(meal.name,meal.cal,meal.protein,meal.carbs,meal.fat,meal.id);
+}
+function buildMealItemHtml(m, fits, index){
+  const token='meal-'+Number(index||0);
+  mealActionRegistry.set(token,{
+    name:String(m.name||'Meal'),cal:Number(m.cal)||0,protein:Number(m.protein)||0,
+    carbs:Number(m.carbs)||0,fat:Number(m.fat)||0,id:safeIdentifier(m.id||'')
+  });
   const fitStyle=mealModal.macroFilter?(fits?'border-color:var(--grn)':'border-color:var(--red);opacity:0.7'):'';
   const fitBadge=mealModal.macroFilter?`<span style="font-size:9px;font-family:DM Mono,monospace;color:${fits?'var(--grn)':'var(--red)'};">${fits?'✓ fits':'over'}</span>`:'';
   const typeBadge=`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(m._type)}</span>`;
   const tagBadges=(m.tags||[]).filter(t=>!['breakfast','lunch','snack','dinner'].includes(t)).slice(0,2).map(t=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(t)}</span>`).join('');
   const borderOut=mealModal.macroFilter&&fits?'var(--grn)':mealModal.macroFilter?'var(--red)':'transparent';
-  return`<div role="button" tabindex="0" aria-label="Log ${sn}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')}" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${borderOut}'">
+  return`<div role="button" tabindex="0" aria-label="Log ${escapeAttr(m.name)}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--s3);border-radius:var(--r);margin-bottom:6px;gap:10px;cursor:pointer;border:1px solid transparent;transition:all .15s;${fitStyle}" onclick="quickLogMealFromRegistry('${token}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();quickLogMealFromRegistry('${token}')}" onmouseover="if(!this.style.borderColor||this.style.borderColor==='transparent')this.style.borderColor='rgba(255,255,255,.1)'" onmouseout="this.style.borderColor='${borderOut}'">
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(m.name)}</div>
       <div class="mono" style="font-size:11px;color:var(--t3);margin-bottom:4px">${m.cal}cal &middot; ${m.protein}g P &middot; ${m.carbs}g C &middot; ${m.fat}g F</div>
@@ -3462,7 +3501,7 @@ function buildMealItemHtml(m, fits){
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
       ${fitBadge}
-      <button class="btn btn-g btn-xs" aria-label="Log ${sn}" onclick="event.stopPropagation();quickLogClose('${sn}',${m.cal||0},${m.protein||0},${m.carbs||0},${m.fat||0},'${mId}')">+ Log</button>
+      <button class="btn btn-g btn-xs" aria-label="Log ${escapeAttr(m.name)}" onclick="event.stopPropagation();quickLogMealFromRegistry('${token}')">+ Log</button>
     </div>
   </div>`;
 }
@@ -3484,9 +3523,10 @@ updateMealList=function(){
     return;
   }
   const meals=allMeals.slice(0,MEAL_PAGE_SIZE);
-  const html=meals.map(m=>{
+  mealActionRegistry.clear();
+  const html=meals.map((m,index)=>{
     const fits=!mealModal.macroFilter||mealModal.remaining.cal>=9000||m.cal<=mealModal.remaining.cal;
-    return buildMealItemHtml(m,fits);
+    return buildMealItemHtml(m,fits,index);
   }).join('');
   const overflow=allMeals.length>MEAL_PAGE_SIZE?`<div style="text-align:center;padding:8px;font-size:11px;color:var(--t3)">${allMeals.length-MEAL_PAGE_SIZE} more — refine your search to narrow results.</div>`:'';
   el.innerHTML=html+overflow;
@@ -3704,31 +3744,33 @@ async function renderLibrary(){
   filtered.map(b=>{
     const added=onShelf.has(b.id);
     const dcol=DIFF_COL[b.difficulty]||'d';
-    const genres=(b.genres||[]).slice(0,3).map(g=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${g}</span>`).join('');
+    const bookId=safeIdentifier(b.id);
+    const genres=(b.genres||[]).slice(0,3).map(g=>`<span class="badge b-d" style="font-size:9px;padding:1px 6px">${escapeHtml(g)}</span>`).join('');
     return`<div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);margin-bottom:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px">${b.title}</div>
-        <div style="font-size:12px;color:var(--t3);margin-bottom:5px">${b.author} &middot; ${b.page_count||'?'} pages</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px">${escapeHtml(b.title)}</div>
+        <div style="font-size:12px;color:var(--t3);margin-bottom:5px">${escapeHtml(b.author)} &middot; ${Number(b.page_count)||'?'} pages</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px">
-          <span class="badge b-${dcol}" style="font-size:9px">${b.difficulty||'medium'}</span>
+          <span class="badge b-${dcol}" style="font-size:9px">${escapeHtml(b.difficulty||'medium')}</span>
           ${genres}
         </div>
-        <div style="font-size:11px;color:var(--t2);line-height:1.5">${b.description||''}</div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.5">${escapeHtml(b.description||'')}</div>
       </div>
       <div style="flex-shrink:0">
         ${added?`<button class="btn btn-o btn-sm" disabled style="opacity:0.5;cursor:default">On Shelf</button>`:
-        `<button class="btn btn-r btn-sm" onclick="addToShelf('${b.id}','${b.title.replace(/'/g,"\\'")}')">+ Add</button>`}
+        bookId?`<button class="btn btn-r btn-sm" onclick="addToShelf('${bookId}')">+ Add</button>`:''}
       </div>
     </div>`;
   }).join('');
 }
 
 // ── ADD TO SHELF ──────────────────────────────────────────────────
-async function addToShelf(bookId,title){
+async function addToShelf(bookId){
+  if(!safeIdentifier(bookId))return;
   const{data:existing}=await sb.from('user_reading_list').select('id').eq('user_id',PROFILE.id).eq('book_id',bookId).maybeSingle();
   if(existing){toast('Already on your shelf!');return;}
   await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:bookId,status:'To Be Read',format:'Physical'});
-  toast('Added: '+title);
+  toast('Book added to your shelf');
   renderLibrary(); // refresh "On Shelf" buttons
 }
 
@@ -3774,7 +3816,7 @@ function buildBookCardHtml(bk,idx){
   const GCOLS2={fiction:'p',fantasy:'p','sci-fi':'blu','self-improvement':'grn',business:'amb',philosophy:'amb',stoicism:'amb',psychology:'blu',biography:'d',general:'d',health:'grn',productivity:'grn',memoir:'d'};
   const statuses=['To Be Read','Reading','Read','Dropped'];
   const gcol=GCOLS2[bk.genre]||'d';
-  const bkId=escapeAttr(bk.id);
+  const bkId=safeIdentifier(bk.id);
   const stars=Array.from({length:5},(_,si)=>`<span class="star${si<bk.rating?' on':''}" onclick="setRating('${bkId}',${si+1})" style="cursor:pointer" aria-label="Rate ${si+1} star">★</span>`).join('');
   const statSel=`<select class="inp sel" aria-label="Reading status" style="font-size:11px;padding:3px 22px 3px 7px;width:118px" onchange="setBookStatus('${bkId}',this.value)">${statuses.map(s=>`<option${bk.status===s?' selected':''}>${escapeHtml(s)}</option>`).join('')}</select>`;
   const fmtBtns=['Physical','Audiobook','Ebook'].map(f=>`<button class="btn btn-xs" aria-label="Format: ${f}" style="background:${bk.format===f?'var(--blu-l)':'var(--s3)'};color:${bk.format===f?'var(--blu)':'var(--t3)'};border:1px solid ${bk.format===f?'rgba(77,159,236,.3)':'var(--b2)'}" onclick="toggleFormat('${bkId}','${f}')">${f}</button>`).join('');
@@ -3938,7 +3980,7 @@ function populatePlanSelector(){
   const plans=CONTENT.workouts?.plans;if(!plans)return;
   const current=PROFILE.assigned_workout_plan||'shred-advanced';
   sel.innerHTML=Object.entries(plans).map(([key,p])=>
-    `<option value="${key}"${key===current?' selected':''}>${p.name}</option>`
+    `<option value="${escapeAttr(safeIdentifier(key))}"${key===current?' selected':''}>${escapeHtml(p.name)}</option>`
   ).join('');
 }
 
@@ -3996,10 +4038,10 @@ openLogModal=async function(i){
         </div>`).join('');
       return`<div style="padding:12px;background:var(--s3);border-radius:var(--r);margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
-          <div style="font-size:13px;font-weight:700">${ex.name}</div>
-          <span class="mono" style="font-size:10px;color:var(--t3)">Target: ${sc} sets &#xD7; ${tr} reps</span>
+          <div style="font-size:13px;font-weight:700">${escapeHtml(ex.name)}</div>
+          <span class="mono" style="font-size:10px;color:var(--t3)">Target: ${Number(sc)||0} sets &#xD7; ${escapeHtml(tr)} reps</span>
         </div>
-        ${ex.notes?`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;font-style:italic">${ex.notes}</div>`:''}
+        ${ex.notes?`<div style="font-size:11px;color:var(--t3);margin-bottom:6px;font-style:italic">${escapeHtml(ex.notes)}</div>`:''}
         ${rows}
       </div>`;
     }).join('');
@@ -4069,19 +4111,19 @@ async function renderWorkoutHistory(){
     const topSets=exNames.slice(0,3).map(name=>{
       const sets=(s.workout_exercise_logs||[]).filter(l=>l.exercise_name===name);
       const bestSet=sets.reduce((best,l)=>(!best||l.weight_lbs>best.weight_lbs)?l:best,null);
-      return`<span style="font-size:10px;color:var(--t2)">${name}${bestSet?.weight_lbs?' @ '+bestSet.weight_lbs+'lbs':''}</span>`;
+      return`<span style="font-size:10px;color:var(--t2)">${escapeHtml(name)}${bestSet?.weight_lbs?' @ '+Number(bestSet.weight_lbs)+'lbs':''}</span>`;
     }).join(' &middot; ');
     return`<div style="padding:10px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:3px">
             <span style="font-family:DM Mono,monospace;font-size:11px;color:var(--t3)">${date}</span>
-            <span style="font-size:13px;font-weight:700">${s.day_name||'Session'}</span>
+            <span style="font-size:13px;font-weight:700">${escapeHtml(s.day_name||'Session')}</span>
           </div>
           <div style="font-size:11px;color:var(--t3)">${exNames.length} exercise${exNames.length!==1?'s':''} &middot; ${totalSets} set${totalSets!==1?'s':''}${s.duration_minutes?' &middot; '+s.duration_minutes+'min':''}</div>
           ${topSets?`<div style="margin-top:4px;line-height:1.6">${topSets}</div>`:''}
         </div>
-        ${s.notes?`<div style="font-size:11px;color:var(--t2);max-width:180px;font-style:italic;text-align:right">"${s.notes}"</div>`:''}
+        ${s.notes?`<div style="font-size:11px;color:var(--t2);max-width:180px;font-style:italic;text-align:right">&ldquo;${escapeHtml(s.notes)}&rdquo;</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4096,7 +4138,7 @@ function openPlanBuilder(){
   // Populate template options
   const plans=CONTENT.workouts?.plans||{};
   document.getElementById('pb-templates').innerHTML=Object.entries(plans).map(([key,p])=>
-    `<button class="btn btn-o btn-sm" onclick="importTemplate('${key}')">${p.name}</button>`
+    safeIdentifier(key)?`<button class="btn btn-o btn-sm" onclick="importTemplate('${safeIdentifier(key)}')">${escapeHtml(p.name)}</button>`:''
   ).join('');
   openModal('plan-builder-modal');
 }
@@ -4111,11 +4153,11 @@ function addPlanDay(name='',focus='',exercises=''){
     <button onclick="this.closest('[id]').remove()" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">&#x2715;</button>
   </div>
   <div class="g2" style="gap:8px;margin-bottom:8px">
-    <input class="inp" id="pb-day-${i}-name" placeholder="Day name (e.g. Monday)" value="${name}">
-    <input class="inp" id="pb-day-${i}-focus" placeholder="Focus (e.g. Upper Push)" value="${focus}">
+    <input class="inp" id="pb-day-${i}-name" placeholder="Day name (e.g. Monday)" value="${escapeAttr(name)}">
+    <input class="inp" id="pb-day-${i}-focus" placeholder="Focus (e.g. Upper Push)" value="${escapeAttr(focus)}">
   </div>
   <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Exercises (one per line, e.g. "Bench Press 4x8")</div>
-  <textarea class="inp" id="pb-day-${i}-ex" rows="4" placeholder="Incline DB Press 4x10\nOverhead Press 4x10\nLateral Raises 3x15" style="resize:vertical;font-family:DM Mono,monospace;font-size:11px">${exercises}</textarea>`;
+  <textarea class="inp" id="pb-day-${i}-ex" rows="4" placeholder="Incline DB Press 4x10\nOverhead Press 4x10\nLateral Raises 3x15" style="resize:vertical;font-family:DM Mono,monospace;font-size:11px">${escapeHtml(exercises)}</textarea>`;
   document.getElementById('pb-days').appendChild(div);
 }
 
@@ -4213,36 +4255,38 @@ renderSpice=function(){
   const tabsEl=document.getElementById('spice-tabs');
   const panelsEl=document.getElementById('spice-panels');
   if(!tabsEl||!panelsEl)return;
-  tabsEl.innerHTML=baseData.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`).join('');
+  tabsEl.innerHTML=baseData.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${escapeHtml((p.label||p.id).split(' ').slice(0,2).join(' '))}</button>`).join('');
   panelsEl.innerHTML=baseData.map((p,i)=>`
     <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
-      ${spiceEditMode?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${p.id||p.label}')">+ Add Recipe to ${(p.label||p.id).split(' ').slice(0,2).join(' ')}</button>`:''}
+      ${spiceEditMode&&safeIdentifier(p.id)?`<button class="btn btn-r btn-sm" style="width:100%;margin-bottom:10px" onclick="openSpiceModal('${safeIdentifier(p.id)}')">+ Add Recipe to ${escapeHtml((p.label||p.id).split(' ').slice(0,2).join(' '))}</button>`:''}
       ${(p.recipes||[]).map(r=>{
         const rating=calcRecipeRating(r.calories_per_serving||r.cal,r.protein_g||r.pro);
         const cfg=rating?RATING_CONFIG[rating]:null;
         const isUserRecipe=!!(r.id&&!r._isTemplate);
         const canDelete=isUserRecipe; // only user-created recipes can be deleted
+        const recipeId=safeIdentifier(r.id);
+        const profileId=safeIdentifier(r.profile_id||r.profileId||p.id);
         const rows=r.rows||[];
         if(r.dry_rub&&!rows.find(x=>x.spices===r.dry_rub))rows.unshift({label:'Dry Rub / Spices',spices:r.dry_rub});
         if(r.sauce&&!rows.find(x=>x.spices===r.sauce))rows.push({label:'Sauce / Liquid',spices:r.sauce});
         return`<div style="background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px;margin-bottom:10px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:8px">
             <div style="flex:1;min-width:0">
-              <div style="font-size:14px;font-weight:600">${r.name}</div>
-              ${r.protein_src||r.proteinSrc?`<div style="font-size:11px;color:var(--t3);margin-top:2px">Protein: ${r.protein_src||r.proteinSrc}</div>`:''}
+              <div style="font-size:14px;font-weight:600">${escapeHtml(r.name)}</div>
+              ${r.protein_src||r.proteinSrc?`<div style="font-size:11px;color:var(--t3);margin-top:2px">Protein: ${escapeHtml(r.protein_src||r.proteinSrc)}</div>`:''}
             </div>
             <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
               ${cfg?`<span class="badge ${cfg.badge}" style="font-size:10px;white-space:nowrap">${cfg.icon} ${cfg.label}</span>`:''}
               ${r.calories_per_serving||r.cal?`<span class="mono" style="font-size:10px;color:var(--t3)">${r.calories_per_serving||r.cal}cal &middot; ${r.protein_g||r.pro||0}gP</span>`:''}
-              ${spiceEditMode?`<button onclick="openSpiceModal('${r.profile_id||r.profileId||p.id}','${r.id}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
-              ${spiceEditMode&&canDelete?`<button onclick="removeSpiceRecipe('${r.id}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
+              ${spiceEditMode&&profileId&&recipeId?`<button onclick="openSpiceModal('${profileId}','${recipeId}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
+              ${spiceEditMode&&canDelete&&recipeId?`<button onclick="removeSpiceRecipe('${recipeId}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
             </div>
           </div>
           ${rows.map(row=>`<div style="margin-bottom:7px">
-            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${row.label}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').filter(s=>s.trim()).map(s=>{const isKey=/[0-9]|tsp|tbsp/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${s.trim()}</span>`;}).join('')}</div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-bottom:4px">${escapeHtml(row.label)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px">${(row.spices||'').split(' - ').filter(s=>s.trim()).map(s=>{const isKey=/[0-9]|tsp|tbsp/.test(s)||s.includes('/');return`<span class="${isKey?'pill-k':'pill'}">${escapeHtml(s.trim())}</span>`;}).join('')}</div>
           </div>`).join('')}
-          ${r.method?`<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${r.method}</div>`:''}
+          ${r.method?`<div style="font-size:12px;color:var(--t2);line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px solid var(--b1)">${escapeHtml(r.method)}</div>`:''}
         </div>`;
       }).join('')||`<div style="color:var(--t3);font-size:12px;padding:12px">No recipes in this profile.</div>`}
     </div>`).join('');
@@ -4392,4 +4436,3 @@ loadRecipesFromDB=async function(){
     return State.get('_cachedRecipes');
   }
 };
-
