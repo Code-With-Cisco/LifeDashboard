@@ -118,7 +118,10 @@
         <div class="home-date" id="h-date"></div>
       </div>
       <div class="card command-brief" style="margin-bottom:14px">
-        <div class="sh">DAILY COMMAND BRIEF</div>
+        <div class="brief-toolbar">
+          <div class="sh" style="margin-bottom:0">DAILY COMMAND BRIEF</div>
+          <button class="btn btn-o btn-xs" onclick="openBriefPreferences()" aria-label="Tune daily command brief">&#x2699; Tune</button>
+        </div>
         <div id="home-command-brief"><div class="brief-empty">Building today's brief...</div></div>
       </div>
       <div class="g2" style="margin-bottom:14px">
@@ -814,6 +817,44 @@
       <div><div style="font-size:10px;color:var(--blu);margin-bottom:3px">Fat/oz</div><input class="inp" id="cp-fat" type="number" placeholder="2"></div>
     </div>
     <div class="modal-footer"><button class="btn btn-r" onclick="saveCustomProtein()">Add Option</button><button class="btn btn-o" onclick="closeModal('custom-protein-modal')">Cancel</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="brief-preferences-modal">
+  <div class="modal">
+    <div class="modal-title">TUNE DAILY BRIEF</div>
+    <div class="g2" style="gap:8px;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Ranking rule</div>
+        <select class="inp sel" id="brief-focus-rule">
+          <option value="balanced">Balanced</option>
+          <option value="deadlines">Deadlines first</option>
+          <option value="priorities">Priority status first</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Focus items</div>
+        <select class="inp sel" id="brief-focus-limit">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+          <option value="4">4</option><option value="5">5</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--t3);margin-bottom:6px">Include in the focus list</div>
+    <div class="brief-source-options">
+      <label><input type="checkbox" id="brief-include-tasks"> Tasks</label>
+      <label><input type="checkbox" id="brief-include-calendar"> Calendar</label>
+      <label><input type="checkbox" id="brief-include-workout"> Training</label>
+    </div>
+    <div class="brief-reminder-panel">
+      <label class="brief-reminder-toggle"><input type="checkbox" id="brief-morning-enabled" onchange="toggleBriefReminderFields()"> Browser morning reminder</label>
+      <input class="inp" id="brief-morning-time" type="time" aria-label="Morning reminder time">
+      <div class="brief-reminder-note">The reminder works while LifeDashboard is open. Background delivery will require the planned server-side connector broker.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="saveBriefPreferences()">Save Preferences</button>
+      <button class="btn btn-o" onclick="closeModal('brief-preferences-modal')">Cancel</button>
+    </div>
   </div>
 </div>
 

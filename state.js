@@ -166,6 +166,13 @@ window.State = {
     'custom_sides_':   (val) => val && typeof val === 'object',
     'wit_':            (val) => Array.isArray(val),
     'debt_start_':     (val) => typeof val === 'number',
+    'briefing_preferences_': (val) => val && typeof val === 'object' &&
+      ['balanced', 'deadlines', 'priorities'].includes(val.focusRule) &&
+      Number.isInteger(val.focusLimit) && val.focusLimit >= 1 && val.focusLimit <= 5 &&
+      typeof val.includeTasks === 'boolean' && typeof val.includeCalendar === 'boolean' &&
+      typeof val.includeWorkout === 'boolean' && typeof val.morningEnabled === 'boolean' &&
+      /^([01]\d|2[0-3]):[0-5]\d$/.test(val.morningTime),
+    'briefing_delivery_': (val) => /^\d{4}-\d{2}-\d{2}$/.test(String(val)),
     '_cachedRecipes':  (val) => val && Array.isArray(val.profiles),
     '_cachedHabits_':  (val) => Array.isArray(val),
   }

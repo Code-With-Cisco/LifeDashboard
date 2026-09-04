@@ -44,4 +44,47 @@ describe('BriefingService', () => {
     expect(result.focus).toEqual([]);
     expect(result.headline).toContain('runway is clear');
   });
+
+  test('lets deadline-first focus outrank a future urgent task', () => {
+    const todos = [
+      {id: 'future', title: 'Future urgent', status: 'Urgent', due_date: '2026-09-10'},
+      {id: 'today', title: 'Due today', status: 'Not Started', due_date: today},
+    ];
+    const balanced = Briefing.build({today, todos});
+    const deadlineFirst = Briefing.build({today, todos, preferences: {focusRule: 'deadlines'}});
+
+    expect(balanced.focus[0].id).toBe('future');
+    expect(deadlineFirst.focus[0].id).toBe('today');
+  });
+
+  test('applies the focus limit and source controls', () => {
+    const result = Briefing.build({
+      today,
+      todos: [{id: 'task', title: 'Task', status: 'Urgent'}],
+      events: [{title: 'Appointment', event_date: today}],
+      workout: {focus: 'Leg day', rest: false},
+      preferences: {focusLimit: 1, includeTasks: false, includeCalendar: true, includeWorkout: true},
+    });
+
+    expect(result.focus).toEqual([{kind: 'event', title: 'Appointment', reason: 'On today\'s calendar'}]);
+    expect(result.metrics.dueToday).toBe(0);
+  });
+
+  test('normalizes malformed preferences to safe defaults', () => {
+    expect(Briefing.normalizePreferences({
+      focusRule: 'random',
+      focusLimit: 99,
+      includeTasks: false,
+      morningEnabled: 'yes',
+      morningTime: '25:00',
+    })).toEqual({
+      focusRule: 'balanced',
+      focusLimit: 5,
+      includeTasks: false,
+      includeCalendar: true,
+      includeWorkout: true,
+      morningEnabled: false,
+      morningTime: '07:00',
+    });
+  });
 });

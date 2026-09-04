@@ -9,6 +9,7 @@ LifeDashboard contains personal health, schedule, finance, reading, and goal dat
 - All tables containing user data must enforce Row Level Security (RLS), with policies that scope rows to `auth.uid()`. Admin operations must also verify a server-side role or explicit allowlist.
 - The deployment workflow uploads an explicit allowlist from `dist/`; repository internals and local tooling are not published.
 - Persisted application logs are redacted and omit stack traces. Do not log personal records, session objects, credentials, or authorization headers.
+- Browser reminders are opt-in and contain a generic prompt, not task titles, calendar details, health data, or financial data.
 
 ## Required Supabase checks
 

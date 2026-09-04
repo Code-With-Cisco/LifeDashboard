@@ -34,7 +34,9 @@ Privileged administration, OAuth token exchange, scheduled provider sync, and AI
 
 ## Daily command brief
 
-`BriefingService` accepts normalized tasks, today's calendar events, habit counts, and an optional workout. It ranks overdue and high-priority work deterministically, so the result is explainable and testable. A future AI narrator should receive this small output rather than unrestricted database access.
+`BriefingService` accepts normalized tasks, today's calendar events, habit counts, an optional workout, and validated focus preferences. It supports balanced, deadline-first, and priority-first ranking; users can also choose the focus count and included sources. The result remains deterministic, explainable, and testable. A future AI narrator should receive this small output rather than unrestricted database access.
+
+Brief preferences and the last browser-reminder date are device-local UI state, namespaced by profile ID. Browser notifications use generic text rather than task or event content and only fire while the dashboard is open. Cross-device preferences and reliable background delivery require the future server-side broker.
 
 ## Current constraints
 

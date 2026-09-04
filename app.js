@@ -36,8 +36,9 @@
 // STAGE 5    Advanced library, workout builder, meal search
 // STAGE 6    (pending) Migrate books year-plan metadata to DB
 //
-// All user-specific data (preferences, logs, lists) lives in
-// Supabase. Books and schedule data will be migrated in Stage 6.
+// Authoritative personal records live in Supabase. State stores only
+// device-local UI preferences, caches, and legacy data awaiting migration.
+// Books and schedule data will be migrated in Stage 6.
 // ════════════════════════════════════════════════════════════════
 
 const {createClient}=supabase;
@@ -267,6 +268,8 @@ async function doFPR(){
   }
 }
 async function logout(){
+  if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
+  _latestBriefInput=null;
   try{await sb.auth.signOut();}
   catch(e){
     console.warn('signOut error, forcing UI reset:',e);
@@ -527,9 +530,70 @@ function goto(pid){
 function toggleMobileNav(){}
 
 // HOME
+let _latestBriefInput=null;
+let _briefReminderTimer=null;
+
+function briefingPreferencesKey(){return 'briefing_preferences_'+PROFILE.id;}
+function briefingDeliveryKey(){return 'briefing_delivery_'+PROFILE.id;}
+function getBriefPreferences(){
+  return BriefingService.normalizePreferences(State.get(briefingPreferencesKey()));
+}
+function localDateKey(date){
+  const pad=value=>String(value).padStart(2,'0');
+  return date.getFullYear()+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate());
+}
+function briefTimeLabel(value){
+  const [hour,minute]=String(value||'07:00').split(':').map(Number);
+  return new Date(2000,0,1,hour,minute).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+}
+function briefDeliveryStatus(preferences){
+  if(!preferences.morningEnabled)return 'Morning browser reminder off';
+  const prefix='Morning browser reminder at '+briefTimeLabel(preferences.morningTime);
+  if(typeof Notification==='undefined')return prefix+' · unavailable in this browser';
+  if(Notification.permission==='denied')return prefix+' · blocked by browser settings';
+  if(Notification.permission!=='granted')return prefix+' · permission needed';
+  return prefix+' · works while LifeDashboard is open';
+}
+function scheduleMorningBrief(preferences){
+  if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
+  if(!PROFILE||!preferences.morningEnabled||typeof Notification==='undefined'||Notification.permission!=='granted')return;
+
+  const now=new Date();
+  const [hour,minute]=preferences.morningTime.split(':').map(Number);
+  const target=new Date(now.getFullYear(),now.getMonth(),now.getDate(),hour,minute,0,0);
+  const today=localDateKey(now);
+  const delivered=State.get(briefingDeliveryKey());
+  const endOfMorningWindow=new Date(target.getTime()+4*60*60*1000);
+
+  if(delivered===today||now>endOfMorningWindow)target.setDate(target.getDate()+1);
+  const delay=Math.max(250,target.getTime()-now.getTime());
+  _briefReminderTimer=setTimeout(()=>{
+    const firedAt=new Date();
+    const deliveryStart=new Date(firedAt.getFullYear(),firedAt.getMonth(),firedAt.getDate(),hour,minute,0,0);
+    const deliveryEnd=new Date(deliveryStart.getTime()+4*60*60*1000);
+    if(firedAt<deliveryStart||firedAt>deliveryEnd){scheduleMorningBrief(preferences);return;}
+    const deliveryDate=localDateKey(firedAt);
+    if(State.get(briefingDeliveryKey())!==deliveryDate){
+      try{
+        const notification=new Notification('LifeDashboard daily brief',{body:'Your private daily command brief is ready to review.',tag:'lifedashboard-daily-brief'});
+        notification.onclick=()=>{window.focus();goto('home');notification.close();};
+        State.setSafe(briefingDeliveryKey(),deliveryDate);
+      }catch(error){Logger.error('briefing','notification.failed',error);}
+    }
+    scheduleMorningBrief(preferences);
+  },delay);
+}
+function refreshDailyBrief(){
+  if(!_latestBriefInput)return;
+  const preferences=getBriefPreferences();
+  const brief=BriefingService.build({..._latestBriefInput,preferences});
+  renderDailyBrief(brief);
+  scheduleMorningBrief(preferences);
+}
 function renderDailyBrief(brief){
   const el=document.getElementById('home-command-brief');if(!el||!brief)return;
   const kindLabel={task:'TASK',event:'CALENDAR',workout:'TRAINING'};
+  const ruleLabel={balanced:'Balanced ranking',deadlines:'Deadlines first',priorities:'Priority status first'};
   const focusHtml=brief.focus.length?brief.focus.map((item,index)=>`
     <div class="brief-focus">
       <div class="brief-rank">${index+1}</div>
@@ -539,11 +603,61 @@ function renderDailyBrief(brief){
       </div>
     </div>`).join(''):'<div class="brief-empty">No deadline is driving the day. Pick one meaningful next action.</div>';
   const alertsHtml=brief.alerts.map(alert=>`<div class="brief-alert">${escapeHtml(alert)}</div>`).join('');
+  const focusCount=brief.preferences.focusLimit+' focus item'+(brief.preferences.focusLimit===1?'':'s');
   el.innerHTML=`
     <div class="brief-headline">${escapeHtml(brief.headline)}</div>
     <div class="brief-summary">${escapeHtml(brief.summary)}</div>
     <div class="brief-grid">${focusHtml}</div>
-    ${alertsHtml}`;
+    ${alertsHtml}
+    <div class="brief-delivery">${escapeHtml(ruleLabel[brief.preferences.focusRule]||ruleLabel.balanced)} · ${escapeHtml(focusCount)} · ${escapeHtml(briefDeliveryStatus(brief.preferences))}</div>`;
+}
+function openBriefPreferences(){
+  const preferences=getBriefPreferences();
+  document.getElementById('brief-focus-rule').value=preferences.focusRule;
+  document.getElementById('brief-focus-limit').value=String(preferences.focusLimit);
+  document.getElementById('brief-include-tasks').checked=preferences.includeTasks;
+  document.getElementById('brief-include-calendar').checked=preferences.includeCalendar;
+  document.getElementById('brief-include-workout').checked=preferences.includeWorkout;
+  document.getElementById('brief-morning-enabled').checked=preferences.morningEnabled;
+  document.getElementById('brief-morning-time').value=preferences.morningTime;
+  toggleBriefReminderFields();
+  openModal('brief-preferences-modal');
+}
+function toggleBriefReminderFields(){
+  const enabled=document.getElementById('brief-morning-enabled')?.checked===true;
+  const time=document.getElementById('brief-morning-time');
+  if(time)time.disabled=!enabled;
+}
+async function saveBriefPreferences(){
+  const sourceIds=['brief-include-tasks','brief-include-calendar','brief-include-workout'];
+  if(!sourceIds.some(id=>document.getElementById(id).checked)){
+    toast('Choose at least one focus source');return;
+  }
+  const preferences=BriefingService.normalizePreferences({
+    focusRule:document.getElementById('brief-focus-rule').value,
+    focusLimit:Number(document.getElementById('brief-focus-limit').value),
+    includeTasks:document.getElementById('brief-include-tasks').checked,
+    includeCalendar:document.getElementById('brief-include-calendar').checked,
+    includeWorkout:document.getElementById('brief-include-workout').checked,
+    morningEnabled:document.getElementById('brief-morning-enabled').checked,
+    morningTime:document.getElementById('brief-morning-time').value,
+  });
+  if(!State.setSafe(briefingPreferencesKey(),preferences)){
+    toast('Could not save brief preferences');return;
+  }
+
+  let reminderMessage='Brief preferences saved';
+  if(preferences.morningEnabled){
+    if(typeof Notification==='undefined')reminderMessage='Preferences saved; browser reminders are unavailable';
+    else if(Notification.permission==='default'){
+      try{await Notification.requestPermission();}
+      catch(error){Logger.error('briefing','notification.permission_failed',error);}
+    }
+    if(typeof Notification!=='undefined'&&Notification.permission==='denied')reminderMessage='Preferences saved; browser reminders are blocked';
+  }
+  closeModal('brief-preferences-modal');
+  refreshDailyBrief();
+  toast(reminderMessage,4000);
 }
 
 async function renderHome(){
@@ -583,10 +697,11 @@ async function renderHome(){
     sb.from('calendar_events').select('*').eq('user_id',PROFILE.id),
     sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',PROFILE.id).neq('status','Done'),
   ]);
-  renderDailyBrief(BriefingService.build({
+  _latestBriefInput={
     today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
     habitTotal:totalHabits,workout:todayWk||null
-  }));
+  };
+  refreshDailyBrief();
   const evEl=document.getElementById('home-events');
   if(evEl){
     const dayNum=new Date().getDate();
