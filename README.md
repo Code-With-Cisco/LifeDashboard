@@ -2,6 +2,8 @@
 
 A private personal command center for habits, nutrition, recipes, workouts, finances, reading, goals, tasks, and calendar events. The home page produces a deterministic daily command brief: what is due, what is on the calendar, habit progress, and the best next actions. Each user can tune the ranking rule, focus count, and included sources without handing personal data to an AI service.
 
+Signed-in users can edit their display name, username, timezone, health targets, take-home pay, and hourly rate from the profile control in the navigation rail. These values drive the relevant Dashboard, nutrition, financial, and purchase-decision views.
+
 The browser application is static and uses Supabase for authentication and user-scoped data. It deliberately does not perform privileged account administration or store provider credentials.
 
 ## Local setup
@@ -44,6 +46,8 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 | Codebase knowledge graph | `graphify-out/graph.html`, `graphify-out/GRAPH_REPORT.md` |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) before loading personal data, and [INTEGRATIONS.md](INTEGRATIONS.md) for the Jarvis-style roadmap.
+
+The latest manual production regression record is in [QA_REPORT.md](QA_REPORT.md).
 
 Brief preferences are stored per user in this browser. The optional morning notification contains only a generic prompt and works while LifeDashboard is open; reliable background delivery belongs in the future server-side broker.
 

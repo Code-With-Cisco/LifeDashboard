@@ -24,7 +24,7 @@ fs.mkdirSync(path.join(output, 'services'), {recursive: true});
 const files = [
   '.nojekyll', 'index.html', 'styles.css', 'logs.js', 'state.js', 'utils.js',
   'api.js', 'render.js', 'main.js', 'app.js',
-  'services/SecurityService.js', 'services/BriefingService.js',
+  'services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js', 'services/BriefingService.js',
   'services/RecipeService.js', 'services/HabitService.js', 'services/NutritionService.js',
 ];
 

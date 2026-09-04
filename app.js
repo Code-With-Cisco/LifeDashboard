@@ -514,7 +514,58 @@ function buildNav(){
   bnavEl.innerHTML=NAV_ITEMS.filter(n=>!n.adminOnly)
     .map(n=>`<div class="bnav-item" role="button" tabindex="0" aria-label="${escapeAttr(n.label)}" id="bn-${escapeAttr(n.id)}" onclick="goto('${escapeAttr(n.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goto('${escapeAttr(n.id)}')}"><span class="bi" aria-hidden="true">${n.icon}</span><span>${escapeHtml(n.label)}</span></div>`).join('');
 }
+function setProfileField(id,value){
+  const el=document.getElementById(id);if(el)el.value=value??'';
+}
+function openProfileModal(){
+  if(!PROFILE)return;
+  const mealTargets=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit']?.targets||{};
+  setProfileField('profile-display-name',PROFILE.display_name||'');
+  setProfileField('profile-username',PROFILE.username||'');
+  setProfileField('profile-timezone',PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York');
+  setProfileField('profile-target-weight',PROFILE.target_weight??165);
+  setProfileField('profile-calorie-target',PROFILE.calorie_target??mealTargets.calories??1900);
+  setProfileField('profile-protein-target',PROFILE.protein_target??mealTargets.protein_g??185);
+  setProfileField('profile-take-home',PROFILE.take_home_pay??3370);
+  setProfileField('profile-hourly-rate',PROFILE.wit_hourly_rate??23);
+  const errorEl=document.getElementById('profile-error');if(errorEl){errorEl.textContent='';errorEl.style.display='none';}
+  openModal('profile-modal');
+}
+async function saveProfile(){
+  const result=ProfileService.prepare({
+    displayName:document.getElementById('profile-display-name')?.value,
+    username:document.getElementById('profile-username')?.value,
+    timezone:document.getElementById('profile-timezone')?.value,
+    targetWeight:document.getElementById('profile-target-weight')?.value,
+    calorieTarget:document.getElementById('profile-calorie-target')?.value,
+    proteinTarget:document.getElementById('profile-protein-target')?.value,
+    takeHomePay:document.getElementById('profile-take-home')?.value,
+    hourlyRate:document.getElementById('profile-hourly-rate')?.value,
+  });
+  const errorEl=document.getElementById('profile-error');
+  if(!result.valid){
+    if(errorEl){errorEl.textContent=result.errors[0];errorEl.style.display='block';}
+    return;
+  }
+  const button=document.getElementById('profile-save-btn');
+  if(button){button.disabled=true;button.textContent='Saving...';}
+  const{data,error}=await sb.from('profiles').update(result.payload).eq('id',PROFILE.id).select().single();
+  if(button){button.disabled=false;button.textContent='Save Profile';}
+  if(error){
+    if(errorEl){errorEl.textContent=error.code==='23505'?'That username is already in use.':error.message;errorEl.style.display='block';}
+    return;
+  }
+  PROFILE={...PROFILE,...result.payload,...(data||{})};
+  closeModal('profile-modal');
+  buildNav();
+  const now=new Date();const greet=now.getHours()<12?'GOOD MORNING':now.getHours()<18?'GOOD AFTERNOON':'GOOD EVENING';
+  const hg=document.getElementById('h-greeting');if(hg)hg.textContent=greet+', '+(PROFILE.display_name||PROFILE.username||'CISCO').toUpperCase();
+  loadDashStats();
+  goto(currentPage);
+  toast('Profile updated');
+}
 function goto(pid){
+  toggleMobileNav(false);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-item,.bnav-item').forEach(n=>n.classList.remove('on'));
   const pg=document.getElementById('page-'+pid);if(pg)pg.classList.add('on');
@@ -527,7 +578,18 @@ function goto(pid){
     financial:renderFinancial,goals:renderGoals,wit:renderWit,admin:renderAdmin};
   if(R[pid])R[pid]();
 }
-function toggleMobileNav(){}
+function toggleMobileNav(force){
+  const nav=document.getElementById('nav');
+  const scrim=document.getElementById('nav-scrim');
+  const button=document.querySelector('.tb-menu');
+  if(!nav)return;
+  const open=typeof force==='boolean'?force:!nav.classList.contains('mobile-open');
+  nav.classList.toggle('mobile-open',open);
+  scrim?.classList.toggle('open',open);
+  if(button){button.setAttribute('aria-expanded',String(open));button.setAttribute('aria-label',open?'Close navigation':'Open navigation');}
+  if(open)setTimeout(()=>nav.querySelector('.nav-item')?.focus(),0);
+}
+document.addEventListener('keydown',event=>{if(event.key==='Escape')toggleMobileNav(false);});
 
 // HOME
 let _latestBriefInput=null;
@@ -668,7 +730,7 @@ async function renderHome(){
   set('wod-word',wd[0]);set('wod-pos',wd[1]);set('wod-def',wd[2]);set('wod-ex','"'+wd[3]+'"');
   const plan=PROFILE.assigned_workout_plan||'shred-advanced';
   const wkData=CONTENT.workouts?.plans?.[plan];
-  const dow=new Date().getDay();const todayWk=wkData?.days?.[dow];
+  const dow=new Date().getDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const todayEl=document.getElementById('home-today');
   if(todayEl)todayEl.innerHTML=[
     {t:'6:00 AM',l:todayWk?(todayWk.rest?'Rest Day + Meal Prep':'Workout: '+todayWk.focus):'See Workout tab'},
@@ -731,12 +793,12 @@ async function renderWeightLog(){
   el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
     ||'<div style="color:var(--t3);font-size:12px">No entries yet.</div>';
   if(logs?.length){
-    const _tgt=PROFILE.target_weight||165;
+    const _tgt=PROFILE.target_weight??165;
     const _startWt=PROFILE.start_weight||logs[logs.length-1]?.weight_lbs||logs[0].weight_lbs;
     const pct=_startWt>_tgt?Math.round(Math.max(0,Math.min(100,(_startWt-logs[0].weight_lbs)/(_startWt-_tgt)*100))):0;
     const pe=document.getElementById('wt-pct');const pb=document.getElementById('wt-bar');
     if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';
-    const cw=document.getElementById('d-cur-wt');if(cw)cw.textContent=logs[0].weight_lbs+' lbs';
+    const cw=document.getElementById('d-cur-wt');if(cw)cw.textContent=Number(logs[0].weight_lbs).toLocaleString();
   }
 }
 async function renderDash(){
@@ -747,7 +809,7 @@ async function renderDash(){
   }
   await renderWeightLog();
   const wkData=CONTENT.workouts?.plans?.[PROFILE.assigned_workout_plan||'shred-advanced'];
-  const dow=new Date().getDay();const todayWk=wkData?.days?.[dow];
+  const dow=new Date().getDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const tw=document.getElementById('dash-wk');
   if(tw&&todayWk)tw.innerHTML=`<div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:6px">${D7L[dow].toUpperCase()}</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">${todayWk.focus}</div><div style="font-size:12px;color:var(--t3)">${(todayWk.muscles||[]).join(' - ')}</div>${todayWk.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:5px">HIIT finisher included</div>':''}`;
   const wdays=[];
@@ -997,7 +1059,8 @@ async function renderNutrition(){
   }
 }
 async function deleteMeal(id){
-  await sb.from('meal_logs').delete().eq('id',id).eq('user_id',PROFILE.id);
+  const{error}=await sb.from('meal_logs').delete().eq('id',id).eq('user_id',PROFILE.id);
+  if(error){toast('Could not remove meal');console.error('[nutrition] remove meal failed:',error);return;}
   renderNutrition();toast('Meal removed');
 }
 async function addMealEntry(name,cal,pro,car,fat){
@@ -1111,13 +1174,13 @@ async function renderMonth(){
     if(dow>=1&&dow<=5)evs.push({title:'Evening Walk',event_type:'g'});
     if(dow===0)evs.push({title:'Meal Prep',event_type:'g'});
     (ebd[ds]||[]).forEach(e=>evs.push(e));
-    html+=`<div class="cal-day${isToday?' today':''}" onclick="openEventModal('${ds}')"><div class="cal-dn">${day}</div>`;
+    html+=`<div class="cal-day${isToday?' today':''}" role="button" tabindex="0" aria-label="Add event on ${escapeAttr(ds)}" onclick="openEventModal('${ds}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openEventModal('${ds}')}"><div class="cal-dn">${day}</div>`;
     evs.slice(0,3).forEach(e=>{
       const eventId=safeIdentifier(e.id);
       const isUserEv=!!eventId;
-      const eventType=['r','g','a','b'].includes(e.event_type)?e.event_type:'b';
+      const eventType=['r','g','a','b','p'].includes(e.event_type)?e.event_type:'b';
       const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${eventId}')`:'';
-      html+=`<div class="cal-ev ${eventType}" ${isUserEv?`onclick="${clickHandler}" style="cursor:pointer" title="Click to edit"`:''}>${escapeHtml(e.title)}</div>`;
+      html+=`<div class="cal-ev ${eventType}" ${isUserEv?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="${clickHandler}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openUserEvent('${eventId}') }" style="cursor:pointer" title="Click to edit"`:''}>${escapeHtml(e.title)}</div>`;
     });
     if(evs.length>3)html+=`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`;
     html+='</div>';
@@ -1135,7 +1198,9 @@ async function renderWeek(){
   if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
   const wkP={1:'Upper Push',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
   const hours=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).in('event_date',dates.map(d=>d.toISOString().split('T')[0]));
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+    .or(`event_date.gte.${rangeStart},end_date.gte.${rangeStart}`)
+    .lte('event_date',rangeEnd);
   const ebd={};
   (uEvs||[]).forEach(e=>{
     // Add event to every day it spans
@@ -1154,8 +1219,17 @@ async function renderWeek(){
   let html='<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:48px repeat(7,1fr);gap:2px;min-width:500px">';
   html+='<div></div>'+dates.map(d=>{
     const k=d.toISOString().split('T')[0];const isT=k===todayStr();
-    return`<div style="text-align:center;padding:7px 3px;font-size:11px;font-weight:600;color:${isT?'var(--red)':'var(--t3)'};cursor:pointer" onclick="calDate=new Date('${k}T12:00:00');setCalView('day')">${D7[d.getDay()]}<br><span style="font-size:14px;font-weight:700">${d.getDate()}</span></div>`;
+    return`<div role="button" tabindex="0" aria-label="View ${escapeAttr(k)}" style="text-align:center;padding:7px 3px;font-size:11px;font-weight:600;color:${isT?'var(--red)':'var(--t3)'};cursor:pointer" onclick="calDate=new Date('${k}T12:00:00');setCalView('day')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();calDate=new Date('${k}T12:00:00');setCalView('day')}">${D7[d.getDay()]}<br><span style="font-size:14px;font-weight:700">${d.getDate()}</span></div>`;
   }).join('');
+  html+='<div style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace;text-align:right;padding:5px">All day</div>';
+  dates.forEach(d=>{
+    const k=d.toISOString().split('T')[0];const isT=k===todayStr();
+    const allDay=(ebd[k]||[]).filter(e=>e.all_day||!e.event_time);
+    html+=`<div style="min-height:34px;background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};border-radius:4px;padding:2px;overflow:hidden">${allDay.map(e=>{
+      const eventId=safeIdentifier(e.id);const label=escapeHtml(e.title);
+      return eventId?`<div role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}" style="font-size:9px;padding:2px 4px;border-radius:3px;background:var(--blu-l);cursor:pointer">${label}</div>`:`<div style="font-size:9px">${label}</div>`;
+    }).join('')}</div>`;
+  });
   hours.forEach(h=>{
     const ampm=h<12?h+':00 AM':h===12?'12:00 PM':(h-12)+':00 PM';
     html+=`<div style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace;text-align:right;padding-right:5px;height:40px;display:flex;align-items:flex-start;padding-top:3px">${ampm}</div>`;
@@ -1167,7 +1241,10 @@ async function renderWeek(){
       if(h===11&&dow===0)evs.push({title:'Meal Prep',event_type:'g'});
       (ebd[k]||[]).filter(e=>e.event_time&&parseInt(e.event_time)===h).forEach(e=>evs.push(e));
       const cols={r:'var(--red-l)',g:'var(--grn-l)',a:'var(--amb-l)',b:'var(--blu-l)'};
-      html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>`<div style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'}">${escapeHtml(e.title)}</div>`).join('')}</div>`;
+      html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>{
+        const eventId=safeIdentifier(e.id);const attrs=eventId?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}"`:'';
+        return`<div ${attrs} style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'};${eventId?'cursor:pointer':''}">${escapeHtml(e.title)}</div>`;
+      }).join('')}</div>`;
     });
   });
   html+='</div></div>';el.innerHTML=html;
@@ -1179,10 +1256,15 @@ async function renderDay(){
   if(title)title.textContent=D7L[calDate.getDay()]+', '+fmtD(calDate);
   const sched=CONTENT.schedule?.templates?.['standard-commuter'];
   const schedItems=sched?.weekday||[];
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id).eq('event_date',ds);
-  const all=[...schedItems,...(uEvs||[]).map(e=>({time:e.event_time,title:e.title,type:e.event_type}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-  const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',d:'var(--b2)'};
-  el.innerHTML=all.map(e=>`<div class="ev-chip" style="margin-bottom:6px"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${escapeHtml(e.title)}</span></div>`).join('');
+  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+    .or(`event_date.eq.${ds},end_date.gte.${ds}`)
+    .lte('event_date',ds);
+  const all=[...schedItems,...(uEvs||[]).map(e=>({id:e.id,time:e.event_time,title:e.title,type:e.event_type,allDay:e.all_day}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',p:'var(--pur)',d:'var(--b2)'};
+  el.innerHTML=all.map(e=>{
+    const eventId=safeIdentifier(e.id);const attrs=eventId?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}"`:'';
+    return`<div class="ev-chip" ${attrs} style="margin-bottom:6px;${eventId?'cursor:pointer':''}"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.allDay?'All day':e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${escapeHtml(e.title)}</span></div>`;
+  }).join('');
 }
 function openEventModal(dateStr,editId,eventData){
   evEditId=editId||null;
@@ -1221,7 +1303,7 @@ async function saveEvent(){
     title,
     event_type:document.getElementById('ev-type').value
   };
-  if(evEditId){await sb.from('calendar_events').update(ev).eq('id',evEditId);}
+  if(evEditId){await sb.from('calendar_events').update(ev).eq('id',evEditId).eq('user_id',PROFILE.id);}
   else{await sb.from('calendar_events').insert(ev);}
   closeModal('event-modal');
   toast(evEditId?'Event updated!':'Event added!');
@@ -1471,7 +1553,7 @@ function filterGoals(freq,btn){
 }
 
 // IS IT WORTH IT
-function getWitRate(){return PROFILE.wit_hourly_rate||23;}
+function getWitRate(){return PROFILE.wit_hourly_rate??23;}
 function calcWit(){
   const cost=parseFloat(document.getElementById('wit-cost')?.value);
   const rate=getWitRate();
@@ -1510,7 +1592,8 @@ function witDecide(decision){
   toast(decision==='pass'?'Smart pass! $'+cost.toFixed(2)+' saved.':'Purchase logged.');
   renderWit();
 }
-function deleteWitItem(idx){
+async function deleteWitItem(idx){
+  if(!await confirmDialog('Remove this purchase decision?'))return;
   const key='wit_'+PROFILE.id+'_'+yearMonth();
   const items=State.get(key)||[];
   items.splice(idx,1);State.set(key,items);
@@ -1550,11 +1633,11 @@ function renderWit(){
       const idx=items.length-1-ri;const isBuy=item.decision==='buy';
       return`<tr style="border-bottom:1px solid var(--b1)">
         <td style="padding:9px 6px;color:var(--t3);white-space:nowrap;font-family:DM Mono,monospace">${item.date}</td>
-        <td style="padding:9px 6px;font-weight:500">${item.name}</td>
+        <td style="padding:9px 6px;font-weight:500">${escapeHtml(item.name)}</td>
         <td style="padding:9px 6px;text-align:right;font-family:DM Mono,monospace;font-weight:500">$${item.cost.toFixed(2)}</td>
         <td style="padding:9px 6px;text-align:right;font-family:DM Mono,monospace;color:var(--amb)">${fmtWorkTime(item.cost/rate)}</td>
         <td style="padding:9px 6px;text-align:center"><span class="badge b-${isBuy?'r':'g'}">${isBuy?'Bought':'Passed'}</span></td>
-        <td style="padding:9px 6px;text-align:right"><button onclick="deleteWitItem(${idx})" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">x</button></td>
+        <td style="padding:9px 6px;text-align:right"><button onclick="deleteWitItem(${idx})" aria-label="Remove ${escapeAttr(item.name)} decision" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">x</button></td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -1664,9 +1747,9 @@ async function saveStat(elId,key,unit,value){
   toast('Saved: '+display+(unit==='g'?'g':' '+unit));
 }
 function loadDashStats(){
-  const tgt=PROFILE.target_weight||165;
-  const cal=PROFILE.calorie_target||1900;
-  const pro=PROFILE.protein_target||185;
+  const tgt=PROFILE.target_weight??165;
+  const cal=PROFILE.calorie_target??1900;
+  const pro=PROFILE.protein_target??185;
   const te=document.getElementById('d-tgt-wt'); if(te)te.textContent=tgt;
   const ce=document.getElementById('d-cal-tgt'); if(ce)ce.textContent=cal.toLocaleString();
   const pe=document.getElementById('d-pro-tgt'); if(pe)pe.textContent=pro+'g';
@@ -1942,7 +2025,7 @@ updateMealList=function(){
 // ── FINANCIAL TAKE-HOME ─────────────────────────────────────────
 function editTakeHome(){
   const el=document.getElementById('fin-take-home');if(!el)return;
-  const cur=PROFILE.take_home_pay||3370;
+  const cur=PROFILE.take_home_pay??3370;
   el.innerHTML=`<input type="number" value="${cur}" step="1" style="width:90px;background:none;border:none;border-bottom:2px solid var(--grn);color:var(--grn);font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveTakeHome(this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
   el.querySelector('input').select();
 }
@@ -1961,7 +2044,7 @@ updateFinancialBoxes=async function(){
   const totalPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
   const expenses=totalPay+totalSubs;
-  const takeHome=PROFILE.take_home_pay||3370;
+  const takeHome=PROFILE.take_home_pay??3370;
   const freeCash=takeHome-expenses;
   const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
@@ -2171,8 +2254,8 @@ renderGoals=function(){
         <span style="flex:1;font-size:13px">${escapeHtml(g.g)}</span>
         <span class="badge b-${PCOL[g.p]||'d'}">${escapeHtml(g.p)}</span>
         ${goalEditMode?`<div style="display:flex;gap:3px">
-          <button onclick="editGoal(${si},${gi})" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
-          <button onclick="removeGoal(${si},${gi})" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
+          <button onclick="editGoal(${si},${gi})" aria-label="Edit ${escapeAttr(g.g)} goal" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✏️</button>
+          <button onclick="removeGoal(${si},${gi})" aria-label="Remove ${escapeAttr(g.g)} goal" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 7px;cursor:pointer;font-size:11px">✕</button>
         </div>`:''}
       </div>`).join('')}
     ${goalEditMode?`<button class="btn btn-o btn-xs" onclick="openAddGoalForSection(${si})" style="margin-bottom:8px;width:100%">+ Add to ${escapeHtml(gs.sec)}</button>`:''}
@@ -2314,7 +2397,7 @@ renderNutrition=async function(){
   // Meal entries list
   const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
   const mEl=document.getElementById('meal-entries');
-  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>{const mealId=safeIdentifier(m.id);return`<div class="meal-entry"><div class="meal-entry-name">${escapeHtml(m.meal_name)}</div><div class="meal-macros">${Number(m.calories)||0}cal - ${Number(m.protein_g)||0}P - ${Number(m.carbs_g)||0}C - ${Number(m.fat_g)||0}F</div>${mealId?`<button class="meal-del" onclick="deleteMeal('${mealId}')">x</button>`:''}</div>`;}).join('')
+  if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>{const mealId=safeIdentifier(m.id);return`<div class="meal-entry"><div class="meal-entry-name">${escapeHtml(m.meal_name)}</div><div class="meal-macros">${Number(m.calories)||0}cal - ${Number(m.protein_g)||0}P - ${Number(m.carbs_g)||0}C - ${Number(m.fat_g)||0}F</div>${mealId?`<button class="meal-del" onclick="deleteMeal('${mealId}')" aria-label="Remove ${escapeAttr(m.meal_name)} from today's meals">x</button>`:''}</div>`;}).join('')
     ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today.</div>':'');
   // Reference meal tabs
   const tabsEl=document.getElementById('nut-ref-tabs');const panelsEl=document.getElementById('nut-ref-panels');
@@ -2925,8 +3008,8 @@ renderTodo=async function(){
         <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${itemId}')" ${itemId?'':'disabled'}>&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${itemId}')" ${itemId?'':'disabled'}>Undo</button>`}
           ${!isDone?`<button class="btn btn-o btn-xs" onclick="pushBackTodo('${itemId}')" title="Push to later" ${itemId?'':'disabled'}>&#x23E9; Push</button>`:''}
-          <button class="btn btn-o btn-xs" onclick="editTodo('${itemId}')" ${itemId?'':'disabled'}>&#x270F;&#xFE0F;</button>
-          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${itemId}')" ${itemId?'':'disabled'}>&#x2715;</button>
+          <button class="btn btn-o btn-xs" onclick="editTodo('${itemId}')" aria-label="Edit ${escapeAttr(item.title)} task" ${itemId?'':'disabled'}>&#x270F;&#xFE0F;</button>
+          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${itemId}')" aria-label="Delete ${escapeAttr(item.title)} task" ${itemId?'':'disabled'}>&#x2715;</button>
         </div>
       </div>
     </div>`;
@@ -2942,7 +3025,7 @@ renderTodo=async function(){
 // ── Open a user event for editing (called from calendar chip) ────
 async function openUserEvent(eventId){
   if(!eventId)return;
-  const{data:ev,error}=await sb.from('calendar_events').select('*').eq('id',eventId).single();
+  const{data:ev,error}=await sb.from('calendar_events').select('*').eq('id',eventId).eq('user_id',PROFILE.id).single();
   if(error||!ev){toast('Could not load event');return;}
   openEventModal(null,eventId,ev);
 }
@@ -2951,7 +3034,7 @@ async function openUserEvent(eventId){
 async function deleteEvent(){
   if(!evEditId){toast('No event selected');return;}
   if(!await confirmDialog('Delete this event?'))return;
-  await sb.from('calendar_events').delete().eq('id',evEditId);
+  await sb.from('calendar_events').delete().eq('id',evEditId).eq('user_id',PROFILE.id);
   closeModal('event-modal');
   toast('Event deleted');
   renderCal();
@@ -3018,8 +3101,8 @@ async function renderDashTodos(){
         <div style="font-size:10px;color:${isOverdue?'var(--red)':'var(--amb)'};font-family:DM Mono,monospace">${dueLabel}</div>
       </div>
       <div style="display:flex;gap:3px;flex-shrink:0">
-        <button onclick="dashMarkDone('${itemId}')" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700" ${itemId?'':'disabled'}>&#x2713;</button>
-        <button onclick="pushBackTodo('${itemId}')" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow" ${itemId?'':'disabled'}>&#x23E9;</button>
+        <button onclick="dashMarkDone('${itemId}')" aria-label="Complete ${escapeAttr(item.title)} task" style="background:var(--grn-l);border:1px solid rgba(78,205,196,.3);color:var(--grn);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px;font-weight:700" ${itemId?'':'disabled'}>&#x2713;</button>
+        <button onclick="pushBackTodo('${itemId}')" aria-label="Push ${escapeAttr(item.title)} task to tomorrow" style="background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:4px;padding:2px 7px;cursor:pointer;font-size:10px" title="Push to tomorrow" ${itemId?'':'disabled'}>&#x23E9;</button>
       </div>
     </div>`;
   }).join('')+`<div style="margin-top:8px;text-align:center"><a href="#" onclick="goto('todo');return false" style="font-size:11px;color:var(--t3)">View all tasks →</a></div>`;
@@ -3038,6 +3121,7 @@ const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
 renderDash=async function(){
   if(_s2_origRenderDash)await _s2_origRenderDash();
   await renderDashTodos();
+  loadDashStats();
 };
 
 // Patch goto to render todos when switching to dash
@@ -3069,59 +3153,59 @@ async function renderBillsList(){
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <div style="font-size:15px;font-weight:700;color:var(--amb);font-family:DM Mono,monospace">$${(+b.amount).toFixed(2)}</div>
-        <button class="fin-edit" onclick="openBillModal('${safeIdentifier(b.id)}')" ${safeIdentifier(b.id)?'':'disabled'}>&#x270F;&#xFE0F;</button>
-        <button class="fin-del" onclick="removeBill('${safeIdentifier(b.id)}')" ${safeIdentifier(b.id)?'':'disabled'}>&#x2715;</button>
+        <button class="fin-edit" onclick="openBillModal('${safeIdentifier(b.id)}')" aria-label="Edit ${escapeAttr(b.bill_name)} bill" ${safeIdentifier(b.id)?'':'disabled'}>&#x270F;&#xFE0F;</button>
+        <button class="fin-del" onclick="removeBill('${safeIdentifier(b.id)}')" aria-label="Remove ${escapeAttr(b.bill_name)} bill" ${safeIdentifier(b.id)?'':'disabled'}>&#x2715;</button>
       </div>
     </div>`).join('');
 }
 
-function openBillModal(editId){
+async function openBillModal(editId){
   document.getElementById('bill-modal-title').textContent=editId?'EDIT BILL':'ADD BILL';
   document.getElementById('bill-edit-id').value=editId||'';
+  document.getElementById('bill-name').value='';
+  document.getElementById('bill-amount').value='';
+  document.getElementById('bill-due-day').value='1';
+  document.getElementById('bill-variable').value='0';
   if(!editId){
-    document.getElementById('bill-name').value='';
-    document.getElementById('bill-amount').value='';
-    document.getElementById('bill-due-day').value='1';
-    document.getElementById('bill-variable').value='0';
+    openModal('bill-modal');
   }else{
-    // Fetch and pre-fill
-    sb.from('bills_tracker').select('*').eq('id',editId).single().then(({data})=>{
-      if(!data)return;
-      document.getElementById('bill-name').value=data.bill_name||'';
-      document.getElementById('bill-amount').value=data.amount||'';
-      document.getElementById('bill-due-day').value=data.due_day||1;
-      document.getElementById('bill-variable').value=data.is_variable?'1':'0';
-    });
+    const{data,error}=await sb.from('bills_tracker').select('*').eq('id',editId).eq('user_id',PROFILE.id).single();
+    if(error||!data){toast('Could not load bill');return;}
+    document.getElementById('bill-name').value=data.bill_name||'';
+    document.getElementById('bill-amount').value=data.amount??'';
+    document.getElementById('bill-due-day').value=data.due_day||1;
+    document.getElementById('bill-variable').value=data.is_variable?'1':'0';
+    openModal('bill-modal');
   }
-  openModal('bill-modal');
 }
 
 async function saveBill(){
   const name=document.getElementById('bill-name').value.trim();
   if(!name){toast('Enter a bill name');return;}
-  const amount=+document.getElementById('bill-amount').value||0;
-  const dueDay=+document.getElementById('bill-due-day').value||1;
+  const amount=Number(document.getElementById('bill-amount').value);
+  const dueDay=Number(document.getElementById('bill-due-day').value);
+  if(!Number.isFinite(amount)||amount<0){toast('Enter a valid bill amount');return;}
+  if(!Number.isInteger(dueDay)||dueDay<1||dueDay>31){toast('Due day must be between 1 and 31');return;}
   const isVariable=document.getElementById('bill-variable').value==='1';
   const editId=document.getElementById('bill-edit-id').value;
   const payload={user_id:PROFILE.id,bill_name:name,amount,due_day:dueDay,is_variable:isVariable};
+  let error;
   if(editId){
-    await sb.from('bills_tracker').update(payload).eq('id',editId);
-    toast('Bill updated!');
+    ({error}=await sb.from('bills_tracker').update(payload).eq('id',editId).eq('user_id',PROFILE.id));
   }else{
-    await sb.from('bills_tracker').insert(payload);
-    toast('Bill added!');
+    ({error}=await sb.from('bills_tracker').insert(payload));
   }
+  if(error){toast('Could not save bill');console.error('[bill] save failed:',error);return;}
   closeModal('bill-modal');
-  await renderBillsList();
-  await updateFinancialBoxes();
+  await Promise.all([renderBillsList(),updateFinancialBoxes(),renderFinCal()]);
+  toast(editId?'Bill updated!':'Bill added!');
 }
 
 async function removeBill(id){
   if(!await confirmDialog('Remove this bill?'))return;
-  const{error}=await sb.from('bills_tracker').delete().eq('id',id);
+  const{error}=await sb.from('bills_tracker').delete().eq('id',id).eq('user_id',PROFILE.id);
   if(error){toast('Error removing bill: '+error.message);console.error('[bill] remove failed:',error);return;}
-  await renderBillsList();
-  await updateFinancialBoxes();
+  await Promise.all([renderBillsList(),updateFinancialBoxes(),renderFinCal()]);
   toast('Bill removed');
 }
 
@@ -3139,7 +3223,7 @@ updateFinancialBoxes=async function(){
   const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
   const totalBills=(bills||[]).reduce((s,b)=>s+(+b.amount||0),0);
-  const takeHome=PROFILE.take_home_pay||3370;
+  const takeHome=PROFILE.take_home_pay??3370;
   // Free Cash = Take-Home - Bills - Subs - Debt Monthly Payments
   const freeCash=takeHome-totalBills-totalSubs-totalDebtPay;
   const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3242,8 +3326,13 @@ async function loadMealsFromDB(){
  * of insert sequence. Returns null on error or empty DB.
  */
 async function loadWorkoutPlansFromDB(){
-  const{data:plans,error}=await sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true);
-  if(error||!plans?.length)return null;
+  const[templateResult,userResult]=await Promise.all([
+    sb.from('workout_plans').select('*,workout_plan_days(*)').eq('is_template',true),
+    PROFILE?sb.from('user_workout_plans').select('*').eq('user_id',PROFILE.id):Promise.resolve({data:[]}),
+  ]);
+  const plans=templateResult.data||[];
+  const userPlans=userResult.data||[];
+  if(templateResult.error||(!plans.length&&!userPlans.length))return null;
   const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
   // Keyed by plan_key (matches the shape expected by renderWorkout)
   const plansObj={};
@@ -3257,6 +3346,18 @@ async function loadWorkoutPlansFromDB(){
         exercises:d.exercises||[],
         hiit_finisher:d.hiit_finisher||null
       }))
+    };
+  });
+  userPlans.forEach(p=>{
+    let customDays=p.custom_days||[];
+    if(typeof customDays==='string'){
+      try{customDays=JSON.parse(customDays);}catch(_){customDays=[];}
+    }
+    const key='custom_'+p.id;
+    plansObj[key]={
+      id:key,plan_key:key,name:p.name,description:p.description||'',level:'custom',goal:'custom',
+      days_per_week:Array.isArray(customDays)?customDays.length:0,isCustom:true,
+      days:WorkoutService.normalizeCustomDays(customDays),
     };
   });
   return{plans:plansObj,knee_rehab:knee};
@@ -3391,6 +3492,7 @@ toggleHabit=async function(hid){
   if(hc&&hb){
     const isDone=!!habitCache[hid];
     hc.classList.toggle('done',isDone);
+    hc.setAttribute('aria-checked',String(isDone));
     hb.textContent=isDone?'✓':'';
   }
 };
@@ -4312,21 +4414,22 @@ async function savePlan(){
     days.push({day_name:dayName,focus,exercises,muscles:[],color:'b',has_hiit:false});
   });
   if(!days.length){toast('Add at least one day');return;}
-  const{error}=await sb.from('user_workout_plans').insert({
+  const normalizedDays=WorkoutService.normalizeCustomDays(days);
+  const{data:savedPlan,error}=await sb.from('user_workout_plans').insert({
     user_id:PROFILE.id,template_id:null,name,description:desc,is_active:false,
-    custom_days:JSON.stringify(days)
-  });
-  if(error){toast('Error saving plan: '+error.message);return;}
+    custom_days:normalizedDays
+  }).select().single();
+  if(error||!savedPlan){toast('Error saving plan: '+(error?.message||'unknown error'));return;}
+  const planKey='custom_'+savedPlan.id;
+  if(!CONTENT.workouts)CONTENT.workouts={plans:{},knee_rehab:null};
+  if(!CONTENT.workouts.plans)CONTENT.workouts.plans={};
+  CONTENT.workouts.plans[planKey]={id:planKey,plan_key:planKey,name,description:desc,level:'custom',goal:'custom',days_per_week:normalizedDays.length,isCustom:true,days:normalizedDays};
   closeModal('plan-builder-modal');
   toast('Plan "'+name+'" saved!');
   // Ask if user wants to activate it
   if(await confirmDialog('Activate "'+name+'" as your current plan?')){
-    // Store as custom plan key
-    PROFILE.assigned_workout_plan='custom_'+Date.now();
-    // For now load it into CONTENT
-    if(CONTENT.workouts?.plans){
-      CONTENT.workouts.plans[PROFILE.assigned_workout_plan]={name,description:desc,days,plan_key:PROFILE.assigned_workout_plan};
-    }
+    PROFILE.assigned_workout_plan=planKey;
+    await sb.from('user_workout_plans').update({is_active:true}).eq('id',savedPlan.id).eq('user_id',PROFILE.id);
     await sb.from('profiles').update({assigned_workout_plan:PROFILE.assigned_workout_plan}).eq('id',PROFILE.id);
     renderWorkout();
   }
@@ -4393,8 +4496,8 @@ renderSpice=function(){
             <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
               ${cfg?`<span class="badge ${cfg.badge}" style="font-size:10px;white-space:nowrap">${cfg.icon} ${cfg.label}</span>`:''}
               ${r.calories_per_serving||r.cal?`<span class="mono" style="font-size:10px;color:var(--t3)">${r.calories_per_serving||r.cal}cal &middot; ${r.protein_g||r.pro||0}gP</span>`:''}
-              ${spiceEditMode&&profileId&&recipeId?`<button onclick="openSpiceModal('${profileId}','${recipeId}')" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
-              ${spiceEditMode&&canDelete&&recipeId?`<button onclick="removeSpiceRecipe('${recipeId}')" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
+              ${spiceEditMode&&profileId&&recipeId?`<button onclick="openSpiceModal('${profileId}','${recipeId}')" aria-label="Edit ${escapeAttr(r.name)} recipe" style="background:var(--blu-l);border:1px solid rgba(77,159,236,.3);color:var(--blu);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✏️</button>`:''}
+              ${spiceEditMode&&canDelete&&recipeId?`<button onclick="removeSpiceRecipe('${recipeId}')" aria-label="Delete ${escapeAttr(r.name)} recipe" style="background:var(--red-ll);border:1px solid rgba(232,64,64,.3);color:var(--red);border-radius:4px;padding:1px 8px;cursor:pointer;font-size:11px">✕</button>`:''}
             </div>
           </div>
           ${rows.map(row=>`<div style="margin-bottom:7px">

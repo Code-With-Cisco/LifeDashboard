@@ -7,6 +7,8 @@ LifeDashboard is a static browser client backed by Supabase. GitHub Pages serves
 ```text
 Browser UI
   ├─ SecurityService: escaping, identifier checks, log redaction
+  ├─ ProfileService: profile validation and safe update payloads
+  ├─ WorkoutService: weekday-aware plan selection and normalization
   ├─ BriefingService: deterministic daily prioritization
   ├─ domain services: recipes, habits, nutrition
   ├─ API layer: user-scoped Supabase queries
@@ -22,7 +24,7 @@ Privileged administration, OAuth token exchange, scheduled provider sync, and AI
 
 ## Load order
 
-`index.html` loads Supabase, `config.js`, security and logging helpers, state/utilities/API/rendering modules, pure services, and finally `app.js`. SecurityService loads before any module that persists logs or renders user-controlled data.
+`index.html` loads Supabase, `config.js`, security and profile/workout helpers, logging helpers, state/utilities/API/rendering modules, the remaining pure services, and finally `app.js`. SecurityService loads before any module that persists logs or renders user-controlled data.
 
 ## Data flow
 
@@ -31,6 +33,8 @@ Privileged administration, OAuth token exchange, scheduled provider sync, and AI
 3. Pure services calculate ratings, streaks, nutrition totals, and the command brief.
 4. UI renderers escape stored or remote text before placing it into HTML.
 5. Local storage is a cache, not an authorization boundary or source of truth.
+
+Profile updates are made from a signed-in, user-scoped editor. The browser validates presentation and range rules, while Supabase RLS remains the authority that prevents one user from updating another profile.
 
 ## Daily command brief
 
