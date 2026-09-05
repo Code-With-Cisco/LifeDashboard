@@ -19,6 +19,24 @@
  */
 window.State = {
   _subscribers: [],
+  _privateCache: new Map(),
+
+  cacheGet: function(userId, key) {
+    return userId ? this._privateCache.get(JSON.stringify([userId, key])) ?? null : null;
+  },
+
+  cacheSet: function(userId, key, value) {
+    if (!userId) return;
+    // Bound optional cache growth; authoritative and local-only records are separate.
+    if (this._privateCache.size >= 64) this._privateCache.delete(this._privateCache.keys().next().value);
+    this._privateCache.set(JSON.stringify([userId, key]), value);
+  },
+
+  clearPrivateCaches: function() {
+    this._privateCache.clear();
+    this.keys().filter(key => key === '_cachedRecipes' || key.startsWith('_cachedHabits_') ||
+      key === '_app_logs').forEach(key => this.delete(key));
+  },
 
   /**
    * Register a listener called whenever any key changes.
@@ -179,3 +197,4 @@ window.State = {
 };
 
 window.state = State;
+State.clearPrivateCaches();

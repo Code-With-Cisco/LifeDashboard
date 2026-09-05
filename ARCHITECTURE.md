@@ -32,7 +32,7 @@ Privileged administration, OAuth token exchange, scheduled provider sync, and AI
 2. API queries include the current user ID; database RLS must independently enforce that scope.
 3. Pure services calculate ratings, streaks, nutrition totals, and the command brief.
 4. UI renderers escape stored or remote text before placing it into HTML.
-5. Local storage is a cache, not an authorization boundary or source of truth.
+5. Private recipe/habit caches are per-user session memory. Local storage still holds authoritative local-only goals, custom definitions, and purchase decisions; those require an explicit database migration with data preservation.
 
 Profile updates are made from a signed-in, user-scoped editor. The browser validates presentation and range rules, while Supabase RLS remains the authority that prevents one user from updating another profile.
 
@@ -55,5 +55,7 @@ Brief preferences and the last browser-reminder date are device-local UI state, 
 The client currently references profiles, tasks, calendar events, habits, nutrition/meal logs, weight, workouts, recipes, books/reading lists, and finance records. Every table containing private data must have RLS enabled and policies tied to `auth.uid()`. See [SECURITY.md](SECURITY.md) for the release checklist.
 
 ## Graphify
+
+The September 4 review changed authentication, caching, rendering, and briefing behavior. The existing graph is an orientation aid and is not a current line-level index; verify against source until it is rebuilt.
 
 `graphify-out/graph.json` is the machine-readable knowledge graph, `GRAPH_REPORT.md` is the structural report, and `graph.html` is the interactive view. Rebuild the graph after architectural changes so repository analysis stays aligned with the code.

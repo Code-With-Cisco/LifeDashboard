@@ -25,6 +25,31 @@
     return /^[A-Za-z0-9_-]{1,128}$/.test(candidate) ? candidate : '';
   }
 
+  // A browser configuration is public. Fail before making any network request
+  // when an operator accidentally supplies a privileged or unknown key.
+  function validatePublicConfig(value) {
+    const input = value || {};
+    let url;
+    try { url = new URL(input.supabaseUrl); }
+    catch (_) { throw new Error('A valid Supabase URL is required.'); }
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if ((url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) ||
+        url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+      throw new Error('Use an HTTPS Supabase origin, or HTTP on localhost.');
+    }
+    const key = String(input.supabaseKey || '');
+    let publicKey = /^sb_publishable_[A-Za-z0-9_-]+$/.test(key);
+    if (!publicKey && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key)) {
+      try {
+        const payload = key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        const claims = JSON.parse(atob(payload));
+        publicKey = claims.role === 'anon';
+      } catch (_) { publicKey = false; }
+    }
+    if (!publicKey) throw new Error('Only a Supabase publishable or anon key may be used in the browser.');
+    return {supabaseUrl: url.origin, supabaseKey: key, allowSelfSignup: input.allowSelfSignup === true};
+  }
+
   function redactText(value) {
     return String(value == null ? '' : value)
       .replace(EMAIL, '[REDACTED_EMAIL]')
@@ -48,5 +73,6 @@
     return redactText(value);
   }
 
-  root.SecurityService = Object.freeze({escapeHtml, escapeAttr: escapeHtml, safeIdentifier, redactText, redact});
+  root.SecurityService = Object.freeze({escapeHtml, escapeAttr: escapeHtml, safeIdentifier, redactText, redact, validatePublicConfig});
+  if (typeof module !== 'undefined' && module.exports) module.exports = root.SecurityService;
 })(typeof window !== 'undefined' ? window : globalThis);

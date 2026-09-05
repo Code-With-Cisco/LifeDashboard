@@ -4,6 +4,11 @@
 node_modules/
 coverage/
 dist/
+vendor/
+*.bundle
+.env
+.env.*
+!.env.example
 config.js
 .env.local
 .env.*.local

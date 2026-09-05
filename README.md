@@ -9,16 +9,18 @@ The browser application is static and uses Supabase for authentication and user-
 ## Local setup
 
 1. Install dependencies with `npm ci`.
+   Run `npm run setup` to copy the locked Supabase browser SDK into the ignored `vendor/` directory.
 2. Copy `config.example.js` to the ignored `config.js`.
 3. Add your Supabase project URL and publishable/anonymous key. Never use a `service_role` key.
 4. Serve the repository with a local HTTP server and open it in a browser.
 
 ```bash
 npm ci
+npm run setup
 python -m http.server 8000
 ```
 
-Self-signup is disabled by default. Provision users through a trusted server-side admin path, then use the sign-in screen.
+The self-signup UI is disabled by default; disable signup in Supabase Auth as well to enforce invitation-only access. Provision users through a trusted server-side admin path, then use the sign-in screen.
 
 ## Verification and deployment
 
@@ -46,6 +48,10 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 | Codebase knowledge graph | `graphify-out/graph.html`, `graphify-out/GRAPH_REPORT.md` |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) before loading personal data, and [INTEGRATIONS.md](INTEGRATIONS.md) for the Jarvis-style roadmap.
+
+The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). [ROADMAP.md](ROADMAP.md) defines the next deliverables and platform choices. The [database inventory](database/README.md) prepares the live RLS review that is still required.
+
+The brief now shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Goals and other local-only records remain in browser storage until a reviewed migration is available.
 
 The latest manual production regression record is in [QA_REPORT.md](QA_REPORT.md).
 

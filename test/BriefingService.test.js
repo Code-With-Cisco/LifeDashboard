@@ -5,6 +5,27 @@ const Briefing = window.BriefingService;
 describe('BriefingService', () => {
   const today = '2026-09-03';
 
+  test('an outage produces an incomplete brief instead of an all-clear message', () => {
+    const brief = Briefing.build({today, unavailableSources: ['Tasks', 'Calendar']});
+    expect(brief.headline).toContain('incomplete');
+    expect(brief.summary).toContain('? tasks');
+    expect(brief.alerts).toHaveLength(2);
+  });
+
+  test('keeps saved long-term goals separate from immediate task priorities', () => {
+    const brief = Briefing.build({today, todos: [{id:'task-1',title:'Finish report'}],
+      goals:[{g:'Practice guitar',p:'Low',freq:'Weekly'}, {g:'Finish certification',p:'High',freq:'Daily'}]});
+    expect(brief.directions[0].title).toBe('Finish certification');
+    expect(brief.focus[0].id).toBe('task-1');
+  });
+
+  test('calendar fallback selects the earliest event rather than database row order', () => {
+    const brief = Briefing.build({today, events: [
+      {title:'Evening',event_date:today,start_time:'18:00'}, {title:'Morning',event_date:today,start_time:'08:00'},
+    ]});
+    expect(brief.focus[0].title).toBe('Morning');
+  });
+
   test('prioritizes overdue and urgent work', () => {
     const result = Briefing.build({
       today,

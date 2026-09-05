@@ -1,5 +1,7 @@
 # Integration roadmap
 
+See [ROADMAP.md](ROADMAP.md) for concrete milestones, acceptance criteria, platform limitations, and the next implementation order.
+
 The end state is a private personal command center: one daily brief that combines commitments, goals, health signals, and the next best actions without giving every provider access to the whole dashboard.
 
 ## Architecture

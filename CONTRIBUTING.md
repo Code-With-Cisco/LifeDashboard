@@ -32,14 +32,15 @@ window.CONFIG = Object.freeze({
 
 ```bash
 # Option A — Python (no install)
-python -m http.server 8000
+npm run setup
+python -m http.server 8000 --bind 127.0.0.1
 # Then open http://localhost:8000
 
 # Option B — Node
 npx http-server
 ```
 
-Or just open `index.html` directly in Chrome/Firefox.
+Use HTTP so browser authentication, module loading, and content policies have a consistent origin.
 
 ### Troubleshooting
 
@@ -52,14 +53,16 @@ Or just open `index.html` directly in Chrome/Firefox.
 ## Running Tests
 
 ```bash
-npm install       # first time only
+npm ci            # first time only
 npm test          # run all tests
 npm run test:coverage  # run with coverage report
 ```
 
-Tests live in `test/` and cover the pure service files in `services/`. They run in Node.js via Jest with a jsdom environment and have zero network dependencies.
+Tests live in `test/` and cover the pure service files in `services/`. They run through Jest with jsdom application fixtures and Node build tests, with no live database calls. The runtime SDK is verified against the lockfile during the build.
 
 ## Commit Conventions
+
+Use the repository owner's configured Git identity. Do not add assistant signatures, co-author trailers, sign-offs, or generated-by notices.
 
 Match the existing commit message style:
 
@@ -87,26 +90,9 @@ fix: short description of what was wrong and what changed
 | New UI feature wired to events | `app.js` — follow the staged loading pattern |
 | New event delegation action | `main.js` — add a `case` to `setupEventDelegation` |
 
-## Staged Loading Pattern
+## Legacy staged loading
 
-When adding a new DB-backed behavior that replaces an existing function:
-
-```js
-// At the bottom of the inline script, inside a new STAGE block:
-const _origMyFunc = myFunc;
-myFunc = async function(...args) {
-  try {
-    // DB-powered implementation
-    const data = await API.someMethod();
-    // ...
-  } catch(e) {
-    Logger.error('module', 'myFunc', e);
-    return _origMyFunc(...args); // fall back to original
-  }
-};
-```
-
-This preserves offline/fallback behavior automatically.
+`app.js` contains historical overrides. Find the active implementation before editing. Do not introduce another override: fix the active path directly, add meaningful behavioral coverage, and move coherent domains into modules as they are touched. Database failures must remain visible rather than silently falling back to another account's cached content.
 
 ## Service Layer Rules
 

@@ -28,5 +28,10 @@
     }));
   }
 
-  root.WorkoutService = Object.freeze({forWeekday, weekdayNumber, normalizeCustomDays});
+  function setCount(value) {
+    const count = Number(value);
+    return Number.isFinite(count) && count > 0 ? Math.min(20, Math.floor(count)) || 1 : 3;
+  }
+
+  root.WorkoutService = Object.freeze({forWeekday, weekdayNumber, normalizeCustomDays, setCount});
 })(typeof window !== 'undefined' ? window : globalThis);

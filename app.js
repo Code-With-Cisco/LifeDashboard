@@ -41,8 +41,19 @@
 // Books and schedule data will be migrated in Stage 6.
 // ════════════════════════════════════════════════════════════════
 
+let _authEpoch=0, _activeAuthUserId=null;
+const _privateShell=[...document.querySelectorAll('#app, #q-screen, .modal-bg')]
+  .map(element=>({id:element.id,template:element.cloneNode(true)}));
 const {createClient}=supabase;
-window.sb=createClient(CONFIG.supabaseUrl,CONFIG.supabaseKey);
+let publicConfig;
+try{publicConfig=SecurityService.validatePublicConfig(typeof CONFIG!=='undefined'?CONFIG:window.CONFIG);}
+catch(error){
+  document.getElementById('s-choose')?.classList.add('show');
+  const message=document.createElement('p');message.textContent='Dashboard configuration needs attention. '+error.message;
+  document.querySelector('#s-choose .auth-box')?.append(message);
+  throw error;
+}
+window.sb=createClient(publicConfig.supabaseUrl,publicConfig.supabaseKey);
 
 // ── SAFETY HELPERS ───────────────────────────────────────────────
 /**
@@ -188,7 +199,7 @@ function hideAuth(){document.querySelectorAll('.auth-screen').forEach(s=>s.class
 
 // AUTH
 function startSignup(){
-  if(CONFIG.allowSelfSignup!==true){
+  if(publicConfig.allowSelfSignup!==true){
     toast('Self-signup is disabled. Use a secure administrator invitation.',5000);
     return;
   }
@@ -200,15 +211,20 @@ async function doLogin(){
   const pass=document.getElementById('l-pass').value;
   if(!email||!pass){showErr('login-err','Enter email and password.');return;}
   btn.disabled=true;btn.textContent='Signing in...';
-  const{error}=await sb.auth.signInWithPassword({email,password:pass});
-  btn.disabled=false;btn.textContent='SIGN IN';
-  if(error)showErr('login-err',error.message.includes('Invalid')?'Incorrect email or password.':error.message);
+  try{
+    const{error}=await sb.auth.signInWithPassword({email,password:pass});
+    if(error)showErr('login-err','Sign-in failed. Check your credentials and try again.');
+  }catch(_){showErr('login-err','Sign-in is temporarily unavailable. Please retry.');}
+  finally{
+    document.getElementById('l-pass').value='';
+    btn.disabled=false;btn.textContent='SIGN IN';
+  }
 }
 function checkCode(){
   startSignup();
 }
 async function doSignup(){
-  if(CONFIG.allowSelfSignup!==true){
+  if(publicConfig.allowSelfSignup!==true){
     showErr('signup-err','Self-signup is disabled. Ask the administrator for a secure invitation.');
     return;
   }
@@ -267,19 +283,35 @@ async function doFPR(){
     else{show('s-login');toast('Please sign in with your new password.');}
   }
 }
-async function logout(){
+function clearPrivateSession(){
+  _authEpoch++;
+  _activeAuthUserId=null;
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
-  try{await sb.auth.signOut();}
-  catch(e){
-    console.warn('signOut error, forcing UI reset:',e);
-    PROFILE=null;
-    document.getElementById('app').classList.remove('show');
-    document.getElementById('q-screen').classList.remove('show');
-    show('s-choose');
+  PROFILE=null;CONTENT={};habitCache={};currentPage='home';
+  State.clearPrivateCaches();Logger.clear();
+  qAnswers={};qStep=0;
+  debtEditId=null;subEditId=null;evEditId=null;
+  _editingHabit=null;_editingGoal=null;
+  bookState.curBookId=null;bookState.curBookPages=0;
+  workoutState.existingSessionId=null;
+  mealActionRegistry.clear();
+  _privateShell.forEach(({id,template})=>document.getElementById(id)?.replaceWith(template.cloneNode(true)));
+  document.querySelectorAll('input[type="password"]').forEach(input=>{input.value='';});
+  document.getElementById('toast')?.classList.remove('show');
+  show('s-choose');
+}
+async function logout(){
+  clearPrivateSession();
+  try{
+    const{error}=await sb.auth.signOut({scope:'local'});
+    if(error)throw error;
+  }catch(error){
+    Logger.error('auth','signout.failed');
+    toast('Sign-out could not finish. Close this tab and try again when connected.',6000);
   }
 }
-const ADMIN_UUID='81dbcc87-60dc-4969-874b-588a8dd861b7';
+
 
 async function loadProfile(session){
   // maybeSingle() returns null (not error) when 0 rows found
@@ -293,34 +325,19 @@ async function loadProfile(session){
     return await createProfile(session);
   }
 
-  // Server error (500) — could be RLS conflict or table issue
-  // Log for debugging and try creating anyway in case it's just a missing row
-  console.warn('Profile fetch error:',error?.code, error?.message, error?.details);
-
-  if(error?.code==='42P01'){
-    // Table doesn't exist at all
-    showDbError('Table "profiles" not found. Run setup.sql in Supabase SQL Editor.');
-    return null;
-  }
-
-  // For 500 or other errors: attempt profile creation as fallback
-  // (handles cases where SELECT fails but INSERT succeeds due to RLS quirks)
-  const created = await createProfile(session);
-  if(created)return created;
-
-  showDbError('Error '+error?.code+': '+error?.message+'. Run fix.sql in Supabase SQL Editor.');
+  Logger.error('auth','profile.load_failed');
+  showDbError('Your profile could not be loaded. Please retry when the service is available.');
   return null;
 }
 
 async function createProfile(session){
   const meta=session.user.user_metadata||{};
-  const isAdmin=session.user.id===ADMIN_UUID;
   const{data:created,error:ce}=await sb.from('profiles').insert({
     id:session.user.id,
     username:meta.username||session.user.email?.split('@')[0]||'user',
     display_name:meta.display_name||meta.username||session.user.email?.split('@')[0]||'User',
-    role:isAdmin?'admin':'standard',
-    signup_complete:isAdmin,
+    role:'standard',
+    signup_complete:false,
     force_password_reset:false,
     assigned_workout_plan:'shred-advanced',
     assigned_meal_plan:'high-protein-deficit',
@@ -347,28 +364,36 @@ function showDbError(msg){
   box.insertBefore(banner,box.firstChild);
 }
 
-sb.auth.onAuthStateChange(async(event,session)=>{
+async function applyAuthSession(event,session,epoch){
+  if(epoch!==_authEpoch)return;
   if(event==='PASSWORD_RECOVERY'){show('s-fpr');return;}
-  if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
-    if(!session){show('s-choose');return;}
-    const profile=await loadProfile(session);
-    if(!profile){show('s-choose');return;}
-    if(profile.is_disabled){await sb.auth.signOut();show('s-choose');toast('Account disabled. Contact admin.',5000);return;}
-    PROFILE=profile;
-    if(profile.force_password_reset){show('s-fpr');return;}
-    if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
-    await loadAllContent();enterApp();
-  }else if(event==='USER_UPDATED'){
-    if(session&&!PROFILE){
-      const profile=await loadProfile(session);
-      if(profile){PROFILE=profile;await loadAllContent();enterApp();}
-    }
-  }else if(event==='SIGNED_OUT'){
-    PROFILE=null;
-    document.getElementById('app').classList.remove('show');
-    document.getElementById('q-screen').classList.remove('show');
-    show('s-choose');
+  const profile=await loadProfile(session);
+  if(epoch!==_authEpoch)return;
+  if(!profile){show('s-choose');return;}
+  if(profile.is_disabled){await logout();return;}
+  PROFILE=profile;
+  if(profile.force_password_reset){show('s-fpr');return;}
+  if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
+  await loadAllContent();
+  if(epoch===_authEpoch)await enterApp();
+}
+// Return synchronously: Supabase auth callbacks must not await other client calls.
+sb.auth.onAuthStateChange((event,session)=>{
+  if(event==='SIGNED_OUT'||(event==='INITIAL_SESSION'&&!session)){
+    clearPrivateSession();return;
   }
+  if(!session||!['SIGNED_IN','INITIAL_SESSION','USER_UPDATED','PASSWORD_RECOVERY'].includes(event))return;
+  if(['SIGNED_IN','USER_UPDATED'].includes(event)&&_activeAuthUserId===session.user.id&&PROFILE)return;
+  if(_activeAuthUserId!==session.user.id)clearPrivateSession();
+  _activeAuthUserId=session.user.id;
+  const epoch=++_authEpoch;
+  setTimeout(()=>{
+    applyAuthSession(event,session,epoch).catch(()=>{
+      if(epoch!==_authEpoch)return;
+      clearPrivateSession();
+      showDbError('Sign-in could not finish. Please retry.');
+    });
+  },0);
 });
 
 // QUESTIONNAIRE
@@ -592,6 +617,7 @@ function toggleMobileNav(force){
 document.addEventListener('keydown',event=>{if(event.key==='Escape')toggleMobileNav(false);});
 
 // HOME
+let _homeRequest=0;
 let _latestBriefInput=null;
 let _briefReminderTimer=null;
 
@@ -663,14 +689,18 @@ function renderDailyBrief(brief){
         <div class="brief-kind">${kindLabel[item.kind]||'FOCUS'} · ${escapeHtml(item.reason)}</div>
         <div class="brief-title">${escapeHtml(item.title)}</div>
       </div>
-    </div>`).join(''):'<div class="brief-empty">No deadline is driving the day. Pick one meaningful next action.</div>';
+    </div>`).join(''):`<div class="brief-empty">${brief.unavailableSources?.length?'Refresh unavailable sources before choosing priorities.':'No deadline is driving the day. Pick one meaningful next action.'}</div>`;
   const alertsHtml=brief.alerts.map(alert=>`<div class="brief-alert">${escapeHtml(alert)}</div>`).join('');
   const focusCount=brief.preferences.focusLimit+' focus item'+(brief.preferences.focusLimit===1?'':'s');
+  const directionsHtml=(brief.directions||[]).length?`<div class="sh" style="margin-top:16px">GOALS TO KEEP IN VIEW</div>${brief.directions.map(goal=>`<div class="brief-focus"><div style="min-width:0"><div class="brief-kind">${escapeHtml(goal.frequency)} · ${escapeHtml(goal.priority)} priority</div><div class="brief-title">${escapeHtml(goal.title)}</div></div></div>`).join('')}`:'';
+  const refreshed=brief.refreshedAt?new Date(brief.refreshedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:PROFILE?.timezone||'UTC'}):'';
   el.innerHTML=`
     <div class="brief-headline">${escapeHtml(brief.headline)}</div>
     <div class="brief-summary">${escapeHtml(brief.summary)}</div>
     <div class="brief-grid">${focusHtml}</div>
     ${alertsHtml}
+    ${directionsHtml}
+    ${refreshed?`<div class="brief-delivery">Updated ${escapeHtml(refreshed)} · <button class="btn btn-o btn-xs" onclick="renderHome()">Refresh brief</button></div>`:''}
     <div class="brief-delivery">${escapeHtml(ruleLabel[brief.preferences.focusRule]||ruleLabel.balanced)} · ${escapeHtml(focusCount)} · ${escapeHtml(briefDeliveryStatus(brief.preferences))}</div>`;
 }
 function openBriefPreferences(){
@@ -723,6 +753,9 @@ async function saveBriefPreferences(){
 }
 
 async function renderHome(){
+  if(!PROFILE)return;
+  const userId=PROFILE.id, epoch=_authEpoch, today=todayStr();
+  const request=++_homeRequest;
   const doy=Math.floor((new Date()-new Date(new Date().getFullYear(),0,0))/86400000);
   const q=QUOTES[doy%QUOTES.length];const wd=WORDS[doy%WORDS.length];
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
@@ -730,7 +763,7 @@ async function renderHome(){
   set('wod-word',wd[0]);set('wod-pos',wd[1]);set('wod-def',wd[2]);set('wod-ex','"'+wd[3]+'"');
   const plan=PROFILE.assigned_workout_plan||'shred-advanced';
   const wkData=CONTENT.workouts?.plans?.[plan];
-  const dow=new Date().getDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
+  const dow=new Date(today+'T12:00:00Z').getUTCDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const todayEl=document.getElementById('home-today');
   if(todayEl)todayEl.innerHTML=[
     {t:'6:00 AM',l:todayWk?(todayWk.rest?'Rest Day + Meal Prep':'Workout: '+todayWk.focus):'See Workout tab'},
@@ -738,35 +771,43 @@ async function renderHome(){
     {t:'3:30 PM',l:'Protein shake or Chobani'},
     {t:'7:30 PM',l:'Evening walk -- 30 min Zone 1'},
     {t:'9:00 PM',l:'Reading -- 30 min, no phone'}
-  ].map(e=>`<div class="ev-chip"><span class="ev-time">${e.t}</span><span style="font-size:13px;font-weight:500">${e.l}</span></div>`).join('');
-  const{data:wts}=await sb.from('weight_logs').select('weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(1);
-  if(wts?.length)set('qs-wt',wts[0].weight_lbs);
-  const{data:habits}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',todayStr());
-  const completedHabits=(habits||[]).filter(h=>h.completed).length;
-  const totalHabits=(typeof getUserHabitSecs==='function'?getUserHabitSecs():HABIT_SECS)
-    .reduce((count,section)=>count+(section.habits||[]).length,0);
-  set('qs-hab',completedHabits+'/'+totalHabits);
-  let streak=0;
-  for(let i=0;i<14;i++){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const{data:dh}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',d.toISOString().split('T')[0]);
-    if((dh||[]).filter(h=>h.completed).length>=10)streak++;else break;
-  }
-  set('qs-str',streak);
-  const [{data:ub_d},{data:ub_s},{data:evs},{data:briefTodos}]=await Promise.all([
-    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),
-    sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',PROFILE.id),
-    sb.from('calendar_events').select('*').eq('user_id',PROFILE.id),
-    sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',PROFILE.id).neq('status','Done'),
+  ].map(e=>`<div class="ev-chip"><span class="ev-time">${e.t}</span><span style="font-size:13px;font-weight:500">${escapeHtml(e.l)}</span></div>`).join('');
+  const days=Array.from({length:14},(_,index)=>{
+    const date=new Date(today+'T12:00:00Z');date.setUTCDate(date.getUTCDate()-index);
+    return date.toISOString().slice(0,10);
+  });
+  const results=await Promise.allSettled([
+    sb.from('weight_logs').select('weight_lbs').eq('user_id',userId).order('log_date',{ascending:false}).limit(1),
+    sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',userId).gte('log_date',days[13]).lte('log_date',today),
+    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',userId),
+    sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',userId),
+    sb.from('calendar_events').select('id,title,event_date,end_date,start_time,event_type').eq('user_id',userId),
+    sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',userId).neq('status','Done'),
   ]);
+  if(epoch!==_authEpoch||request!==_homeRequest)return;
+  const labels=['Weight','Habits','Debt payments','Subscriptions','Calendar','Tasks'];
+  const unavailableSources=results.flatMap((result,index)=>result.status==='rejected'||result.value.error?[labels[index]]:[]);
+  const [wts,history,ub_d,ub_s,evs,briefTodos]=results.map(result=>result.status==='fulfilled'&&!result.value.error?result.value.data||[]:[]);
+  set('qs-wt',wts.length?wts[0].weight_lbs:'--');
+  const habits=history.filter(h=>h.log_date===today);
+  const completedHabits=habits.filter(h=>h.completed).length;
+  const totalHabits=getUserHabitSecs().reduce((count,section)=>count+(section.habits||[]).length,0);
+  set('qs-hab',unavailableSources.includes('Habits')?'--':completedHabits+'/'+totalHabits);
+  let streak=0;
+  for(const day of days){
+    if(history.filter(h=>h.log_date===day&&h.completed).length>=Math.max(1,totalHabits))streak++;else break;
+  }
+  set('qs-str',unavailableSources.includes('Habits')?'--':streak);
+  const savedGoals=State.get('goals_'+userId);
+  const goals=Array.isArray(savedGoals)?savedGoals.flatMap(section=>Array.isArray(section?.goals)?section.goals:[]):[];
   _latestBriefInput={
     today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
-    habitTotal:totalHabits,workout:todayWk||null
+    habitTotal:totalHabits,workout:todayWk||null,goals,unavailableSources,refreshedAt:new Date().toISOString()
   };
   refreshDailyBrief();
   const evEl=document.getElementById('home-events');
   if(evEl){
-    const dayNum=new Date().getDate();
+    const dayNum=Number(today.slice(-2));
     const allBills=[...(ub_d||[]).filter(d=>d.due_day).map(d=>({l:d.debt_name,d:d.due_day,c:'r'})),...(ub_s||[]).filter(s=>s.renewal_day).map(s=>({l:s.sub_name,d:s.renewal_day,c:'b'}))];
     const upcoming=allBills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({...b,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d'}));
     (evs||[]).forEach(e=>{
@@ -774,8 +815,8 @@ async function renderHome(){
       if(diff>=0&&diff<=3)upcoming.push({l:e.title,badge:diff===0?'Today':'In '+diff+'d',c:e.event_type||'b'});
     });
     evEl.innerHTML=upcoming.length
-      ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${e.c}" style="flex-shrink:0">${escapeHtml(e.badge)}</span><span style="font-size:13px">${escapeHtml(e.l)}</span></div>`).join('')
-      :'<div style="font-size:12px;color:var(--t3)">No upcoming bills or events in the next 5 days.</div>';
+      ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${['r','b','g','a','p','d'].includes(e.c)?e.c:'d'}" style="flex-shrink:0">${escapeHtml(e.badge)}</span><span style="font-size:13px">${escapeHtml(e.l)}</span></div>`).join('')
+      :`<div style="font-size:12px;color:var(--t3)">${unavailableSources.some(source=>['Calendar','Debt payments','Subscriptions'].includes(source))?'Upcoming commitments could not be fully loaded.':'No upcoming bills or events in the next 5 days.'}</div>`;
   }
 }
 
@@ -811,7 +852,7 @@ async function renderDash(){
   const wkData=CONTENT.workouts?.plans?.[PROFILE.assigned_workout_plan||'shred-advanced'];
   const dow=new Date().getDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const tw=document.getElementById('dash-wk');
-  if(tw&&todayWk)tw.innerHTML=`<div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:6px">${D7L[dow].toUpperCase()}</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">${todayWk.focus}</div><div style="font-size:12px;color:var(--t3)">${(todayWk.muscles||[]).join(' - ')}</div>${todayWk.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:5px">HIIT finisher included</div>':''}`;
+  if(tw&&todayWk)tw.innerHTML=`<div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:6px">${D7L[dow].toUpperCase()}</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(todayWk.focus)}</div><div style="font-size:12px;color:var(--t3)">${escapeHtml((todayWk.muscles||[]).join(' - '))}</div>${todayWk.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:5px">HIIT finisher included</div>':''}`;
   const wdays=[];
   for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);wdays.push({k:d.toISOString().split('T')[0],d});}
   const{data:hAll}=await sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',PROFILE.id).in('log_date',wdays.map(w=>w.k));
@@ -912,17 +953,17 @@ function renderWorkout(){
   const cM={red:'red',blue:'blu',amber:'amb',green:'grn',dim:'t3'};
   const bM={red:'r',blue:'b',amber:'a',green:'g',dim:'d'};
   tabsEl.innerHTML='<button class="tb on" onclick="setWkTab(-1,this)">OVERVIEW</button>'+
-    wkData.days.map((d,i)=>`<button class="tb" onclick="setWkTab(${i},this)">${d.day_name.slice(0,3).toUpperCase()}</button>`).join('');
+    wkData.days.map((d,i)=>`<button class="tb" onclick="setWkTab(${i},this)">${escapeHtml(d.day_name.slice(0,3).toUpperCase())}</button>`).join('');
   let html='<div class="wk-panel" id="wkp-ov"><div class="g2">';
   wkData.days.forEach((d,i)=>{
     const c=cM[d.color]||'t3';const bc=bM[d.color]||'d';
     html+=`<div class="card" style="cursor:pointer;border-left:3px solid var(--${c})" onclick="setWkTab(${i},null)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--${c})">${d.day_name.slice(0,3).toUpperCase()}</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--${c})">${escapeHtml(d.day_name.slice(0,3).toUpperCase())}</div>
         <span class="badge b-${bc}">${d.exercises?.length||0} ex</span>
       </div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${d.focus}</div>
-      <div style="font-size:11px;color:var(--t3)">${(d.muscles||[]).slice(0,3).join(' - ')}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${escapeHtml(d.focus)}</div>
+      <div style="font-size:11px;color:var(--t3)">${escapeHtml((d.muscles||[]).slice(0,3).join(' - '))}</div>
       ${d.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:4px">HIIT finisher</div>':''}
     </div>`;
   });
@@ -932,8 +973,8 @@ function renderWorkout(){
     html+=`<div class="wk-panel" id="wkp-${i}" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
         <div>
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:2px;color:var(--${c})">${d.day_name.toUpperCase()} -- ${d.focus}</div>
-          <div style="font-size:12px;color:var(--t3)">${(d.muscles||[]).join(' - ')}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:2px;color:var(--${c})">${escapeHtml(d.day_name.toUpperCase())} -- ${escapeHtml(d.focus)}</div>
+          <div style="font-size:12px;color:var(--t3)">${escapeHtml((d.muscles||[]).join(' - '))}</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-o btn-sm" onclick="setWkTab(-1,null)">Back to Overview</button>
@@ -943,19 +984,19 @@ function renderWorkout(){
     if(!d.rest){
       html+='<div class="g2"><div><div class="sh">EXERCISES</div>';
       (d.exercises||[]).forEach(ex=>{
-        html+=`<div class="ex-card"><div class="ex-name">${ex.name}</div>`;
-        if(ex.sets&&ex.reps)html+=`<div class="ex-det">${ex.sets}x${ex.reps}</div>`;
-        else if(ex.duration)html+=`<div class="ex-det">${ex.duration}</div>`;
-        if(ex.notes)html+=`<div class="ex-note">${ex.notes}</div>`;
+        html+=`<div class="ex-card"><div class="ex-name">${escapeHtml(ex.name)}</div>`;
+        if(ex.sets&&ex.reps)html+=`<div class="ex-det">${escapeHtml(ex.sets)}x${escapeHtml(ex.reps)}</div>`;
+        else if(ex.duration)html+=`<div class="ex-det">${escapeHtml(ex.duration)}</div>`;
+        if(ex.notes)html+=`<div class="ex-note">${escapeHtml(ex.notes)}</div>`;
         html+='</div>';
       });
       html+='</div><div>';
       if(d.hiit?.length){
         html+='<div class="sh">HIIT FINISHER</div>';
         d.hiit.forEach(h=>{
-          html+=`<div class="hiit-c"><div class="ex-name">${h.name}</div>
-            <div class="ex-det" style="color:var(--t2)">${h.rounds?h.rounds+'x ':''}${h.work||h.reps||''}</div>
-            ${h.notes?`<div class="ex-note" style="color:rgba(232,64,64,.6)">${h.notes}</div>`:''}</div>`;
+          html+=`<div class="hiit-c"><div class="ex-name">${escapeHtml(h.name)}</div>
+            <div class="ex-det" style="color:var(--t2)">${escapeHtml(h.rounds?h.rounds+'x ':'')}${escapeHtml(h.work||h.reps||'')}</div>
+            ${h.notes?`<div class="ex-note" style="color:rgba(232,64,64,.6)">${escapeHtml(h.notes)}</div>`:''}</div>`;
         });
       }
       const kr=CONTENT.workouts?.knee_rehab;
@@ -964,7 +1005,7 @@ function renderWorkout(){
         html+='<div style="font-size:10px;color:var(--grn);font-weight:700;margin-bottom:8px;letter-spacing:1px">MANDATORY -- END OF EVERY SESSION</div>';
         (kr.exercises||[]).forEach(ex=>{
           html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(34,201,122,.1);font-size:12px">
-            <span>${ex.name}</span><span class="mono" style="color:var(--grn)">${ex.sets}x${ex.reps}</span></div>`;
+            <span>${escapeHtml(ex.name)}</span><span class="mono" style="color:var(--grn)">${escapeHtml(ex.sets)}x${escapeHtml(ex.reps)}</span></div>`;
         });
         html+='</div>';
       }
@@ -972,9 +1013,9 @@ function renderWorkout(){
     }else{
       (d.exercises||[]).forEach(ex=>{
         html+=`<div class="card-sm" style="margin-bottom:6px">
-          <div style="font-size:13px;font-weight:600">${ex.name}</div>
-          ${ex.duration?`<div class="ex-det">${ex.duration}</div>`:''}
-          ${ex.notes?`<div style="font-size:12px;color:var(--t2);margin-top:3px">${ex.notes}</div>`:''}
+          <div style="font-size:13px;font-weight:600">${escapeHtml(ex.name)}</div>
+          ${ex.duration?`<div class="ex-det">${escapeHtml(ex.duration)}</div>`:''}
+          ${ex.notes?`<div style="font-size:12px;color:var(--t2);margin-top:3px">${escapeHtml(ex.notes)}</div>`:''}
         </div>`;
       });
     }
@@ -2097,7 +2138,7 @@ renderQStep=function(){
                     ${(inp.opts||[]).map(o=>`<option value="${o}"${qAnswers[inp.id]===o?' selected':''}>${o}</option>`).join('')}
                   </select>`
                 :`<div style="display:flex;align-items:center;gap:10px">
-                    <input class="inp" id="qi-${inp.id}" type="${inp.type||'text'}" placeholder="${inp.placeholder||''}" value="${qAnswers[inp.id]||''}" ${inp.min!==undefined?'min='+inp.min:''} ${inp.max!==undefined?'max='+inp.max:''} style="flex:1">
+                    <input class="inp" id="qi-${inp.id}" type="${inp.type||'text'}" placeholder="${inp.placeholder||''}" value="${escapeAttr(qAnswers[inp.id]||'')}" ${inp.min!==undefined?'min='+inp.min:''} ${inp.max!==undefined?'max='+inp.max:''} style="flex:1">
                     ${inp.unit?`<span style="font-size:13px;color:var(--t3);white-space:nowrap">${inp.unit}</span>`:''}
                   </div>`
               }
@@ -2312,11 +2353,8 @@ function calcCustomMacros(){
   }
 }
 // Mark manually-edited macro fields so auto-calc doesn't overwrite
-['c-cal','c-pro','c-car','c-fati'].forEach(id=>{
-  document.addEventListener('DOMContentLoaded',()=>{
-    const el=document.getElementById(id);
-    if(el)el.addEventListener('input',()=>{el.dataset.manual='1';});
-  });
+document.addEventListener('input',event=>{
+  if(['c-cal','c-pro','c-car','c-fati'].includes(event.target.id))event.target.dataset.manual='1';
 });
 
 // ── PATCH submitMeal for new custom tab ─────────────────────────
@@ -3395,12 +3433,14 @@ async function loadRecipesFromDB(){
 // Override the base loadAllContent with a DB-powered implementation.
 // All content comes from Supabase; books and schedule will be migrated in Stage 6.
 loadAllContent=async function(){
+  const epoch=_authEpoch;
   try{
     const[mealsData,workoutsData,recipesData]=await Promise.all([
       loadMealsFromDB(),
       loadWorkoutPlansFromDB(),
       loadRecipesFromDB()
     ]);
+    if(epoch!==_authEpoch)return;
     CONTENT={
       workouts:workoutsData||null,
       meals:mealsData||null,
@@ -3410,7 +3450,8 @@ loadAllContent=async function(){
     };
     console.log('[content] loaded from Supabase DB ✓');
   }catch(e){
-    console.warn('[content] DB load error:',e.message);
+    if(epoch!==_authEpoch)return;
+    Logger.error('content','load.failed');
     CONTENT={workouts:null,meals:null,books:null,spice:null,schedule:null};
   }
 };
@@ -3432,6 +3473,8 @@ function openAddHabitForSection(sectionIndex){
   if(section)openAddHabit(section.cat||'custom');
 }
 renderHabits=async function(){
+  if(!PROFILE)return;
+  const userId=PROFILE.id, requestedDate=habitDate, epoch=_authEpoch;
   const d=new Date(habitDate+'T12:00:00');
   const lbl=document.getElementById('h-date-lbl');
   if(lbl)lbl.textContent=(typeof D7L!=='undefined'?D7L[d.getDay()].toUpperCase():'DAY')+', '+fmtD(d).toUpperCase();
@@ -3442,11 +3485,13 @@ renderHabits=async function(){
   }
   let hData=null;
   try{
-    const logs=await API.habits.getLogs(PROFILE.id,habitDate);
-    hData=logs;State.set('_cachedHabits_'+habitDate,logs);
+    const logs=await API.habits.getLogs(userId,requestedDate);
+    if(epoch!==_authEpoch||requestedDate!==habitDate)return;
+    hData=logs;State.cacheSet(userId,'habits_'+requestedDate,logs);
   }catch(e){
     Logger.error('habits','renderHabits.catch',e);
-    hData=State.get('_cachedHabits_'+habitDate)||[];
+    if(epoch!==_authEpoch||requestedDate!==habitDate)return;
+    hData=State.cacheGet(userId,'habits_'+requestedDate)||[];
   }
   habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
   const secs=getUserHabitSecs();
@@ -4244,14 +4289,14 @@ openLogModal=async function(i){
     exEl.innerHTML='<div style="color:var(--t3);font-size:13px;text-align:center;padding:24px">&#x1F3C6; Rest day — log any notes below.</div>';
   }else{
     exEl.innerHTML=exercises.map((ex,ei)=>{
-      const sc=ex.sets||3;const tr=String(ex.reps||10);
+      const sc=WorkoutService.setCount(ex.sets);const tr=String(ex.reps||10);
       const ps=prior[ex.name]||[];
       const rows=Array.from({length:sc},(_,s)=>`
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
           <span style="font-size:11px;color:var(--t3);width:38px;flex-shrink:0">Set ${s+1}</span>
-          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${ps[s]?.w||''}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${escapeAttr(ps[s]?.w||'')}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
           <span style="font-size:12px;color:var(--t3)">&#xD7;</span>
-          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${ps[s]?.r||tr}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${escapeAttr(ps[s]?.r||tr)}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
         </div>`).join('');
       return`<div style="padding:12px;background:var(--s3);border-radius:var(--r);margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
@@ -4293,7 +4338,7 @@ saveLog=async function(){
   const exercises=day?.exercises||[];
   const logs=[];
   exercises.forEach((ex,ei)=>{
-    for(let s=0;s<(ex.sets||3);s++){
+    for(let s=0;s<WorkoutService.setCount(ex.sets);s++){
       const w=parseFloat(document.getElementById(`ex-${ei}-s${s}-w`)?.value)||null;
       const r=parseInt(document.getElementById(`ex-${ei}-s${s}-r`)?.value)||null;
       if(r||w)logs.push({session_id:sessionId,exercise_name:ex.name,set_number:s+1,reps_completed:r,weight_lbs:w});
@@ -4404,7 +4449,7 @@ async function savePlan(){
   if(!name){toast('Enter a plan name');return;}
   const desc=document.getElementById('pb-desc').value.trim();
   const days=[];
-  document.querySelectorAll('[id^="pb-day-"]').forEach(div=>{
+  document.querySelectorAll('#pb-days > div[id^="pb-day-"]').forEach(div=>{
     const i=div.id.split('-')[2];
     if(!i||isNaN(i))return;
     const dayName=document.getElementById(`pb-day-${i}-name`)?.value.trim()||`Day ${+i+1}`;
@@ -4626,6 +4671,8 @@ removeSpiceRecipe=async function(id){
 
 // ── UPDATED loadRecipesFromDB (marks template vs user recipes) ────
 loadRecipesFromDB=async function(){
+  if(!PROFILE)return null;
+  const userId=PROFILE.id, epoch=_authEpoch;
   Logger.log('recipes','loadFromDB.start');
   try{
     const recs=await API.recipes.list();
@@ -4647,10 +4694,11 @@ loadRecipesFromDB=async function(){
       });
     });
     const result={profiles:Object.values(profileMap)};
-    State.set('_cachedRecipes',result);
+    if(epoch!==_authEpoch)return null;
+    State.cacheSet(userId,'recipes',result);
     return result;
   }catch(e){
     Logger.error('recipes','loadFromDB.catch',e);
-    return State.get('_cachedRecipes');
+    return epoch===_authEpoch?State.cacheGet(userId,'recipes'):null;
   }
 };

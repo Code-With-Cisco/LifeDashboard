@@ -84,7 +84,8 @@
       .map(item => ({...item, _score: taskScore(item, today, preferences.focusRule)}))
       .sort((a, b) => b._score - a._score || String(a.due_date || '').localeCompare(String(b.due_date || '')));
     const events = (data.events || [])
-      .filter(event => event && event.event_date <= today && (event.end_date || event.event_date) >= today);
+      .filter(event => event && event.event_date <= today && (event.end_date || event.event_date) >= today)
+      .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
     const focus = (preferences.includeTasks ? todos.slice(0, preferences.focusLimit) : []).map(item => ({
       kind: 'task',
       title: item.title || 'Untitled task',
@@ -103,11 +104,21 @@
     const totalHabits = Math.max(Number(data.habitTotal) || 0, completedHabits);
     const dueToday = todos.filter(item => item.due_date && item.due_date <= today).length;
     const overdue = todos.filter(item => item.due_date && item.due_date < today).length;
-    const headline = focus.length
+    const unavailableSources = Array.isArray(data.unavailableSources) ? data.unavailableSources : [];
+    const directions = (Array.isArray(data.goals) ? data.goals : [])
+      .filter(goal => goal && goal.g && goal.completed !== true)
+      .map((goal, index) => ({title: String(goal.g), frequency: String(goal.freq || 'Ongoing'),
+        priority: String(goal.p || 'Medium'), index}))
+      .sort((a, b) => ({High: 0, Medium: 1, Low: 2}[a.priority] ?? 1) -
+        ({High: 0, Medium: 1, Low: 2}[b.priority] ?? 1) || a.index - b.index)
+      .slice(0, 3);
+    const headline = unavailableSources.length
+      ? 'Your brief is incomplete. Some sources could not be loaded.'
+      : focus.length
       ? `Start with ${focus[0].title}.`
       : 'Your runway is clear. Choose one meaningful next action.';
-    const summary = `${dueToday} task${dueToday === 1 ? '' : 's'} due, ${events.length} event${events.length === 1 ? '' : 's'}, ${completedHabits}/${totalHabits || 0} habits complete.`;
-    const alerts = [];
+    const summary = `${unavailableSources.includes('Tasks') ? '?' : dueToday} tasks due, ${unavailableSources.includes('Calendar') ? '?' : events.length} events, ${unavailableSources.includes('Habits') ? '?' : completedHabits}/${totalHabits || 0} habits complete.`;
+    const alerts = unavailableSources.map(source => `${source} unavailable. Refresh before relying on this brief.`);
     if (overdue) alerts.push(`${overdue} overdue task${overdue === 1 ? '' : 's'} need a decision.`);
     if (data.leakedPasswordProtection === false) alerts.push('Account protection needs attention.');
 
@@ -118,6 +129,9 @@
       alerts,
       metrics: {dueToday, overdue, eventCount: events.length, completedHabits, totalHabits},
       preferences,
+      directions,
+      unavailableSources,
+      refreshedAt: data.refreshedAt || null,
     };
   }
 

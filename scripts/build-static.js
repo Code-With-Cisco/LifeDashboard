@@ -2,6 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const {validatePublicConfig} = require('../services/SecurityService');
+const {prepareBrowser} = require('./prepare-browser');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'dist');
@@ -12,14 +14,11 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('SUPABASE_URL and SUPABASE_KEY (anon/publishable key) are required.');
 }
 
-const parsed = new URL(supabaseUrl);
-const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-if (parsed.protocol !== 'https:' && !localHost) {
-  throw new Error('SUPABASE_URL must use HTTPS outside local development.');
-}
+const publicConfig = validatePublicConfig({supabaseUrl, supabaseKey, allowSelfSignup: false});
 
 fs.rmSync(output, {recursive: true, force: true});
 fs.mkdirSync(path.join(output, 'services'), {recursive: true});
+prepareBrowser(path.join(output, 'vendor'));
 
 const files = [
   '.nojekyll', 'index.html', 'styles.css', 'logs.js', 'state.js', 'utils.js',
@@ -32,15 +31,17 @@ for (const relative of files) {
   fs.copyFileSync(path.join(root, relative), path.join(output, relative));
 }
 
-const publicConfig = {
-  supabaseUrl,
-  supabaseKey,
-  allowSelfSignup: false,
-};
+const indexPath = path.join(output, 'index.html');
+const connectSources = [publicConfig.supabaseUrl, publicConfig.supabaseUrl.replace(/^http/, 'ws')].join(' ');
+const html = fs.readFileSync(indexPath, 'utf8').replace(
+  /connect-src [^;]+;/,
+  `connect-src 'self' ${connectSources};`
+);
+fs.writeFileSync(indexPath, html, 'utf8');
 fs.writeFileSync(
   path.join(output, 'config.js'),
   `window.CONFIG = Object.freeze(${JSON.stringify(publicConfig, null, 2)});\n`,
   'utf8'
 );
 
-console.log(`Built ${files.length + 1} public files in ${output}`);
+console.log(`Built ${files.length + 3} public files, including the locked SDK, in ${output}`);

@@ -31,22 +31,22 @@ window.Render = {
    * @returns {string} HTML string
    */
   recipeCard: function(recipe) {
-    const rating = recipe.rating || 'unknown';
+    const rating = String(recipe.rating || 'unknown');
     const ratingClass = 'rating-' + rating.replace(/[^a-z-]/g, '');
     const name = StringUtils.truncate(recipe.name || '', 40);
     return `
-      <div class="card recipe-card" data-id="${recipe.id}" data-recipe-id="${recipe.id}">
+      <div class="card recipe-card" data-id="${SecurityService.safeIdentifier(recipe.id)}" data-recipe-id="${SecurityService.safeIdentifier(recipe.id)}">
         <div class="card-header">
-          <h4>${name}</h4>
-          <span class="badge ${ratingClass}">${rating}</span>
+          <h4>${SecurityService.escapeHtml(name)}</h4>
+          <span class="badge ${ratingClass}">${SecurityService.escapeHtml(rating)}</span>
         </div>
         <div class="card-content">
-          <p class="recipe-protein">${recipe.protein_g || 0}g protein</p>
-          <p class="recipe-cals">${recipe.calories_per_serving || 0} cal</p>
+          <p class="recipe-protein">${Number(recipe.protein_g) || 0}g protein</p>
+          <p class="recipe-cals">${Number(recipe.calories_per_serving) || 0} cal</p>
         </div>
         <div class="card-footer">
-          <button class="btn-sm" onclick="openSpiceModal('${recipe.profile_id}','${recipe.id}')">Edit</button>
-          <button class="btn-sm btn-danger" onclick="removeSpiceRecipe('${recipe.id}')">Delete</button>
+          <button class="btn-sm" onclick="openSpiceModal('${recipe.profile_id}','${SecurityService.safeIdentifier(recipe.id)}')">Edit</button>
+          <button class="btn-sm btn-danger" onclick="removeSpiceRecipe('${SecurityService.safeIdentifier(recipe.id)}')">Delete</button>
         </div>
       </div>`;
   },
@@ -81,10 +81,10 @@ window.Render = {
    */
   habitRow: function(habit, completed) {
     return `
-      <div class="habit-row" data-habit-id="${habit.id}">
-        <input type="checkbox" ${completed ? 'checked' : ''} onchange="toggleHabit('${habit.id}')" class="habit-check">
-        <span class="habit-name">${habit.label || habit.name || ''}</span>
-        <span class="habit-streak">${habit.streak || 0} day streak</span>
+      <div class="habit-row" data-habit-id="${SecurityService.safeIdentifier(habit.id)}">
+        <input type="checkbox" ${completed ? 'checked' : ''} onchange="toggleHabit('${SecurityService.safeIdentifier(habit.id)}')" class="habit-check">
+        <span class="habit-name">${SecurityService.escapeHtml(habit.label || habit.name || '')}</span>
+        <span class="habit-streak">${Number(habit.streak) || 0} day streak</span>
       </div>`;
   },
 
@@ -114,10 +114,10 @@ window.Render = {
     const n = nutrition || {calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0};
     return `
       <div class="nutrition-summary">
-        <div class="nutrition-stat"><label>Calories</label><div class="nutrition-value">${n.calories || 0}</div></div>
-        <div class="nutrition-stat"><label>Protein</label><div class="nutrition-value">${n.protein_g || 0}g</div></div>
-        <div class="nutrition-stat"><label>Carbs</label><div class="nutrition-value">${n.carbs_g || 0}g</div></div>
-        <div class="nutrition-stat"><label>Fat</label><div class="nutrition-value">${n.fat_g || 0}g</div></div>
+        <div class="nutrition-stat"><label>Calories</label><div class="nutrition-value">${Number(n.calories) || 0}</div></div>
+        <div class="nutrition-stat"><label>Protein</label><div class="nutrition-value">${Number(n.protein_g) || 0}g</div></div>
+        <div class="nutrition-stat"><label>Carbs</label><div class="nutrition-value">${Number(n.carbs_g) || 0}g</div></div>
+        <div class="nutrition-stat"><label>Fat</label><div class="nutrition-value">${Number(n.fat_g) || 0}g</div></div>
       </div>`;
   },
 
@@ -127,7 +127,7 @@ window.Render = {
    * @returns {string}
    */
   emptyState: function(message) {
-    return `<p class="empty-state">${message}</p>`;
+    return `<p class="empty-state">${SecurityService.escapeHtml(message)}</p>`;
   },
 
   /**
@@ -136,6 +136,6 @@ window.Render = {
    * @returns {string}
    */
   errorState: function(message) {
-    return `<p class="error-state" style="color:var(--red);padding:12px">${message}</p>`;
+    return `<p class="error-state" style="color:var(--red);padding:12px">${SecurityService.escapeHtml(message)}</p>`;
   }
 };
