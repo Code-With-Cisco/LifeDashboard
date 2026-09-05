@@ -25,6 +25,7 @@ beforeEach(() => {
   client = {
     auth: {onAuthStateChange: callback => { authCallback = callback; }, signOut: jest.fn(async () => ({error: null}))},
     from: jest.fn(() => chain(result)),
+    rpc: jest.fn(async (_name, payload) => ({data: payload.p_session_id, error: null})),
   };
   win.supabase = {createClient: () => client};
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
@@ -144,4 +145,82 @@ test('late home requests cannot put a previous account brief back on screen', as
   finish({data: [{title: 'PRIVATE previous task'}], error: null});
   await pending;
   expect(win.document.getElementById('home-command-brief').textContent).not.toContain('PRIVATE');
+});
+
+test('calendar brief selects the actual database time column and uses its alias', async () => {
+  const selections=[];
+  client.from.mockImplementation(table=>{
+    if(table!=='calendar_events')return chain({data:[],error:null});
+    return {select: selection=>{selections.push(selection);return chain({data:[
+      {id:'event-1',title:'Morning appointment',event_date:run('todayStr()'),start_time:'08:00:00'},
+    ],error:null});}};
+  });
+  await run('renderHome()');
+  expect(selections).toEqual(['id,title,event_date,end_date,start_time:event_time,event_type']);
+  expect(win.document.getElementById('home-command-brief').textContent).toContain('Morning appointment');
+});
+
+test('a failed workout save keeps entries and retries the same session without direct deletes', async () => {
+  run("CONTENT={workouts:{plans:{custom:{days:[{focus:'Push',exercises:[{name:'Press',sets:1,reps:8}]}]}}}};");
+  result={data:null,error:null};
+  await run('openLogModal(0)');
+  win.document.getElementById('ex-0-s0-w').value='0';
+  win.document.getElementById('log-text').value='Keep my notes';
+  client.from.mockClear();
+  client.rpc.mockResolvedValueOnce({data:null,error:{message:'PRIVATE database details'}});
+  await run('saveLog()');
+  const payload=client.rpc.mock.calls[0][1];
+  expect(payload.p_sets[0].weight_lbs).toBe(0);
+  expect(client.from).not.toHaveBeenCalled();
+  expect(win.document.getElementById('log-text').value).toBe('Keep my notes');
+  expect(win.document.getElementById('log-modal').classList.contains('open')).toBe(true);
+  expect(win.document.querySelector('#log-modal .btn-r').disabled).toBe(false);
+  await run('saveLog()');
+  expect(client.rpc.mock.calls[1][1].p_session_id).toBe(payload.p_session_id);
+  expect(win.document.getElementById('log-modal').classList.contains('open')).toBe(false);
+});
+
+test('failed or late workout reads cannot open an empty replacement session', async () => {
+  result={data:null,error:{message:'offline'}};
+  await run('openLogModal(0)');
+  expect(run('workoutState.draft')).toBeNull();
+  expect(win.document.getElementById('log-modal').classList.contains('open')).toBe(false);
+  let finish;
+  client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('openLogModal(0)');
+  authCallback('SIGNED_OUT',null);
+  finish({data:{id:'old',notes:'PRIVATE'},error:null});
+  await pending;
+  expect(win.document.getElementById('log-text').value).toBe('');
+  expect(run('workoutState.draft')).toBeNull();
+});
+
+test('password update sends the exact current password and never clears the server reset flag itself', async () => {
+  win.document.getElementById('fpr-cur').value=' current with spaces ';
+  win.document.getElementById('fpr-pass').value='new-password-123';
+  win.document.getElementById('fpr-pass2').value='new-password-123';
+  client.auth.updateUser=jest.fn(async()=>({data:{user:{id:'user-a'}},error:null}));
+  result={data:{id:'user-a',force_password_reset:true},error:null};
+  await run('doFPR()');
+  expect(client.auth.updateUser).toHaveBeenCalledWith({password:'new-password-123',current_password:' current with spaces '});
+  expect(win.document.getElementById('fpr-err').textContent).toContain('could not be verified');
+  expect(win.document.getElementById('fpr-cur').value).toBe('');
+  expect(run('PROFILE.force_password_reset')).toBeUndefined();
+});
+
+test('zero-row administrator writes do not report a successful role change', async () => {
+  run("PROFILE.role='admin';toast=message=>window.lastToast=message;");
+  result={data:null,error:null};
+  await run("toggleAdminRole('user-b',true)");
+  expect(win.lastToast).toContain('could not be confirmed');
+});
+
+test('late workout history cannot restore private notes after sign-out', async () => {
+  let finish;
+  client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderWorkoutHistory()');
+  authCallback('SIGNED_OUT',null);
+  finish({data:[{session_date:'2026-09-05',day_name:'PRIVATE',notes:'PRIVATE'}],error:null});
+  await pending;
+  expect(win.document.getElementById('wk-history').textContent).not.toContain('PRIVATE');
 });

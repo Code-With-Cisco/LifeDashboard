@@ -5,7 +5,7 @@ LifeDashboard contains personal health, schedule, finance, reading, and goal dat
 ## Security model
 
 - The browser receives only a Supabase publishable/anonymous key. A `service_role` key must never appear in this repository, GitHub Pages, browser storage, or client logs.
-- Self-signup and browser-side administrative user creation are disabled. Account invitations and password resets require a separately deployed, authenticated server-side function.
+- The browser hides self-signup and disables administrative user creation. Supabase signup remained enabled during the September 5 inspection; invitation-only enforcement requires the pending Auth setting change. Administrative invitations/reset requirements need reviewed server operations. Users change their own password through Supabase Auth.
 - All tables containing user data must enforce Row Level Security (RLS), with policies that scope rows to `auth.uid()`. Admin operations must also verify a server-side role or explicit allowlist.
 - The deployment workflow uploads an explicit allowlist from `dist/`; repository internals and local tooling are not published.
 - Logger keeps only event codes in session memory and omits payloads, raw errors, and stack traces. Old persisted diagnostics and shared derived caches are removed. Remaining direct console calls in legacy code still require cleanup.
@@ -17,14 +17,14 @@ LifeDashboard contains personal health, schedule, finance, reading, and goal dat
 
 Before using real personal data:
 
-1. Enable **Leaked password protection** in Authentication settings.
+1. Enable **Leaked password protection** when the chosen plan supports it; the inspected Free-plan control is unavailable. Record this limitation until addressed.
 2. Keep email confirmation and a strong minimum password policy enabled.
 3. Run the Security Advisor and resolve every error or warning.
-4. Confirm RLS is enabled for every table and test each policy as two different non-admin users.
+4. Confirm RLS is enabled for every table and test each policy as two different non-admin users. All 25 public tables had RLS enabled, but permissive policies still exposed data. Review grants, protected columns, RPCs, and ownership chains together.
 5. Restrict Site URL and redirect URLs to the production origin and trusted local development origins.
 6. Put integrations and privileged operations behind Edge Functions or another server-side broker. Store provider refresh tokens only in encrypted server-side storage.
 
-These are requirements, not verified properties of the live database. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for current evidence and the read-only policy inventory.
+These are requirements, not a claim that the live database satisfies them. The prepared migrations remain unapplied. The Free plan also provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, remaining checks, and the deployment order.
 
 ## Repository and GitHub checks
 

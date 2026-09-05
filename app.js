@@ -244,43 +244,37 @@ async function doSignup(){
 }
 async function doFPR(){
   const btn=document.getElementById('fpr-btn');
-  const cur=(document.getElementById('fpr-cur')?.value||'').trim();
+  const cur=document.getElementById('fpr-cur')?.value||'';
   const pass=document.getElementById('fpr-pass').value;
   const pass2=document.getElementById('fpr-pass2').value;
   if(!pass){showErr('fpr-err','Enter a new password.');return;}
   if(pass!==pass2){showErr('fpr-err',"Passwords don't match.");return;}
   if(pass.length<8){showErr('fpr-err','New password must be at least 8 characters.');return;}
+  if(btn.disabled)return;
+  const epoch=_authEpoch;
   btn.disabled=true;btn.textContent='Updating...';
-  // Attempt direct password update (works when Secure Password Change is OFF in Supabase)
-  let{error:updateErr}=await sb.auth.updateUser({password:pass});
-  // If that fails and we have current password, try re-auth first then update
-  if(updateErr&&cur){
-    const{data:{user:u}}=await sb.auth.getUser();
-    if(u?.email){
-      const{error:reErr}=await sb.auth.signInWithPassword({email:u.email,password:cur});
-      if(!reErr){
-        const res=await sb.auth.updateUser({password:pass});
-        updateErr=res.error;
-      }
+  try{
+    const{data,error}=await sb.auth.updateUser({password:pass,...(cur?{current_password:cur}:{})});
+    if(epoch!==_authEpoch)return;
+    if(error){showErr('fpr-err','Password update failed. Check your current password and try again.');return;}
+    // Auth clears the requirement in the database after the password changes.
+    const user=data?.user;
+    if(!user){showErr('fpr-err','Please sign in again to verify your password change.');return;}
+    for(const id of ['fpr-cur','fpr-pass','fpr-pass2'])document.getElementById(id).value='';
+    const{data:profile,error:profileError}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
+    if(epoch!==_authEpoch)return;
+    if(profileError||!profile||profile.force_password_reset){
+      showErr('fpr-err','Password changed, but account access could not be verified. Sign in again or contact the administrator.');return;
     }
-  }
-  if(updateErr){
+    if(profile.is_disabled){await logout();return;}
+    PROFILE=profile;
+    await loadAllContent();
+    if(epoch!==_authEpoch)return;
+    toast('Password updated.');enterApp();
+  }catch{
+    if(epoch===_authEpoch)showErr('fpr-err','Could not verify the password update. Please sign in again before retrying.');
+  }finally{
     btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-    showErr('fpr-err',updateErr.message);return;
-  }
-  // Clear the forced reset flag
-  const{data:{user}}=await sb.auth.getUser();
-  if(user){
-    await sb.from('profiles').update({force_password_reset:false}).eq('id',user.id);
-    if(PROFILE)PROFILE.force_password_reset=false;
-  }
-  btn.disabled=false;btn.textContent='SET NEW PASSWORD';
-  toast('Password updated! Loading your dashboard...');
-  if(PROFILE){await loadAllContent();enterApp();return;}
-  if(user){
-    const{data:profile}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
-    if(profile){PROFILE=profile;await loadAllContent();enterApp();}
-    else{show('s-login');toast('Please sign in with your new password.');}
   }
 }
 function clearPrivateSession(){
@@ -295,6 +289,7 @@ function clearPrivateSession(){
   _editingHabit=null;_editingGoal=null;
   bookState.curBookId=null;bookState.curBookPages=0;
   workoutState.existingSessionId=null;
+  workoutState.draft=null;
   mealActionRegistry.clear();
   _privateShell.forEach(({id,template})=>document.getElementById(id)?.replaceWith(template.cloneNode(true)));
   document.querySelectorAll('input[type="password"]').forEach(input=>{input.value='';});
@@ -781,7 +776,7 @@ async function renderHome(){
     sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',userId).gte('log_date',days[13]).lte('log_date',today),
     sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',userId),
     sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',userId),
-    sb.from('calendar_events').select('id,title,event_date,end_date,start_time,event_type').eq('user_id',userId),
+    sb.from('calendar_events').select('id,title,event_date,end_date,start_time:event_time,event_type').eq('user_id',userId),
     sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',userId).neq('status','Done'),
   ]);
   if(epoch!==_authEpoch||request!==_homeRequest)return;
@@ -1695,8 +1690,19 @@ function renderWit(){
 
 // ADMIN
 async function renderAdmin(){
-  if(PROFILE.role!=='admin'){document.getElementById('page-admin').innerHTML='<div style="color:var(--t3);padding:20px">Admin access required.</div>';return;}
-  const{data:users}=await sb.from('profiles').select('*').order('created_at');
+  if(PROFILE?.role!=='admin'){document.getElementById('page-admin').innerHTML='<div style="color:var(--t3);padding:20px">Admin access required.</div>';return;}
+  const epoch=_authEpoch;
+  let response;
+  try{response=await sb.from('profiles').select('id,username,display_name,role,is_disabled,force_password_reset,signup_complete,created_at').order('created_at');}
+  catch{response={error:true};}
+  if(epoch!==_authEpoch)return;
+  if(response.error){
+    for(const id of ['a-total','a-admins','a-standard','a-disabled']){
+      const count=document.getElementById(id);if(count)count.textContent='—';
+    }
+    document.getElementById('user-list').textContent='Account settings could not be loaded. Please retry.';return;
+  }
+  const users=response.data;
   const all=users||[];
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('a-total',all.length);set('a-admins',all.filter(u=>u.role==='admin').length);
@@ -1736,8 +1742,19 @@ async function renderAdmin(){
     </div>`;
   }).join('');
 }
-async function toggleAdminRole(uid,isAdmin){await sb.from('profiles').update({role:isAdmin?'admin':'standard'}).eq('id',uid);toast(isAdmin?'Admin role granted':'Admin role removed');renderAdmin();}
-async function toggleDisable(uid,disabled){await sb.from('profiles').update({is_disabled:disabled}).eq('id',uid);toast(disabled?'Account disabled':'Account enabled');renderAdmin();}
+async function updateAccountAccess(uid,patch,message){
+  if(PROFILE?.role!=='admin'||uid===PROFILE.id||!safeIdentifier(uid))return;
+  const epoch=_authEpoch;
+  try{
+    const{data,error}=await sb.from('profiles').update(patch).eq('id',uid).select('id').maybeSingle();
+    if(epoch!==_authEpoch)return;
+    if(error||data?.id!==uid)throw new Error('Update unconfirmed');
+    toast(message);
+  }catch{if(epoch===_authEpoch)toast('Account change could not be confirmed. Reload the account list before retrying.');}
+  if(epoch===_authEpoch)await renderAdmin();
+}
+async function toggleAdminRole(uid,isAdmin){await updateAccountAccess(uid,{role:isAdmin?'admin':'standard'},isAdmin?'Admin role granted':'Admin role removed');}
+async function toggleDisable(uid,disabled){await updateAccountAccess(uid,{is_disabled:disabled},disabled?'Account disabled':'Account enabled');}
 async function adminResetPass(){
   toast('Password administration is disabled in the browser client. Use a reviewed server-side invitation function.',6000);
 }
@@ -4263,6 +4280,10 @@ renderWorkout=function(){
 
 // ── UPDATED openLogModal (full sets/reps/weight) ──────────────────
 openLogModal=async function(i){
+  if(!PROFILE)return;
+  const userId=PROFILE.id,epoch=_authEpoch,date=todayStr();
+  const request=(workoutState.loadRequest||0)+1;workoutState.loadRequest=request;
+  workoutState.draft=null;
   logDayIdx=i;
   const plan=PROFILE.assigned_workout_plan||'shred-advanced';
   const wkData=CONTENT.workouts?.plans?.[plan];
@@ -4272,10 +4293,14 @@ openLogModal=async function(i){
   document.getElementById('log-day-info').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   document.getElementById('log-duration').value='';
   // Check for existing session today
-  const{data:existing}=await sb.from('workout_sessions')
+  let response;
+  try{response=await sb.from('workout_sessions')
     .select('*,workout_exercise_logs(*)')
-    .eq('user_id',PROFILE.id).eq('session_date',todayStr()).eq('day_name',focus)
-    .maybeSingle();
+    .eq('user_id',userId).eq('session_date',date).eq('day_name',focus)
+    .maybeSingle();}catch{response={error:true};}
+  if(epoch!==_authEpoch||PROFILE?.id!==userId||request!==workoutState.loadRequest)return;
+  if(response.error){toast('Could not load this session. Try again before editing.');return;}
+  const existing=response.data;
   workoutState.existingSessionId=existing?.id||null;
   // Build prior-sets lookup
   const prior={};
@@ -4284,6 +4309,8 @@ openLogModal=async function(i){
     prior[l.exercise_name][l.set_number-1]={w:l.weight_lbs,r:l.reps_completed};
   });
   const exercises=day?.exercises||[];
+  workoutState.draft={userId,epoch,date,focus,dayIndex:i,exercises,
+    sessionId:existing?.id||crypto.randomUUID(),saving:false};
   const exEl=document.getElementById('log-exercises');
   if(!exercises.length){
     exEl.innerHTML='<div style="color:var(--t3);font-size:13px;text-align:center;padding:24px">&#x1F3C6; Rest day — log any notes below.</div>';
@@ -4294,9 +4321,9 @@ openLogModal=async function(i){
       const rows=Array.from({length:sc},(_,s)=>`
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
           <span style="font-size:11px;color:var(--t3);width:38px;flex-shrink:0">Set ${s+1}</span>
-          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${escapeAttr(ps[s]?.w||'')}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <input type="number" id="ex-${ei}-s${s}-w" placeholder="lbs" min="0" step="2.5" value="${escapeAttr(ps[s]?.w??'')}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
           <span style="font-size:12px;color:var(--t3)">&#xD7;</span>
-          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${escapeAttr(ps[s]?.r||tr)}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
+          <input type="number" id="ex-${ei}-s${s}-r" placeholder="reps" min="0" value="${escapeAttr(ps[s]?.r??tr)}" class="inp" style="width:65px;text-align:center;padding:5px 4px;font-family:DM Mono,monospace">
         </div>`).join('');
       return`<div style="padding:12px;background:var(--s3);border-radius:var(--r);margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;flex-wrap:wrap;gap:6px">
@@ -4309,58 +4336,52 @@ openLogModal=async function(i){
     }).join('');
   }
   document.getElementById('log-text').value=existing?.notes||'';
-  if(existing?.duration_minutes)document.getElementById('log-duration').value=existing.duration_minutes;
+  if(existing?.duration_minutes!=null)document.getElementById('log-duration').value=existing.duration_minutes;
   openModal('log-modal');
 };
 
 // ── UPDATED saveLog (sets/reps/weight + backward compat) ──────────
 saveLog=async function(){
-  const plan=PROFILE.assigned_workout_plan||'shred-advanced';
-  const wkData=CONTENT.workouts?.plans?.[plan];
-  const day=wkData?.days?.[logDayIdx];
-  const focus=day?.focus||'Day '+(logDayIdx+1);
+  const draft=workoutState.draft;
+  if(!draft||draft.epoch!==_authEpoch||draft.userId!==PROFILE?.id||draft.saving)return;
   const notes=document.getElementById('log-text')?.value.trim()||'';
-  const duration=parseInt(document.getElementById('log-duration')?.value)||null;
+  const duration=document.getElementById('log-duration')?.value||'';
+  let payload;
+  try{payload=WorkoutService.sessionPayload(draft,(ei,s,field)=>
+    document.getElementById(`ex-${ei}-s${s}-${field}`)?.value,notes,duration);
+  }catch(error){toast(error.message);return;}
   const btn=document.querySelector('#log-modal .btn-r');
+  draft.saving=true;
   if(btn){btn.disabled=true;btn.textContent='Saving...';}
-  let sessionId=workoutState.existingSessionId;
-  if(sessionId){
-    await sb.from('workout_sessions').update({notes,duration_minutes:duration}).eq('id',sessionId);
-    await sb.from('workout_exercise_logs').delete().eq('session_id',sessionId);
-  }else{
-    const{data:s,error}=await sb.from('workout_sessions').insert({
-      user_id:PROFILE.id,session_date:todayStr(),day_name:focus,notes,duration_minutes:duration
-    }).select().single();
-    if(error||!s){if(btn){btn.disabled=false;btn.textContent='Save Session 💪';}toast('Error saving — check console');console.error(error);return;}
-    sessionId=s.id;
+  try{
+    const{data,error}=await sb.rpc('save_workout_session',payload);
+    if(draft.epoch!==_authEpoch||workoutState.draft!==draft)return;
+    if(error||data!==draft.sessionId)throw new Error('Save unconfirmed');
+    workoutState.existingSessionId=data;
+    closeModal('log-modal');toast('Session saved! 💪');
+    renderWorkoutHistory();
+  }catch{
+    if(draft.epoch===_authEpoch&&workoutState.draft===draft)
+      toast('Save could not be confirmed. Your entries are still here; retry to confirm the session.');
+  }finally{
+    draft.saving=false;
+    if(btn){btn.disabled=false;btn.textContent='Save Session 💪';}
   }
-  // Save exercise sets
-  const exercises=day?.exercises||[];
-  const logs=[];
-  exercises.forEach((ex,ei)=>{
-    for(let s=0;s<WorkoutService.setCount(ex.sets);s++){
-      const w=parseFloat(document.getElementById(`ex-${ei}-s${s}-w`)?.value)||null;
-      const r=parseInt(document.getElementById(`ex-${ei}-s${s}-r`)?.value)||null;
-      if(r||w)logs.push({session_id:sessionId,exercise_name:ex.name,set_number:s+1,reps_completed:r,weight_lbs:w});
-    }
-  });
-  if(logs.length)await sb.from('workout_exercise_logs').insert(logs);
-  // Backward compat: also update workout_logs
-  await sb.from('workout_logs').upsert({user_id:PROFILE.id,log_date:todayStr(),day_index:logDayIdx,notes},{onConflict:'user_id,log_date,day_index'});
-  closeModal('log-modal');
-  toast('Session saved! 💪');
-  renderWorkoutHistory();
 };
 
 // ── WORKOUT HISTORY ───────────────────────────────────────────────
 async function renderWorkoutHistory(){
-  const el=document.getElementById('wk-history');if(!el)return;
-  const{data:sessions,error}=await sb.from('workout_sessions')
+  const el=document.getElementById('wk-history');if(!el||!PROFILE)return;
+  const epoch=_authEpoch,userId=PROFILE.id;
+  let response;
+  try{response=await sb.from('workout_sessions')
     .select('id,session_date,day_name,duration_minutes,notes,workout_exercise_logs(exercise_name,set_number,weight_lbs,reps_completed)')
-    .eq('user_id',PROFILE.id)
+    .eq('user_id',userId)
     .order('session_date',{ascending:false})
     .order('created_at',{ascending:false})
-    .limit(8);
+    .limit(8);}catch{response={error:true};}
+  if(epoch!==_authEpoch||PROFILE?.id!==userId)return;
+  const{data:sessions,error}=response;
   if(error){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">Error loading history.</div>';return;}
   if(!sessions?.length){
     el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:12px 0;text-align:center">No sessions logged yet. Hit <strong>Log Session</strong> on any day to start tracking.</div>';

@@ -1,8 +1,33 @@
-# LifeDashboard review — September 4, 2026
+# LifeDashboard review — September 5, 2026
 
 ## Assessment
 
 LifeDashboard is a useful personal tracking prototype with a deterministic daily brief. It is not yet a verified private-data platform or an autonomous personal assistant. The most valuable next investment is proving database isolation and making saved data reproducible, followed by a small read-only calendar/task integration.
+
+The September 5 browser inspection reached the live Supabase project. It confirmed critical authorization gaps despite RLS being enabled on all 25 public tables. Repairs are prepared and pass isolated PostgreSQL tests, but **have not been applied in production**. The new browser workout/reset flows require those repairs before deployment. The completed September 4 hardening remains the deployed baseline.
+
+## Live database findings and prepared repairs
+
+| Priority | Observed problem | Prepared resolution |
+|---|---|---|
+| Critical | A permissive profile SELECT policy and anonymous table grants allowed unauthenticated profile reads. A read-only probe returned only a boolean confirming visibility; no profile contents were exported | Migration 001 removes legacy profile policies, revokes anonymous access and unnecessary table privileges, and restricts reads to the owner or an active administrator |
+| Critical | A standard user could update their own authorization columns; no protective trigger existed. Public signup was enabled and email confirmation disabled | Migration 001 protects role/disabled fields and profile ownership. Disable public signup and enable confirmation in Auth settings after specific production approval |
+| High | Private catalog rows were readable by every authenticated account. Shared-template flags and one anonymous template-insert policy widened write access | Migration 002 restricts private catalogs to their creator, reserves shared-template publishing/editing for administrators, defaults new rows to private, and authorizes plan days through their parent |
+| High | Disabling an account in the UI did not consistently revoke database access with an existing session | Migration 002 applies an active-account check to private data policies; the role lookup reads current database state rather than trusting a client role |
+| High | The browser could clear its own required-password-reset flag | Migration 004 protects that field, restricts application data while reset is pending, and clears it only after Auth changes the password. The browser verifies the resulting profile instead of clearing the flag itself |
+| High | Workout save updated the parent, deleted prior sets, inserted replacements, and updated history as separate unchecked requests | Migration 003 makes the replacement one transaction with input limits and ownership checks. The client keeps inputs on failure and retries using the same session UUID |
+| Medium | `increment_meal_usage` referred to a nonexistent ownership column | Migration 002 uses the inspected `created_by` column and permits updates only to the caller's private meals; shared catalog counters are not writable by ordinary callers |
+| Medium | The brief requested `start_time`, but the live calendar column is `event_time` | The client selects `start_time:event_time`, preserving the brief service's contract |
+| Medium | The password form omitted the current-password field required by the live Auth configuration | Send `current_password` exactly as entered; remove the re-login fallback and report failed or unconfirmed updates accurately |
+| Medium | Administrator toggles reported success even when the database rejected or affected no row | Require a returned row before reporting success; display read failures and ignore late responses after sign-out |
+
+These findings establish exposure and authorization defects, not evidence that someone accessed or altered personal records. Raw catalog results and production audit output are kept out of Git and the static artifact. The checked-in schema fixture is synthetic and intentionally partial.
+
+Auth inspection also confirmed correct production site/redirect URLs, refresh-token replay detection enabled, a 3,600-second access-token lifetime, and TOTP capability enabled. TOTP availability does not mean account enrollment or application enforcement has been verified. The application needs an MFA challenge flow and a deliberate policy for sensitive operations before requiring an elevated assurance level. Session inactivity/maximum-duration controls and leaked-password protection were unavailable on the current Free plan; no plan upgrade was made. Secure email change was off. The proposed signup/confirmation/email-change settings remain pending.
+
+The inspected backup page explicitly states that the Free plan does not include project backups. A private backup and restore procedure is therefore a prerequisite for reliable personal-data storage; no backup or plan upgrade was created in this pass.
+
+Existing catalog rows marked as shared templates retain that designation. They need an owner review before treating every existing shared item as intentional. Any existing duplicate same-day workout sessions would remain unchanged: retries within one draft are idempotent, but independently opened new sessions can still create duplicates. Concurrent edits to the same session are serialized with the last successful save winning; version/conflict handling is a follow-up.
 
 Baseline: public repository, `main` at `ee7cc02`, 84 passing tests, GitHub Pages deployment passing, one high CodeQL alert. The working tree was clean. The source map helped locate the auth, rendering, storage, and briefing boundaries, but its line references predated recent changes and required source verification.
 
@@ -27,9 +52,9 @@ Baseline: public repository, `main` at `ee7cc02`, 84 passing tests, GitHub Pages
 
 | Priority | Gap | Acceptance criterion |
 |---|---|---|
-| P0 | Actual RLS, profile authorization columns, RPC privileges, and signup settings are unverified | Reviewed schema/policy baseline plus anonymous and two-user isolation checks, including private child rows and shared templates |
+| P0 | Confirmed live authorization gaps; prepared SQL repairs and Auth setting changes are not yet applied | Approve and execute the reviewed transaction, pass rollback-only and committed database checks, then verify disposable users through the actual Auth/Data APIs |
 | P1 | Goals, custom habit definitions, ingredient definitions, and purchase decisions still rely on local browser storage | User-owned database records, explicit migration preview, export/delete tools, and a tested restore procedure; preserve existing local data until migration succeeds |
-| P1 | Many legacy writes ignore returned errors; workout session replacement is multiple operations | Failed writes never report success, partial failures are recoverable, and session/set replacement is transactional on the server |
+| P1 | Many legacy writes still ignore returned errors; the prepared transactional workout flow needs deployment | Deploy and verify workout/reset fixes, then audit meal, finance, goals, and plan writes so rejected writes never report success |
 | P1 | `app.js` still has roughly 4,700 lines, staged overrides, and over 100 direct Supabase calls | Migrate one domain at a time into clear controllers and API methods; remove superseded implementations after behavioral tests |
 | P1 | Inline event handlers require CSP `unsafe-inline` | Move handlers to event delegation and deploy a CSP without inline script permission. The new policy is defense in depth, not a complete XSS boundary |
 | P1 | Authenticated browser/database integration coverage is missing | Dedicated test project and disposable accounts; verify reload persistence, cross-user isolation, expiry, failed writes, slow responses, logout, and mobile navigation |
@@ -51,7 +76,11 @@ GitHub's repository sidebar still displayed Claude during review despite that cl
 
 ## Verification and limits
 
-Validation: 112 tests pass across 10 suites; the public build succeeds; dependency audit reports no known vulnerabilities. Chrome renders the local production sign-in shell correctly. The build test also verifies rejected privileged keys do not overwrite an existing artifact.
+September 5 preparation: **124 tests pass across 11 suites**, the allowlisted static build succeeds, and `npm audit --audit-level=high` reports zero known vulnerabilities. Five database tests use an isolated PostgreSQL engine (PGlite), not a mocked query client: they reproduce the old anonymous profile exposure on fake data and check profile guards, private-data isolation, atomic workout rollback, and password-reset protection. Application tests cover retry behavior, preserved inputs, current-password submission, calendar column mapping, and failed administrator writes.
+
+The fixture covers inspected authorization columns and relevant constraints; it is not a complete Supabase environment. Local SQL role tests do not prove live PostgREST behavior, Auth password-change delivery, or production isolation. The matching SQL checks must pass against the actual schema before committing a repair; separate Auth/Data API checks and a private backup/restore drill remain necessary. See [database deployment procedure](database/README.md). Do not deploy the prepared client before migrations 001–004.
+
+September 4 validation: 112 tests passed across 10 suites; the public build succeeded; dependency audit reported no known vulnerabilities. Chrome rendered the local production sign-in shell correctly. The build test also verifies rejected privileged keys do not overwrite an existing artifact.
 
 After pushing implementation commit `12b4172`, GitHub's [Tests](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/33934960137), [Pages deployment](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/33934960227), and [CodeQL](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/33934960157) workflows all passed. The browser showed zero open CodeQL alerts and one closed alert, zero Dependabot alerts, and no secrets found. The CodeQL alert resolved through the code change; it was not manually dismissed. These scanner results do not establish database isolation.
 
@@ -59,7 +88,7 @@ The suite now includes application-level tests for stored markup, the CodeQL inp
 
 A pattern scan of blobs reachable from main found no matching private keys, provider secret tokens, or privileged Supabase JWTs. It did find historical public anon JWTs, which are expected public client values. This is a bounded pattern scan, not proof of an exhaustive secret audit.
 
-Live Supabase policies and authenticated production workflows could not be verified because the owner was unable to sign in. [Supabase status](https://status.supabase.com/) showed degraded API Gateway performance and an unresolved JWT rejection incident, while Auth and Dashboard were listed operational. No database policies, credentials, or personal production records were changed during this review.
+On September 4, live Supabase inspection was blocked by sign-in trouble. Access was restored on September 5 and the read-only inspection above completed. No production database policies, Auth settings, credentials, or personal records have been changed in this second pass. Applying the prepared repairs requires the specific production approval requested after automatic approval review rejected the initial rollback-only schema test.
 
 ## References
 
