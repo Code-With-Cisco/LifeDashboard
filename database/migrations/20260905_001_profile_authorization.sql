@@ -1,5 +1,5 @@
 -- Reviewed against the live schema on 2026-09-05. Run inside a transaction.
--- Does not change existing profile data or the owner's administrator role.
+-- Does not change existing profile data or account roles.
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $function$

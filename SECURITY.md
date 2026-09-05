@@ -5,7 +5,7 @@ LifeDashboard contains personal health, schedule, finance, reading, and goal dat
 ## Security model
 
 - The browser receives only a Supabase publishable/anonymous key. A `service_role` key must never appear in this repository, GitHub Pages, browser storage, or client logs.
-- The browser hides self-signup and disables administrative user creation. Supabase signup remained enabled during the September 5 inspection; invitation-only enforcement requires the pending Auth setting change. Administrative invitations/reset requirements need reviewed server operations. Users change their own password through Supabase Auth.
+- The browser hides self-signup and disables administrative user creation. Supabase public signup is now disabled, email confirmation enabled, and email changes require confirmation at both addresses, following the owner's September 5 approval. Administrative invitations/reset requirements need reviewed server operations. Users change their own password through Supabase Auth.
 - All tables containing user data must enforce Row Level Security (RLS), with policies that scope rows to `auth.uid()`. Admin operations must also verify a server-side role or explicit allowlist.
 - The deployment workflow uploads an explicit allowlist from `dist/`; repository internals and local tooling are not published.
 - Logger keeps only event codes in session memory and omits payloads, raw errors, and stack traces. Old persisted diagnostics and shared derived caches are removed. Remaining direct console calls in legacy code still require cleanup.
@@ -24,7 +24,7 @@ Before using real personal data:
 5. Restrict Site URL and redirect URLs to the production origin and trusted local development origins.
 6. Put integrations and privileged operations behind Edge Functions or another server-side broker. Store provider refresh tokens only in encrypted server-side storage.
 
-These are requirements, not a claim that the live database satisfies them. The prepared migrations remain unapplied. The Free plan also provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, remaining checks, and the deployment order.
+These are requirements, not a claim that the live database satisfies all of them. Profile migration 001 is applied and verified with live database role tests and an anonymous Data API denial check. Migrations 002–004 remain unapplied. The Free plan also provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, remaining checks, and the deployment order.
 
 ## Repository and GitHub checks
 
