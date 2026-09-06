@@ -24,7 +24,7 @@ Before using real personal data:
 5. Restrict Site URL and redirect URLs to the production origin and trusted local development origins.
 6. Put integrations and privileged operations behind Edge Functions or another server-side broker. Store provider refresh tokens only in encrypted server-side storage.
 
-These are requirements, not a claim that the live database satisfies all of them. Profile migration 001 is applied and verified with live database role tests and an anonymous Data API denial check. Migrations 002–004 remain unapplied. The Free plan also provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, remaining checks, and the deployment order.
+Migrations 001–004 are applied. Live SQL cross-user tests, anonymous denial on all 25 public tables, and 58 real Auth/Data API assertions passed. These checks cover protected profile fields, private catalogs, child ownership, disabled accounts, atomic workout saves, password-reset enforcement, and session refresh revocation. All disposable test accounts and records were removed. This is bounded verification, not a claim that every security requirement is complete. The Free plan provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, limitations, and release ordering.
 
 ## Repository and GitHub checks
 

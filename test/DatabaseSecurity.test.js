@@ -26,3 +26,7 @@ test('workout replacement rolls back fully on failure and enforces caller owners
 test('reset requirements survive profile edits and clear on an Auth password change', () => {
   expect(results.resetSecurity).toMatch(/^PASS:/);
 });
+
+test('the exact review bundle preserves existing records and rolls back the remaining migrations', () => {
+  expect(results.existingRowsPreserved).toBe(true);
+});
