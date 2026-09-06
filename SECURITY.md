@@ -26,6 +26,8 @@ Before using real personal data:
 
 Migrations 001–004 are applied. Live SQL cross-user tests, anonymous denial on all 25 public tables, and 58 real Auth/Data API assertions passed. These checks cover protected profile fields, private catalogs, child ownership, disabled accounts, atomic workout saves, password-reset enforcement, and session refresh revocation. All disposable test accounts and records were removed. This is bounded verification, not a claim that every security requirement is complete. The Free plan provides no project backups; establish private backup and restore procedures. See [REVIEW.md](REVIEW.md) and [database/README.md](database/README.md) for evidence, limitations, and release ordering.
 
+The September 6 Security Advisor rerun reported zero errors and two warnings. Leaked-password protection is unavailable on the inspected plan. The other warning identifies authenticated execution of the `SECURITY DEFINER` role helper `public.get_my_role()`. This is deliberate in the current RLS design: the function takes no arguments, uses an empty fixed search path, performs no writes, and returns only the current caller's enabled, reset-complete role through `auth.uid()`. Anonymous execution is revoked. Moving the privileged helper into an unexposed schema is a remaining hardening task that needs coordinated policy/function regression checks; do not simply revoke execution or switch it to invoker and break policy evaluation.
+
 ## Repository and GitHub checks
 
 - Keep CodeQL and Dependabot workflows passing.
