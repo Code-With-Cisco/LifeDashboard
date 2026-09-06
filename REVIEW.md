@@ -76,6 +76,8 @@ GitHub's repository sidebar still displayed Claude during review despite that cl
 
 ## Verification and limits
 
+Release `e99a7fa` reached `main` after the live checks below passed. GitHub's [Tests](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/34032149370), [CodeQL](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/34032149383), and [Pages deployment](https://github.com/Code-With-Cisco/LifeDashboard/actions/runs/34032149337) all completed successfully on September 6. The author and committer are Cisco, with no signature or co-author trailer. The working tree was clean after push.
+
 Production profile verification: the reviewed migration 001 and its disposable cross-user tests first passed inside a rollback-only transaction, then passed again in the committed transaction. Checks covered anonymous denial, owner reads/normal edits, foreign reads/edits, blocked self-promotion and ownership/security-field changes, legitimate administrator access, and blocked self-reenable by a disabled user. An in-database fingerprint comparison verified that every existing profile row was unchanged; all fixture accounts were rolled back. No personal row values or fingerprints were exported.
 
 A subsequent read-only check confirmed three profile policies, enabled RLS and authorization trigger, only SELECT/INSERT/UPDATE privileges for authenticated callers, no anonymous profile privileges or role-RPC execution, a fixed empty function search path, and zero test accounts. An independent zero-row profile Data API request returned HTTP 401 / PostgreSQL 42501. The authorization baseline is stored privately outside the repository; it is not a full personal-data backup.
