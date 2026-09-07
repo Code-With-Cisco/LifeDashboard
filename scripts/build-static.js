@@ -22,9 +22,10 @@ prepareBrowser(path.join(output, 'vendor'));
 
 const files = [
   '.nojekyll', 'index.html', 'styles.css', 'logs.js', 'state.js', 'utils.js',
-  'api.js', 'render.js', 'main.js', 'app.js',
+  'api.js', 'render.js', 'main.js', 'app.js', 'personal-data.js',
   'services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js', 'services/BriefingService.js',
   'services/RecipeService.js', 'services/HabitService.js', 'services/NutritionService.js',
+  'services/PersonalDataService.js', 'services/BackupService.js',
 ];
 
 for (const relative of files) {

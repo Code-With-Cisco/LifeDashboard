@@ -12,6 +12,8 @@ Voice is an interface to that same brief and action system. Start with push-to-t
 
 ## Delivery order
 
+September 6 checkpoint: migrations 001–004 and their live security checks are complete. The next branch implements account storage for goals, habit definitions, custom ingredients, and monthly purchase decisions, with migration previews, revision conflicts, and encrypted personal-record export/restore. **Migration 005 is not live yet.** A full private database backup, restore drill, live 005 checks, and dependent client deployment are still required. The personal-record export is a subset and must not be described as the full database backup.
+
 | Milestone | Concrete scope | Ready when |
 |---|---|---|
 | 1. Trusted foundation | Review live schema/RLS; protect profile role columns and private child rows; migrate local-only goals/preferences with a preview; add export and restore | Two-user API isolation, failed-write handling, and restore tests pass against a separate test project |
@@ -33,11 +35,13 @@ Do not start with a general agent holding unrestricted database and provider cre
 | Todoist | Optional alternative if task capture/reminders in Obsidian feel cumbersome | Evaluate only after trying the chosen Obsidian workflow. Choose one authoritative task source to prevent duplicates; Notion is not required. [API](https://developer.todoist.com/api/v1/) |
 | GitHub | Open issues/PRs, review requests, failed builds for selected projects | A narrowly installed GitHub App or delegated API access; use development work to inform focus, without automatically posting or merging |
 | Manual workout logging | Primary record of exercises, sets, reps, weights, duration, and notes | Make saves atomic and retries safe first. Later add personal progression summaries from recorded sessions and optional effort ratings. Preserve corrections and identify manually entered records |
-| Apple Watch / Apple Health | Optional daytime activity and recorded workout trends | No sleep tracking is assumed because the watch is not worn overnight. Missing measurements mean unavailable, not zero. Accuracy depends on metric and use; do not treat estimates as exact calorie or recovery targets. A native companion or explicit export is needed for HealthKit permissions. [HealthKit](https://developer.apple.com/documentation/healthkit) |
+| Apple Watch / Apple Health | Steps, standing hours, and calories burned | Initial scope is these three activity measures only. Label active versus total energy explicitly. No sleep tracking is requested. Missing measurements mean unavailable, not zero; calorie estimates are not exact targets. A native companion or explicit export is needed for HealthKit permissions. [HealthKit](https://developer.apple.com/documentation/healthkit) |
 | COROS / Tredict | Deferred, optional endurance training analysis | These tools help plan running/cycling sessions and analyze recorded efforts and training load. They are unnecessary for the initial manual strength-training workflow. Revisit only if structured endurance training becomes a goal. [Tredict introduction](https://www.tredict.com/glossary/introduction/) |
 | Banking / investments | Cash-flow and upcoming-payment summaries | Manual entry/export first; later an explicitly chosen read-only aggregator. Keep trading, transfers, passwords, and payment authorization outside the brief |
 
 Existing calendar import is a limited ICS parser, not a full recurring-calendar synchronization engine. It needs validation, timezone/recurrence handling, deduplication, and preview before it can replace an API connector.
+
+The confirmed calendar topology is two existing Google accounts plus iCloud. Three personal Gmail mailboxes are planned; an Apple Account login is not proof of an iCloud Mail address. Keep actual addresses and private account mapping outside this public repository. The development mailbox does not automatically add another calendar to the selected scope. Preserve each source calendar and avoid counting shared or overlapping events twice as unavailable time.
 
 ## Obsidian's role
 

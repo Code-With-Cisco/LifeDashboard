@@ -268,6 +268,8 @@ async function doFPR(){
     }
     if(profile.is_disabled){await logout();return;}
     PROFILE=profile;
+    await PersonalData.initialize(sb,profile.id);
+    if(epoch!==_authEpoch)return;
     await loadAllContent();
     if(epoch!==_authEpoch)return;
     toast('Password updated.');enterApp();
@@ -280,6 +282,7 @@ async function doFPR(){
 function clearPrivateSession(){
   _authEpoch++;
   _activeAuthUserId=null;
+  PersonalData.reset();
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
   PROFILE=null;CONTENT={};habitCache={};currentPage='home';
@@ -369,6 +372,8 @@ async function applyAuthSession(event,session,epoch){
   PROFILE=profile;
   if(profile.force_password_reset){show('s-fpr');return;}
   if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
+  await PersonalData.initialize(sb,profile.id);
+  if(epoch!==_authEpoch)return;
   await loadAllContent();
   if(epoch===_authEpoch)await enterApp();
 }
@@ -462,17 +467,38 @@ async function qNext(){
   await completeQuestionnaire();
 }
 async function completeQuestionnaire(){
-  document.getElementById('q-next').disabled=true;
-  document.getElementById('q-next').textContent='Building your dashboard...';
-  const asgn=assignPlans(qAnswers);
-  await sb.from('profiles').update({
-    questionnaire:qAnswers,assigned_workout_plan:asgn.workout,
-    assigned_meal_plan:asgn.meal,assigned_reading_list:asgn.reading,signup_complete:true
-  }).eq('id',PROFILE.id);
-  PROFILE={...PROFILE,assigned_workout_plan:asgn.workout,assigned_meal_plan:asgn.meal,
-    assigned_reading_list:asgn.reading,questionnaire:qAnswers,signup_complete:true};
-  document.getElementById('q-screen').classList.remove('show');
-  await loadAllContent();enterApp();
+  if(!PROFILE)return;
+  const button=document.getElementById('q-next');
+  if(button.disabled)return;
+  const epoch=_authEpoch,userId=PROFILE.id;
+  button.disabled=true;button.textContent='Building your dashboard...';
+  try{
+    const answers=JSON.parse(JSON.stringify(qAnswers)),asgn=assignPlans(answers);
+    const payload={questionnaire:answers,assigned_workout_plan:asgn.workout,
+      assigned_meal_plan:asgn.meal,assigned_reading_list:asgn.reading,signup_complete:true};
+    // Starting weight belongs to onboarding; daily weigh-ins remain separate records.
+    for(const [input,column] of [['goal_weight','target_weight'],['cur_weight','start_weight']]){
+      if(answers[input]){
+        const value=Number(answers[input]);
+        if(!Number.isFinite(value)||value<=0||value>1500)throw new Error('Invalid weight.');
+        payload[column]=value;
+      }
+    }
+    const{data,error}=await sb.from('profiles').update(payload).eq('id',userId).select().single();
+    if(epoch!==_authEpoch)return;
+    if(error||!data||data.id!==userId)throw new Error('Save could not be confirmed.');
+    PROFILE=data;
+    await PersonalData.initialize(sb,userId);
+    if(epoch!==_authEpoch)return;
+    await loadAllContent();
+    if(epoch!==_authEpoch)return;
+    document.getElementById('q-screen').classList.remove('show');
+    await enterApp();
+  }catch{
+    if(epoch===_authEpoch)toast('Setup could not finish. Your answers are kept; please retry.');
+  }finally{
+    if(epoch===_authEpoch){button.disabled=false;button.textContent='Build My Dashboard';}
+  }
 }
 function assignPlans(a){
   const days=+a.days||4;
@@ -509,6 +535,7 @@ function enterApp(){
   hideAuth();
   document.getElementById('app').classList.add('show');
   buildNav();
+  PersonalData.status();
   const now=new Date();const h=now.getHours();
   const greet=h<12?'GOOD MORNING':h<18?'GOOD AFTERNOON':'GOOD EVENING';
   const hg=document.getElementById('h-greeting');
@@ -552,6 +579,7 @@ function openProfileModal(){
   openModal('profile-modal');
 }
 async function saveProfile(){
+  if(!PROFILE)return;
   const result=ProfileService.prepare({
     displayName:document.getElementById('profile-display-name')?.value,
     username:document.getElementById('profile-username')?.value,
@@ -568,14 +596,17 @@ async function saveProfile(){
     return;
   }
   const button=document.getElementById('profile-save-btn');
+  if(button?.disabled)return;
+  const epoch=_authEpoch,userId=PROFILE.id;
   if(button){button.disabled=true;button.textContent='Saving...';}
-  const{data,error}=await sb.from('profiles').update(result.payload).eq('id',PROFILE.id).select().single();
-  if(button){button.disabled=false;button.textContent='Save Profile';}
-  if(error){
-    if(errorEl){errorEl.textContent=error.code==='23505'?'That username is already in use.':error.message;errorEl.style.display='block';}
-    return;
+  try{
+  const{data,error}=await sb.from('profiles').update(result.payload).eq('id',userId).select().single();
+  if(epoch!==_authEpoch)return;
+  if(error||!data||data.id!==userId){
+    if(error?.code==='23505')throw new Error('That username is already in use.');
+    throw new Error('Save could not be confirmed. Your draft is kept; please retry.');
   }
-  PROFILE={...PROFILE,...result.payload,...(data||{})};
+  PROFILE=data;
   closeModal('profile-modal');
   buildNav();
   const now=new Date();const greet=now.getHours()<12?'GOOD MORNING':now.getHours()<18?'GOOD AFTERNOON':'GOOD EVENING';
@@ -583,6 +614,11 @@ async function saveProfile(){
   loadDashStats();
   goto(currentPage);
   toast('Profile updated');
+  }catch(error){
+    if(epoch===_authEpoch&&errorEl){errorEl.textContent=error.message==='That username is already in use.'?error.message:'Save could not be confirmed. Your draft is kept; please retry.';errorEl.style.display='block';}
+  }finally{
+    if(epoch===_authEpoch&&button){button.disabled=false;button.textContent='Save Profile';}
+  }
 }
 function goto(pid){
   toggleMobileNav(false);
@@ -793,7 +829,7 @@ async function renderHome(){
     if(history.filter(h=>h.log_date===day&&h.completed).length>=Math.max(1,totalHabits))streak++;else break;
   }
   set('qs-str',unavailableSources.includes('Habits')?'--':streak);
-  const savedGoals=State.get('goals_'+userId);
+  const savedGoals=getUserGoalData();
   const goals=Array.isArray(savedGoals)?savedGoals.flatMap(section=>Array.isArray(section?.goals)?section.goals:[]):[];
   _latestBriefInput={
     today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
@@ -1606,22 +1642,28 @@ function fmtWorkTime(hrs){
   const h=Math.floor(hrs);const m=Math.round((hrs-h)*60);
   return h+'h'+(m>0?' '+m+'m':'');
 }
-function saveWitRate(){
+async function saveWitRate(){
   const r=parseFloat(document.getElementById('wit-rate')?.value);
-  if(!r||r<=0){toast('Enter a valid hourly rate');return;}
-  PROFILE.wit_hourly_rate=r;
-  sb.from('profiles').update({wit_hourly_rate:r}).eq('id',PROFILE.id);
-  toast('Rate saved: $'+r+'/hr');calcWit();
+  if(!PROFILE)return;
+  if(!Number.isFinite(r)||r<=0||r>1000000){toast('Enter a valid hourly rate');return;}
+  const epoch=_authEpoch,userId=PROFILE.id;
+  try{
+    const{data,error}=await sb.from('profiles').update({wit_hourly_rate:r}).eq('id',userId).select('id').single();
+    if(epoch!==_authEpoch)return;
+    if(error||data?.id!==userId)throw new Error('Unconfirmed save');
+    PROFILE.wit_hourly_rate=r;
+    toast('Rate saved: $'+r+'/hr');calcWit();
+  }catch{if(epoch===_authEpoch)toast('Rate could not be saved. Your input is kept; please retry.');}
 }
-function witDecide(decision){
+async function witDecide(decision){
   const name=document.getElementById('wit-name')?.value.trim();
   const cost=parseFloat(document.getElementById('wit-cost')?.value);
   if(!name){toast('Enter an item name');return;}
   if(!cost||cost<=0){toast('Enter a price');return;}
-  const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=State.get(key)||[];
+  const key='purchase_decisions:'+yearMonth();
+  const items=PersonalData.read(key,[]);
   items.push({name,cost,decision,date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}),ts:Date.now()});
-  State.set(key,items);
+  if(!await savePersonalDocument(key,items))return;
   document.getElementById('wit-name').value='';
   document.getElementById('wit-cost').value='';
   document.getElementById('wit-result').style.display='none';
@@ -1630,16 +1672,16 @@ function witDecide(decision){
 }
 async function deleteWitItem(idx){
   if(!await confirmDialog('Remove this purchase decision?'))return;
-  const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=State.get(key)||[];
-  items.splice(idx,1);State.set(key,items);
+  const key='purchase_decisions:'+yearMonth();
+  const items=PersonalData.read(key,[]);
+  items.splice(idx,1);if(!await savePersonalDocument(key,items))return;
   renderWit();toast('Item removed');
 }
 function renderWit(){
   const rate=getWitRate();
   const rateEl=document.getElementById('wit-rate');if(rateEl&&!rateEl.value)rateEl.value=rate;
-  const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=State.get(key)||[];
+  const key='purchase_decisions:'+yearMonth();
+  const items=PersonalData.read(key,[]);
   const bought=items.filter(i=>i.decision==='buy');
   const passed=items.filter(i=>i.decision==='pass');
   const totalBought=bought.reduce((s,i)=>s+i.cost,0);
@@ -1838,13 +1880,14 @@ const HABIT_COLORS={morning:'a',fitness:'r',nutrition:'g',mindset:'b',custom:'p'
 
 function getUserHabitSecs(){
   if(!PROFILE)return JSON.parse(JSON.stringify(HABIT_SECS));
-  const s=State.get('habits_'+PROFILE.id);
-  if(s!==null)return s;
-  return JSON.parse(JSON.stringify(HABIT_SECS));
+  return PersonalData.read('habit_definitions',HABIT_SECS);
 }
-function saveUserHabitSecs(secs){
-  State.set('habits_'+PROFILE.id,secs);
+async function savePersonalDocument(key,payload){
+  const epoch=_authEpoch;
+  try{await PersonalData.save(key,payload);return epoch===_authEpoch;}
+  catch(error){if(epoch===_authEpoch)toast(error.message,6500);return false;}
 }
+function saveUserHabitSecs(secs){return savePersonalDocument('habit_definitions',secs);}
 function toggleHabitEdit(){
   habitEditMode=!habitEditMode;
   const btn=document.getElementById('habit-edit-btn');
@@ -1860,7 +1903,7 @@ function openAddHabit(cat){
   };
   openModal('add-habit-modal');
 }
-function confirmAddHabit(){
+async function confirmAddHabit(){
   const label=document.getElementById('ah-label').value.trim();
   if(!label){toast('Enter a habit name');return;}
   let cat=document.getElementById('ah-cat').value;
@@ -1876,7 +1919,7 @@ function confirmAddHabit(){
   let sec=secs.find(s=>s.cat===cat);
   if(!sec){sec={cat,label:catLabel,col:catCol,habits:[]};secs.push(sec);}
   sec.habits.push({id:'h_'+Date.now(),label});
-  saveUserHabitSecs(secs);
+  if(!await saveUserHabitSecs(secs))return;
   closeModal('add-habit-modal');
   renderHabits();
   toast('Habit added: '+label);
@@ -1886,7 +1929,7 @@ async function removeHabit(catIdx,habitIdx){
   const secs=getUserHabitSecs();
   secs[catIdx].habits.splice(habitIdx,1);
   if(secs[catIdx].habits.length===0)secs.splice(catIdx,1);
-  saveUserHabitSecs(secs);
+  if(!await saveUserHabitSecs(secs))return;
   renderHabits();toast('Habit removed');
 }
 
@@ -1924,12 +1967,10 @@ renderHabits=async function(){
 // ── GOALS ADD/EDIT/REMOVE ────────────────────────────────────────
 let goalEditMode=false;
 function getUserGoalData(){
-  if(!PROFILE)return JSON.parse(JSON.stringify(GOALS_DATA));
-  const s=State.get('goals_'+PROFILE.id);
-  if(s!==null)return s;
-  return JSON.parse(JSON.stringify(GOALS_DATA));
+  if(!PROFILE)return [];
+  return PersonalData.read('goals',[]);
 }
-function saveUserGoalData(data){State.set('goals_'+PROFILE.id,data);}
+function saveUserGoalData(data){return savePersonalDocument('goals',data);}
 function toggleGoalEdit(){
   goalEditMode=!goalEditMode;
   const btn=document.getElementById('goals-edit-btn');
@@ -1940,7 +1981,7 @@ function openAddGoal(){
   document.getElementById('ag-label').value='';
   openModal('add-goal-modal');
 }
-function confirmAddGoal(){
+async function confirmAddGoal(){
   const g=document.getElementById('ag-label').value.trim();
   if(!g){toast('Enter a goal description');return;}
   const freq=document.getElementById('ag-freq').value;
@@ -1950,7 +1991,7 @@ function confirmAddGoal(){
   let s=data.find(d=>d.sec===sec);
   if(!s){s={sec,col:'t2',goals:[]};data.push(s);}
   s.goals.push({freq,g,p,id:'g_'+Date.now()});
-  saveUserGoalData(data);
+  if(!await saveUserGoalData(data))return;
   closeModal('add-goal-modal');
   renderGoals();
   toast('Goal added!');
@@ -1960,7 +2001,7 @@ async function removeGoal(secIdx,goalIdx){
   const data=getUserGoalData();
   data[secIdx].goals.splice(goalIdx,1);
   if(data[secIdx].goals.length===0)data.splice(secIdx,1);
-  saveUserGoalData(data);
+  if(!await saveUserGoalData(data))return;
   renderGoals();toast('Goal removed');
 }
 
@@ -1987,8 +2028,8 @@ const _origRenderWit=renderWit;
 renderWit=function(){
   _origRenderWit();
   // Add net position calc
-  const key='wit_'+PROFILE.id+'_'+yearMonth();
-  const items=State.get(key)||[];
+  const key='purchase_decisions:'+yearMonth();
+  const items=PersonalData.read(key,[]);
   const bought=items.filter(i=>i.decision==='buy');
   const passed=items.filter(i=>i.decision==='pass');
   const totalBought=bought.reduce((s,i)=>s+i.cost,0);
@@ -2187,38 +2228,21 @@ qNext=async function(){
   }
 };
 
-// Extend completeQuestionnaire to save weight data
-const _origCompleteQ=completeQuestionnaire;
-completeQuestionnaire=async function(){
-  // Save weight targets before completing — persist to DB so they survive cross-device
-  const _wtUpdates={};
-  if(qAnswers.goal_weight)_wtUpdates.target_weight=+qAnswers.goal_weight;
-  if(qAnswers.cur_weight)_wtUpdates.start_weight=+qAnswers.cur_weight;
-  if(Object.keys(_wtUpdates).length){
-    Object.assign(PROFILE,_wtUpdates);
-    await sb.from('profiles').update(_wtUpdates).eq('id',PROFILE.id);
-  }
-  // Log starting weight as first entry
-  if(qAnswers.cur_weight){
-    await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:+qAnswers.cur_weight}).then(()=>{}).catch(()=>{});
-  }
-  await _origCompleteQ();
-};
-
 // ── EDIT EXISTING HABITS ─────────────────────────────────────────
 let _editingHabit=null; // {si, hi}
 const _origConfirmAddHabit=confirmAddHabit;
-confirmAddHabit=function(){
+confirmAddHabit=async function(){
   const label=document.getElementById('ah-label')?.value.trim();
   if(!label){toast('Enter a habit name');return;}
   if(_editingHabit){
     const secs=getUserHabitSecs();
     secs[_editingHabit.si].habits[_editingHabit.hi].label=label;
-    saveUserHabitSecs(secs);_editingHabit=null;
+    if(!await saveUserHabitSecs(secs))return;
+    _editingHabit=null;
     const btn=document.querySelector('#add-habit-modal .btn-r');if(btn)btn.textContent='Add Habit';
     closeModal('add-habit-modal');renderHabits();toast('Habit updated!');
   }else{
-    _origConfirmAddHabit();
+    await _origConfirmAddHabit();
   }
 };
 function editHabit(si,hi){
@@ -2266,7 +2290,7 @@ renderHabits=async function(){
 // ── EDIT EXISTING GOALS ──────────────────────────────────────────
 let _editingGoal=null;
 const _origConfirmAddGoal=confirmAddGoal;
-confirmAddGoal=function(){
+confirmAddGoal=async function(){
   const g=document.getElementById('ag-label')?.value.trim();
   if(!g){toast('Enter a goal description');return;}
   const freq=document.getElementById('ag-freq')?.value;
@@ -2276,11 +2300,12 @@ confirmAddGoal=function(){
   if(_editingGoal){
     const goal=data[_editingGoal.si]?.goals?.[_editingGoal.gi];
     if(goal){goal.g=g;goal.freq=freq;goal.p=p;}
-    saveUserGoalData(data);_editingGoal=null;
+    if(!await saveUserGoalData(data))return;
+    _editingGoal=null;
     const btn=document.querySelector('#add-goal-modal .btn-r');if(btn)btn.textContent='Add Goal';
     closeModal('add-goal-modal');renderGoals();toast('Goal updated!');
   }else{
-    _origConfirmAddGoal();
+    await _origConfirmAddGoal();
   }
 };
 function editGoal(si,gi){
@@ -2347,8 +2372,8 @@ function calcCustomMacros(){
   const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
   const sk=document.getElementById('c-side-sel')?.value;
   const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
-  const prow=MACRO_PROT[pk]||{cal:0,pro:0,car:0,fat:0};
-  const sidew=MACRO_SIDE[sk]||{cal:0,pro:0,car:0,fat:0};
+  const prow=getMacroProtein(pk)||{cal:0,pro:0,car:0,fat:0};
+  const sidew=getMacroSide(sk)||{cal:0,pro:0,car:0,fat:0};
   const tc=Math.round(prow.cal*pa+sidew.cal*sa);
   const tp=Math.round((prow.pro*pa+sidew.pro*sa)*10)/10;
   const tcar=Math.round((prow.car*pa+sidew.car*sa)*10)/10;
@@ -2357,7 +2382,7 @@ function calcCustomMacros(){
   setV('c-cal',tc);setV('c-pro',tp);setV('c-car',tcar);setV('c-fati',tf);
   // Update side unit label
   const su=document.getElementById('c-side-unit');
-  if(su)su.textContent=MACRO_SIDE[sk]?.unit||'cups';
+  if(su)su.textContent=getMacroSide(sk)?.unit||'cups';
   // Auto-name
   const ne=document.getElementById('c-meal-name');
   if(ne&&!ne.value){
@@ -2381,9 +2406,9 @@ submitMeal=async function(){
   if(mealTab==='custom'){
     const pk=document.getElementById('c-prot-sel')?.value;
     const customName=document.getElementById('c-meal-name')?.value.trim();
-    const prow=MACRO_PROT[pk]||{};
+    const prow=getMacroProtein(pk)||{};
     const sk=document.getElementById('c-side-sel')?.value;
-    const sidew=MACRO_SIDE[sk]||{};
+    const sidew=getMacroSide(sk)||{};
     const season=document.getElementById('c-season-sel')?.value||'';
     const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
     const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
@@ -2788,8 +2813,10 @@ renderSpice=function(){
 };
 
 // ── CUSTOM PROTEIN/SIDE OPTIONS IN MEAL BUILDER ──────────────────
-function getCustomProteins(){return State.get('custom_proteins_'+PROFILE.id)||{};}
-function getCustomSides(){return State.get('custom_sides_'+PROFILE.id)||{};}
+function getCustomProteins(){return PersonalData.read('ingredients_protein',{});}
+function getCustomSides(){return PersonalData.read('ingredients_side',{});}
+function getMacroProtein(key){return getCustomProteins()[key]||MACRO_PROT[key];}
+function getMacroSide(key){return getCustomSides()[key]||MACRO_SIDE[key];}
 function openCustomProteinModal(type){
   document.getElementById('cp-type').value=type||'protein';
   document.getElementById('cp-modal-title').textContent=type==='side'?'ADD CUSTOM SIDE':'ADD CUSTOM PROTEIN';
@@ -2797,7 +2824,7 @@ function openCustomProteinModal(type){
   ['cp-cal','cp-pro','cp-car','cp-fat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   openModal('custom-protein-modal');
 }
-function saveCustomProtein(){
+async function saveCustomProtein(){
   const name=document.getElementById('cp-name').value.trim();if(!name){toast('Enter a name');return;}
   const type=document.getElementById('cp-type').value;
   const cal=+document.getElementById('cp-cal').value||0;
@@ -2808,21 +2835,18 @@ function saveCustomProtein(){
   const entry={cal,pro,car,fat,label:name,unit:'oz'};
   if(type==='side'){
     const customs=getCustomSides();customs[key]=entry;
-    State.set('custom_sides_'+PROFILE.id,customs);
-    // Add to MACRO_SIDE runtime
-    if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=entry;
+    if(!await savePersonalDocument('ingredients_side',customs))return;
     // Refresh side dropdown
     const sel=document.getElementById('c-side-sel');
-    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+    if(sel&&![...sel.options].some(option=>option.value===key)){
       const opt=document.createElement('option');opt.value=key;opt.textContent=name;
       sel.insertBefore(opt,sel.querySelector('option[value="add_custom_side"]')||null);
     }
   }else{
     const customs=getCustomProteins();customs[key]=entry;
-    State.set('custom_proteins_'+PROFILE.id,customs);
-    if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=entry;
+    if(!await savePersonalDocument('ingredients_protein',customs))return;
     const sel=document.getElementById('c-prot-sel');
-    if(sel&&!sel.querySelector(`option[value="${key}"]`)){
+    if(sel&&![...sel.options].some(option=>option.value===key)){
       const opt=document.createElement('option');opt.value=key;opt.textContent=name;
       sel.insertBefore(opt,sel.querySelector('option[value="add_custom"]')||null);
     }
@@ -2833,15 +2857,16 @@ function saveCustomProtein(){
 const _prev_openMealModal=openMealModal;
 openMealModal=function(){
   _prev_openMealModal();
+  const epoch=_authEpoch;
   setTimeout(()=>{
+    if(epoch!==_authEpoch||!PROFILE)return;
     // Load custom proteins into selector
     const protSel=document.getElementById('c-prot-sel');
     if(protSel){
       const cp=getCustomProteins();
       Object.entries(cp).forEach(([key,val])=>{
-        if(!protSel.querySelector(`option[value="${key}"]`)){
+        if(![...protSel.options].some(option=>option.value===key)){
           const o=document.createElement('option');o.value=key;o.textContent=val.label;
-          if(typeof MACRO_PROT!=='undefined')MACRO_PROT[key]=val;
           protSel.appendChild(o);
         }
       });
@@ -2859,9 +2884,8 @@ openMealModal=function(){
     if(sideSel){
       const cs=getCustomSides();
       Object.entries(cs).forEach(([key,val])=>{
-        if(!sideSel.querySelector(`option[value="${key}"]`)){
+        if(![...sideSel.options].some(option=>option.value===key)){
           const o=document.createElement('option');o.value=key;o.textContent=val.label;
-          if(typeof MACRO_SIDE!=='undefined')MACRO_SIDE[key]=val;
           sideSel.appendChild(o);
         }
       });
@@ -3887,8 +3911,8 @@ submitMeal=async function(){
     const pk=document.getElementById('c-prot-sel')?.value;
     const sk=document.getElementById('c-side-sel')?.value;
     const customName=document.getElementById('c-meal-name')?.value.trim();
-    const prow=typeof MACRO_PROT!=='undefined'?MACRO_PROT[pk]||{}:{};
-    const sidew=typeof MACRO_SIDE!=='undefined'?MACRO_SIDE[sk]||{}:{};
+    const prow=getMacroProtein(pk)||{};
+    const sidew=getMacroSide(sk)||{};
     const pa=parseFloat(document.getElementById('c-prot-amt')?.value)||0;
     const sa=parseFloat(document.getElementById('c-side-amt')?.value)||0;
     const season=document.getElementById('c-season-sel')?.value||'';

@@ -19,6 +19,22 @@ No migration deletes or rewrites existing personal rows. Migration 002 changes d
 
 ## Local verification
 
+### Pending personal-record storage (005)
+
+`20260906_005_personal_documents.sql` is additive and **not deployed**. The September 6 read-only live inventory confirmed `profiles.id` is UUID, the repaired `get_my_role()` rejects disabled/reset-required accounts, and `user_documents` does not exist.
+
+The migration adds owner-only documents for four fixed record types and month-scoped purchase decisions. It revokes anonymous access and protected-column writes. An invoker RPC checks expected revisions and makes a selected migration/restore batch atomic; stale writes fail without replacing newer data. Direct authorized payload updates also increment the revision through a trigger. Nested document validation is performed by the client service; database constraints bound key, JSON type, and size. The table is not a general secret/token store.
+
+`node scripts/prepare-personal-data.js` generates the 005 transaction, owner/disabled/reset/conflict tests, existing-row fingerprints, and a final rollback. It never connects or runs SQL. After a private restorable backup is verified, test that transaction against the real schema before using `--commit`. Reapplication fails closed. The client depending on this table must not be deployed first.
+
+`scripts/test-personal-data.js` exercises both generated rollback and commit transactions in PostgreSQL through PGlite, verifies an existing synthetic profile survives unchanged, and checks that fixture rows are removed. Live SQL and public Auth/Data API verification remain separate release gates.
+
+The browser's encrypted backup covers goals, habit definitions, custom ingredients, and purchase decisions only. It excludes existing finance tables, calendar, recipes, workout history, Auth records, and Storage files. It is not disaster recovery for the whole project. Original browser records remain on the originating device after previewed migration; replacements are unchecked by default. Restore is account/project-bound and rejects unsupported versions, oversized files, malformed records, or failed decryption.
+
+The version 1 envelope uses browser Web Crypto AES-256-GCM with a random 16-byte salt, 12-byte IV, and PBKDF2-HMAC-SHA256 at 600,000 iterations. The fixed work factor follows the current [OWASP PBKDF2 recommendation](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2) as a password-guessing cost baseline; it is not a claim of FIPS certification. The passphrase never goes to Supabase. A future format/work-factor change needs an explicit reader migration so existing exported files remain usable. The minimum length is not a measure of passphrase entropy; use a unique passphrase and keep it separately.
+
+### Existing security repair tests
+
 Run `npm ci --ignore-scripts`, then `npm test -- --runInBand`. `scripts/test-database.js` starts disposable in-memory PostgreSQL through the pinned development-only PGlite dependency. It loads the synthetic schema, reproduces the old profile exposure, applies 001 to match the pre-repair production state, and seeds an existing account and task. It executes the exact generated 002–004 transaction, checks all four suites and record preservation, and verifies that rollback removed the new RPC. The engine has no production credentials or network connection.
 
 The fixture is deliberately partial. These are real PostgreSQL role/RLS/trigger tests, but they do not substitute for testing the actual Supabase schema and public API. The static build allowlist excludes migrations, tests, internal documentation, and PGlite.

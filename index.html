@@ -128,6 +128,8 @@
           <div class="sh" style="margin-bottom:0">DAILY COMMAND BRIEF</div>
           <button class="btn btn-o btn-xs" onclick="openBriefPreferences()" aria-label="Tune daily command brief">&#x2699; Tune</button>
         </div>
+        <p id="home-personal-data-status" class="profile-note" role="status"></p>
+        <button class="btn btn-sm" onclick="PersonalData.open()">Data &amp; backups</button>
         <div id="home-command-brief"><div class="brief-empty">Building today's brief...</div></div>
       </div>
       <div class="g2" style="margin-bottom:14px">
@@ -891,9 +893,36 @@
       <div><div class="field-label">Hourly Rate ($)</div><input class="inp" id="profile-hourly-rate" type="number" min="0.01" step="0.01"></div>
     </div>
     <div class="profile-note">These values personalize your daily brief, health targets, cash-flow view, and purchase decisions. Account email and password stay in secure account settings.</div>
+    <p id="personal-data-status" class="profile-note" role="status"></p>
+    <button class="btn btn-o" onclick="closeModal('profile-modal');PersonalData.open()">Data &amp; backups</button>
     <div class="modal-footer">
       <button class="btn btn-r" id="profile-save-btn" onclick="saveProfile()">Save Profile</button>
       <button class="btn btn-o" onclick="closeModal('profile-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="data-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-title">DATA &amp; BACKUPS</div>
+    <p class="profile-note">Manage goals, habit definitions, custom ingredients, and purchase decisions. This backup excludes calendar, finance, workout history, recipes, and account credentials. A separate full database backup is needed to protect the remaining database records.</p>
+    <div class="data-actions">
+      <button class="btn btn-o" onclick="PersonalData.reload()">Reload records</button>
+      <button class="btn btn-o" onclick="PersonalData.previewMigration()">Preview device migration</button>
+    </div>
+    <label class="form-label" for="data-passphrase">Backup passphrase (at least 12 characters)</label>
+    <input id="data-passphrase" class="inp" type="password" autocomplete="off" maxlength="1024">
+    <p class="profile-note">Keep the passphrase separately. It cannot be recovered from the file.</p>
+    <div class="data-actions">
+      <button class="btn btn-o" onclick="PersonalData.exportBackup()">Download encrypted backup</button>
+      <input id="data-file" type="file" accept=".json" aria-label="Encrypted personal-record backup">
+      <button class="btn btn-o" onclick="PersonalData.previewRestore()">Preview restore</button>
+    </div>
+    <p id="data-message" role="status" aria-live="polite"></p>
+    <div id="data-preview"></div>
+    <div class="modal-footer">
+      <button id="data-apply" class="btn btn-r" hidden onclick="PersonalData.apply()">Apply selected changes</button>
+      <button class="btn btn-o" onclick="closeModal('data-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -936,6 +965,9 @@
 <script src="services/HabitService.js"></script>
 <script src="services/NutritionService.js"></script>
 <script src="services/BriefingService.js"></script>
+<script src="services/PersonalDataService.js"></script>
+<script src="services/BackupService.js"></script>
+<script src="personal-data.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

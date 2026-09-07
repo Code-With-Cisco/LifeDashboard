@@ -19,6 +19,8 @@ function chain(value) {
 beforeEach(() => {
   dom = new JSDOM(read('index.html'), {url: 'https://dashboard.test', runScripts: 'outside-only'});
   win = dom.window;
+  win.TextEncoder = TextEncoder;
+  win.TextDecoder = TextDecoder;
   win.console = {log: jest.fn(), warn: jest.fn(), error: jest.fn()};
   win.CONFIG = {supabaseUrl: 'https://example.supabase.co', supabaseKey: 'sb_publishable_test'};
   result = {data: [], error: null};
@@ -30,7 +32,8 @@ beforeEach(() => {
   win.supabase = {createClient: () => client};
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
-    'services/HabitService.js', 'services/NutritionService.js', 'services/BriefingService.js', 'app.js']) {
+    'services/HabitService.js', 'services/NutritionService.js', 'services/BriefingService.js',
+    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'app.js']) {
     run(read(file));
   }
   run("PROFILE={id:'user-a',timezone:'America/New_York',assigned_workout_plan:'custom'};");
@@ -93,6 +96,51 @@ test('auth callback returns synchronously without querying Supabase inside it', 
   client.from.mockClear();
   expect(authCallback('SIGNED_IN', {user: {id: 'user-b'}})).toBeUndefined();
   expect(client.from).not.toHaveBeenCalled();
+});
+
+test('onboarding retains answers and re-enables retry when its single profile write fails', async () => {
+  run("qAnswers={cur_weight:'180',goal_weight:'170',days:'4'}");
+  result={data:null,error:{code:'offline'}};
+  await run('completeQuestionnaire()');
+  expect(run('PROFILE.signup_complete')).toBeUndefined();
+  expect(run('qAnswers.cur_weight')).toBe('180');
+  expect(win.document.getElementById('q-next').disabled).toBe(false);
+  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles']);
+});
+
+test('successful onboarding initializes personal records and does not create duplicate weigh-ins', async () => {
+  result={data:{id:'user-a',signup_complete:true,start_weight:180},error:null};
+  const initialized=jest.fn(async()=>true);win.initialized=initialized;
+  run('PersonalData={...PersonalData,initialize:initialized};loadAllContent=async()=>{};enterApp=async()=>{};');
+  await run('completeQuestionnaire()');
+  expect(initialized).toHaveBeenCalledWith(client,'user-a');
+  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles']);
+});
+
+test('late onboarding response cannot restore a signed-out profile', async () => {
+  let finish;client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('completeQuestionnaire()');authCallback('SIGNED_OUT',null);
+  finish({data:{id:'user-a',signup_complete:true},error:null});await pending;
+  expect(run('PROFILE')).toBeNull();
+  expect(win.document.querySelector('#app.show')).toBeNull();
+});
+
+test('custom ingredients resolve from the current account without changing built-in macros', async () => {
+  const entry={cal:0,pro:1,car:0,fat:0,label:'PRIVATE custom ingredient',unit:'oz'};
+  result={data:[{user_id:'user-a',document_key:'ingredients_protein',payload:{chicken_breast:entry},revision:1}],error:null};
+  await win.PersonalData.initialize(client,'user-a');
+  expect(run("getMacroProtein('chicken_breast').label")).toBe(entry.label);
+  expect(run("MACRO_PROT.chicken_breast.label")).toBe('Chicken Breast');
+  authCallback('SIGNED_OUT',null);
+  expect(run("getMacroProtein('chicken_breast').label")).toBe('Chicken Breast');
+});
+
+test('failed hourly-rate save retains input and does not change the committed profile', async () => {
+  run('PROFILE.wit_hourly_rate=20');win.document.getElementById('wit-rate').value='30';
+  client.from.mockImplementation(()=>chain(Promise.reject(new Error('offline'))));
+  await run('saveWitRate()');
+  expect(run('PROFILE.wit_hourly_rate')).toBe(20);
+  expect(win.document.getElementById('wit-rate').value).toBe('30');
 });
 
 test('plan builder saves one record per day rather than one per nested input', async () => {

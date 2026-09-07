@@ -2,6 +2,10 @@
 
 ## Assessment
 
+September 6 follow-up on `codex/personal-data-foundation`: account-scoped document storage and encrypted subset backups are implemented locally, with previewed browser migration, optimistic revision checks, atomic batches, and failed-draft preservation. Onboarding now confirms its single profile write before success, password recovery initializes the document store, profile saves ignore late responses, and ingredient lookups no longer mutate shared runtime dictionaries. Migration 005, the full database backup/restore drill, live API verification, and the dependent client release remain pending. No provider integration is claimed as connected.
+
+September 7 validation: 144 tests across 13 suites passed, including generated 005 rollback/commit transactions in local PostgreSQL, preservation of existing synthetic rows, account switching, malformed records, revision conflicts, and encryption/decryption failures. The allowlisted production build succeeded; the production dependency audit reported zero known vulnerabilities. A Chrome check using an isolated synthetic-data fixture verified migration previews, values shown for review, success feedback, and rejection of a missing backup passphrase; it also caught and corrected the initially visible Apply button. This browser fixture does not establish production persistence or live database isolation.
+
 LifeDashboard is a personal tracking prototype with a deterministic daily brief. The critical authorization defects found in this review are repaired and have passed live SQL and authenticated API checks. It still needs backup/restore capability, durable storage for browser-only records, broader integration coverage, and a server boundary before becoming a reliable personal assistant.
 
 The September 5 browser inspection reached the live Supabase project and confirmed critical authorization gaps despite RLS being enabled on all 25 public tables. **Migrations 001–004 and the approved Auth settings are now live and verified.** The dependent workout/reset client changes passed a production build and a signed-in Chrome check against the repaired database before release.
