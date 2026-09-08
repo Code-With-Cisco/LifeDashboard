@@ -49,11 +49,11 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) for the security model, and [ROADMAP.md](ROADMAP.md) for the current Jarvis platform choices. [INTEGRATIONS.md](INTEGRATIONS.md) retains earlier integration notes.
 
-The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). All four reviewed database repairs are applied and verified: 125 local tests, live SQL isolation checks, and 58 Auth/Data API assertions passed. The [database runbook](database/README.md) records the evidence, reproducible checks, and remaining backup/MFA work.
+The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–006 are applied. Validation includes 145 local tests, live SQL isolation checks, 66 personal-record Auth/Data API assertions, and Chrome migration/conflict/persistence checks. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery/MFA work.
 
-The brief now shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Goals and other local-only records remain in browser storage until a reviewed migration is available.
+The brief shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Use **Data & backups → Preview device migration** to move supported browser records into protected account storage. Review values and explicitly select replacements; original device records are preserved.
 
-The September 6 live database and browser checks are recorded in [REVIEW.md](REVIEW.md). [QA_REPORT.md](QA_REPORT.md) retains the earlier regression record.
+The September 8 live database and browser checks are recorded in [REVIEW.md](REVIEW.md). [QA_REPORT.md](QA_REPORT.md) retains the earlier regression record.
 
 Brief preferences are stored per user in this browser. The optional morning notification contains only a generic prompt and works while LifeDashboard is open; reliable background delivery belongs in the future server-side broker.
 

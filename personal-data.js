@@ -46,7 +46,7 @@
       const{data,error}=await client.rpc('save_personal_documents',{p_documents:changes.map(({key,payload,expected_revision})=>
         ({key,payload:S.validate(key,payload),expected_revision}))});
       if(current!==epoch)throw new Error('Your session changed. Sign in and check whether the save completed.');
-      if(error)throw new Error(error.code==='40001'?'These records changed elsewhere. Reload, then review your changes again.':'Save failed. Your draft and original records have been kept.');
+      if(error)throw new Error(['PT409','40001'].includes(error.code)?'These records changed elsewhere. Reload, then review your changes again.':'Save failed. Your draft and original records have been kept.');
       if(!Array.isArray(data)||data.length!==changes.length)throw new Error('Save could not be confirmed. Reload before retrying.');
       const next=new Map(rows);
       const returned=new Set();

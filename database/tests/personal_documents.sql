@@ -19,7 +19,7 @@ DO $$ DECLARE r public.user_documents; n integer; BEGIN
  SELECT * INTO r FROM public.save_personal_documents('[{"key":"goals","payload":[{"sec":"DEV","goals":[{"g":"Fixture goal","freq":"Daily","p":"High"}]}],"expected_revision":0}]');
  IF r.user_id<>auth.uid() OR r.revision<>1 THEN RAISE EXCEPTION 'FAIL: initial save'; END IF;
  BEGIN PERFORM public.save_personal_documents('[{"key":"goals","payload":[],"expected_revision":0}]');
- RAISE EXCEPTION 'FAIL: stale create overwrote data'; EXCEPTION WHEN serialization_failure THEN NULL; END;
+ RAISE EXCEPTION 'FAIL: stale create overwrote data'; EXCEPTION WHEN SQLSTATE 'PT409' THEN NULL; END;
  BEGIN INSERT INTO public.user_documents(user_id,document_key,payload)
  VALUES('00000000-0000-4000-8000-0000000000b2','goals','[]');
  RAISE EXCEPTION 'FAIL: forged owner'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
@@ -28,7 +28,7 @@ DO $$ DECLARE r public.user_documents; n integer; BEGIN
  BEGIN UPDATE public.user_documents SET revision=10;
  RAISE EXCEPTION 'FAIL: forged revision'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
  BEGIN PERFORM public.save_personal_documents('[{"key":"goals","payload":[],"expected_revision":1},{"key":"ingredients_side","payload":{},"expected_revision":99}]');
- RAISE EXCEPTION 'FAIL: conflict batch accepted'; EXCEPTION WHEN serialization_failure THEN NULL; END;
+ RAISE EXCEPTION 'FAIL: conflict batch accepted'; EXCEPTION WHEN SQLSTATE 'PT409' THEN NULL; END;
  IF (SELECT revision FROM public.user_documents WHERE document_key='goals')<>1 OR
  (SELECT payload->0->'goals'->0->>'g' FROM public.user_documents WHERE document_key='goals')<>'Fixture goal'
  THEN RAISE EXCEPTION 'FAIL: failed batch lost data'; END IF;

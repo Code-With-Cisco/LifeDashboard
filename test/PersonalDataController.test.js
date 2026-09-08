@@ -19,8 +19,8 @@ test('failed save keeps the committed record and returned drafts cannot mutate t
  await expect(win.PersonalData.save('goals',draft)).rejects.toThrow(/Save failed/);
  expect(win.PersonalData.read('goals',[])).toEqual(goals);
 });
-test('stale saves report a conflict instead of replacing newer records',async()=>{
- await win.PersonalData.initialize(client,'a');client.rpc.mockResolvedValue({error:{code:'40001'}});
+test.each(['PT409','40001'])('stale saves (%s) report a conflict instead of replacing newer records',async(code)=>{
+ await win.PersonalData.initialize(client,'a');client.rpc.mockResolvedValue({error:{code}});
  await expect(win.PersonalData.save('goals',[])).rejects.toThrow(/changed elsewhere/);
  expect(client.rpc).toHaveBeenCalledWith('save_personal_documents',{p_documents:[{key:'goals',payload:[],expected_revision:1}]});
  expect(win.PersonalData.read('goals',[])).toEqual(goals);

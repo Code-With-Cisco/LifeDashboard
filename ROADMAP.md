@@ -12,7 +12,7 @@ Voice is an interface to that same brief and action system. Start with push-to-t
 
 ## Delivery order
 
-September 6 checkpoint: migrations 001–004 and their live security checks are complete. The next branch implements account storage for goals, habit definitions, custom ingredients, and monthly purchase decisions, with migration previews, revision conflicts, and encrypted personal-record export/restore. **Migration 005 is not live yet.** A full private database backup, restore drill, live 005 checks, and dependent client deployment are still required. The personal-record export is a subset and must not be described as the full database backup.
+September 8 checkpoint: migrations 001–006 are applied. Account storage for goals, habit definitions, custom ingredients, and monthly purchase decisions includes migration previews, revision conflicts, and encrypted personal-record export/restore. A private logical database backup and bounded local restore drill passed; 145 local tests, 66 real Auth/Data API assertions, and Chrome migration/conflict/persistence checks passed. Original records were preserved and disposable accounts removed. Independent off-device recovery, a full managed-service restore drill, MFA, and a separate test project remain foundation work. The browser export covers only personal records; see the [database runbook](database/README.md) for backup scope and recovery limits.
 
 | Milestone | Concrete scope | Ready when |
 |---|---|---|
