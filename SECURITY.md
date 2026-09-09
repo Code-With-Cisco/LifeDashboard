@@ -15,6 +15,8 @@ LifeDashboard contains personal health, schedule, finance, reading, and goal dat
 
 ## Required Supabase checks
 
+Migration 007 and the MFA client are prepared as a coordinated release. The database requires AAL2 for any account with a verified Auth factor, using restrictive policies across all 26 application tables and the role helper. The browser verifies MFA before loading or auto-creating a profile, handles password-recovery challenges and token downgrades, and clears setup keys and private state after sign-out. Password-only access cannot remove a verified factor. Enrollment remains an explicit user action; account recovery requires the trusted administrator path described in the [database runbook](database/README.md#authenticator-mfa-007).
+
 Before using real personal data:
 
 1. Enable **Leaked password protection** when the chosen plan supports it; the inspected Free-plan control is unavailable. Record this limitation until addressed.

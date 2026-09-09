@@ -54,6 +54,21 @@ catch(error){
   throw error;
 }
 window.sb=createClient(publicConfig.supabaseUrl,publicConfig.supabaseKey);
+let _passwordRecoveryPending=false;
+let _updatingPassword=false;
+window.MFA=MfaUI.create(sb,{
+  confirm:message=>confirmDialog(message),
+  showChallenge:()=>show('s-mfa'),
+  open:()=>openModal('mfa-modal'),
+  close:()=>document.getElementById('mfa-modal')?.classList.remove('open'),
+  resume:async()=>{
+    const epoch=_authEpoch;
+    const{data,error}=await sb.auth.getSession();
+    if(epoch!==_authEpoch)return;
+    if(error||!data?.session){await logout();return;}
+    await applyAuthSession('MFA_CHALLENGE_VERIFIED',data.session,++_authEpoch);
+  },
+});
 
 // ── SAFETY HELPERS ───────────────────────────────────────────────
 /**
@@ -169,8 +184,11 @@ function openModal(id){document.getElementById(id)?.classList.add('open');}
  * @param {string} id - element id of the .modal-bg element
  * @returns {void}
  */
-function closeModal(id){document.getElementById(id)?.classList.remove('open');}
-document.addEventListener('click',e=>{if(e.target.classList.contains('modal-bg'))e.target.classList.remove('open');});
+function closeModal(id){
+  if(id==='mfa-modal'){MFA.close();return;}
+  document.getElementById(id)?.classList.remove('open');
+}
+document.addEventListener('click',e=>{if(e.target.classList.contains('modal-bg'))closeModal(e.target.id);});
 /**
  * Show an inline error message for 5 s, then hide it.
  * @param {string} id  - element id of the error container
@@ -253,6 +271,7 @@ async function doFPR(){
   if(btn.disabled)return;
   const epoch=_authEpoch;
   btn.disabled=true;btn.textContent='Updating...';
+  _updatingPassword=true;
   try{
     const{data,error}=await sb.auth.updateUser({password:pass,...(cur?{current_password:cur}:{})});
     if(epoch!==_authEpoch)return;
@@ -260,6 +279,13 @@ async function doFPR(){
     // Auth clears the requirement in the database after the password changes.
     const user=data?.user;
     if(!user){showErr('fpr-err','Please sign in again to verify your password change.');return;}
+    const current=await sb.auth.getSession();
+    if(epoch!==_authEpoch)return;
+    if(current.error||!current.data?.session||!(await MFA.service.status(current.data.session)).allowed){
+      await MFA.retry();return;
+    }
+    if(epoch!==_authEpoch)return;
+    _passwordRecoveryPending=false;
     for(const id of ['fpr-cur','fpr-pass','fpr-pass2'])document.getElementById(id).value='';
     const{data:profile,error:profileError}=await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
     if(epoch!==_authEpoch)return;
@@ -276,12 +302,15 @@ async function doFPR(){
   }catch{
     if(epoch===_authEpoch)showErr('fpr-err','Could not verify the password update. Please sign in again before retrying.');
   }finally{
+    _updatingPassword=false;
     btn.disabled=false;btn.textContent='SET NEW PASSWORD';
   }
 }
 function clearPrivateSession(){
   _authEpoch++;
   _activeAuthUserId=null;
+  _passwordRecoveryPending=false;
+  MFA.reset();
   PersonalData.reset();
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
@@ -364,7 +393,23 @@ function showDbError(msg){
 
 async function applyAuthSession(event,session,epoch){
   if(epoch!==_authEpoch)return;
-  if(event==='PASSWORD_RECOVERY'){show('s-fpr');return;}
+  if(event==='PASSWORD_RECOVERY')_passwordRecoveryPending=true;
+  let security;
+  try{security=await MFA.service.status(session);}
+  catch(_){
+    if(epoch!==_authEpoch)return;
+    const recovery=_passwordRecoveryPending;
+    clearPrivateSession();_activeAuthUserId=session.user.id;_passwordRecoveryPending=recovery;
+    MFA.challenge(null,'Could not check account security. Retry when connected.');return;
+  }
+  if(epoch!==_authEpoch)return;
+  if(!security.allowed){
+    const recovery=_passwordRecoveryPending;
+    clearPrivateSession();_activeAuthUserId=session.user.id;_passwordRecoveryPending=recovery;
+    MFA.challenge(security);return;
+  }
+  if(_passwordRecoveryPending){show('s-fpr');return;}
+  if(PROFILE&&PROFILE.id===session.user.id&&['SIGNED_IN','USER_UPDATED','TOKEN_REFRESHED','MFA_CHALLENGE_VERIFIED'].includes(event))return;
   const profile=await loadProfile(session);
   if(epoch!==_authEpoch)return;
   if(!profile){show('s-choose');return;}
@@ -382,8 +427,8 @@ sb.auth.onAuthStateChange((event,session)=>{
   if(event==='SIGNED_OUT'||(event==='INITIAL_SESSION'&&!session)){
     clearPrivateSession();return;
   }
-  if(!session||!['SIGNED_IN','INITIAL_SESSION','USER_UPDATED','PASSWORD_RECOVERY'].includes(event))return;
-  if(['SIGNED_IN','USER_UPDATED'].includes(event)&&_activeAuthUserId===session.user.id&&PROFILE)return;
+  if(!session||!['SIGNED_IN','INITIAL_SESSION','USER_UPDATED','PASSWORD_RECOVERY','TOKEN_REFRESHED','MFA_CHALLENGE_VERIFIED'].includes(event))return;
+  if(event==='USER_UPDATED'&&_updatingPassword)return;
   if(_activeAuthUserId!==session.user.id)clearPrivateSession();
   _activeAuthUserId=session.user.id;
   const epoch=++_authEpoch;

@@ -6,6 +6,8 @@ Signed-in users can edit their display name, username, timezone, health targets,
 
 The browser application is static and uses Supabase for authentication and user-scoped data. It deliberately does not perform privileged account administration or store provider credentials.
 
+Authenticator setup is available under **Profile → Account security**. Enroll an authenticator, verify its six-digit code, and keep a backup authenticator or setup key securely. Password-only sign-ins for enrolled accounts stop at the second-factor screen. This client requires migration 007 before deployment; see the [MFA rollout and recovery procedure](database/README.md#authenticator-mfa-007).
+
 ## Local setup
 
 1. Install dependencies with `npm ci`.

@@ -12,6 +12,8 @@ Voice is an interface to that same brief and action system. Start with push-to-t
 
 ## Delivery order
 
+September 9 MFA checkpoint: authenticator setup, verification, challenge, removal, and session cleanup are implemented. Migration 007 adds opt-in AAL2 enforcement across all 26 application tables while retaining ownership and account restrictions. Local, restored-schema, live rollback, and real Auth preflight checks passed. Production deployment and post-commit API checks remain the release gate; users enroll their own authenticator after release.
+
 September 8 checkpoint: migrations 001–006 are applied. Account storage for goals, habit definitions, custom ingredients, and monthly purchase decisions includes migration previews, revision conflicts, and encrypted personal-record export/restore. A private logical database backup and bounded local restore drill passed; 145 local tests, 66 real Auth/Data API assertions, and Chrome migration/conflict/persistence checks passed. Original records were preserved and disposable accounts removed. Independent off-device recovery, a full managed-service restore drill, MFA, and a separate test project remain foundation work. The browser export covers only personal records; see the [database runbook](database/README.md) for backup scope and recovery limits.
 
 | Milestone | Concrete scope | Ready when |

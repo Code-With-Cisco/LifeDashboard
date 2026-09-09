@@ -21,6 +21,18 @@ No migration deletes or rewrites existing personal rows. Migration 002 changes d
 
 ## Local verification
 
+### Authenticator MFA (007)
+
+Migration 007 adds `mfa_session_allowed()`, checks it in `get_my_role()`, and adds a restrictive authenticated policy across all 26 inspected public tables. A session must have a signed `aal2` claim when its account has any verified Auth factor. Unverified enrollment does not block access. The helper checks the server's factor records, uses a fixed empty search path, accepts no target user, and is executable only by authenticated users. Existing ownership policies and role/reset/disabled checks remain in force. Future app tables require the same restrictive policy.
+
+Deploy the database guard before this client. `node scripts/prepare-mfa.js` generates the reviewed transaction with fixture tests, public/Auth-user/Auth-factor preservation fingerprints, bounded lock/statement timeouts, and a final rollback. It never connects to a database. Only use `--commit` after the matching real-schema checks and deployment authorization. Reapplication and unreviewed public tables fail closed. Do not reapply an older `get_my_role()` migration over 007.
+
+`scripts/test-mfa.js` verifies the rollback and commit paths in PostgreSQL via PGlite; Jest runs it with the client tests. The SQL suite checks password-only/missing-claim denial, verified access, two-user isolation, unfinished/other-user factors, administrator/reset/disabled restrictions, RPCs, raw-factor access, and restrictive-policy coverage. Restored-database and live rollback checks passed on September 9 with existing rows unchanged. Real disposable Auth checks also passed enrollment, wrong-code rejection, AAL2 verification, fresh-password challenge requirements, and refusal to remove a verified factor at AAL1. Production commit and subsequent real API enforcement checks are the remaining rollout gate.
+
+Users enroll their own authenticator from Profile → Account security and confirm a code before activation. Setup keys and QR images stay in memory and are cleared on close/sign-out; no external QR service is used. Cancel removes the new unverified factor. Closing during setup can leave an unfinished factor, which is listed for explicit removal on the next visit. Add a second authenticator or securely back up the setup key before relying on MFA. This implementation does not issue recovery codes.
+
+If all factors are lost, the project administrator must independently verify the account owner, review the exact account and factor IDs in Supabase Auth, and explicitly authorize removal through a trusted administrative path. Never disable table policies to recover one account. A password reset does not bypass MFA. After recovery, revoke the affected sessions as appropriate and have the owner enroll a new authenticator. Privileged Auth keys and factor secrets must never enter the static client, Git, or logs. [Supabase MFA documentation](https://supabase.com/docs/guides/auth/auth-mfa/totp)
+
 ### Personal-record storage (005–006)
 
 Migrations 005 and 006 are deployed. The inspected live 005 function matched the reviewed source before 006. Both migrations passed rollback-only checks against the restored production schema and the live database before commit. The committed transactions repeated the ownership, restricted-account, conflict, atomic-batch, and record-preservation checks. Migration 006 preserved the function owner, invoker security, fixed search path, grants, and RLS policy.

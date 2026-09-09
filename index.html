@@ -82,6 +82,24 @@
   </div>
 </div>
 
+<div class="auth-screen" id="s-mfa">
+  <div class="auth-box">
+    <div class="auth-logo">CISCO</div>
+    <h1 class="auth-sub">Verify your sign-in</h1>
+    <p id="mfa-error" class="profile-note" role="status" aria-live="polite"></p>
+    <div id="mfa-challenge-form" hidden>
+      <label class="auth-lbl" for="mfa-factor">Authenticator</label>
+      <select class="auth-inp" id="mfa-factor"></select>
+      <label class="auth-lbl" for="mfa-code">Six-digit code</label>
+      <input class="auth-inp" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" onkeydown="if(event.key==='Enter')MFA.verify()">
+      <button class="auth-btn" data-mfa-action onclick="MFA.verify()">VERIFY</button>
+    </div>
+    <button class="auth-btn secondary" data-mfa-action onclick="MFA.retry()">Retry security check</button>
+    <button class="auth-btn secondary" onclick="logout()">Sign out</button>
+    <p class="profile-note">Lost access to every authenticator? Contact the administrator for account recovery. A password reset alone does not replace your second factor.</p>
+  </div>
+</div>
+
 <!-- ═══ QUESTIONNAIRE ════════════════════════════════════ -->
 <div id="q-screen">
   <div class="q-wrap">
@@ -895,10 +913,33 @@
     <div class="profile-note">These values personalize your daily brief, health targets, cash-flow view, and purchase decisions. Account email and password stay in secure account settings.</div>
     <p id="personal-data-status" class="profile-note" role="status"></p>
     <button class="btn btn-o" onclick="closeModal('profile-modal');PersonalData.open()">Data &amp; backups</button>
+    <button class="btn btn-o" onclick="closeModal('profile-modal');MFA.open()">Account security</button>
     <div class="modal-footer">
       <button class="btn btn-r" id="profile-save-btn" onclick="saveProfile()">Save Profile</button>
       <button class="btn btn-o" onclick="closeModal('profile-modal')">Cancel</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="mfa-modal">
+  <div class="modal" style="max-width:600px">
+    <h2 class="modal-title">ACCOUNT SECURITY</h2>
+    <p class="profile-note">Protect your dashboard with a code from an authenticator app each time you sign in. Keep a second authenticator or a secure backup of its setup key. If you lose all authenticators, an administrator must recover your account; password reset alone will not restore access.</p>
+    <p id="mfa-status" class="profile-note" role="status" aria-live="polite"></p>
+    <div id="mfa-factors"></div>
+    <label class="field-label" for="mfa-name">Name your authenticator</label>
+    <input class="inp" id="mfa-name" maxlength="50" placeholder="e.g. Personal phone" autocomplete="off">
+    <button class="btn btn-o" data-mfa-action onclick="MFA.begin()">Add authenticator</button>
+    <div id="mfa-setup" hidden>
+      <p class="profile-note">Scan this code in your authenticator app, or enter the setup key below. Keep the key private. Setup is complete only after you verify a code.</p>
+      <img id="mfa-qr" width="224" height="224" alt="Authenticator setup QR code" class="mfa-qr">
+      <code id="mfa-secret" class="mfa-secret"></code>
+      <label class="field-label" for="mfa-setup-code">Six-digit code</label>
+      <input class="inp" id="mfa-setup-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" onkeydown="if(event.key==='Enter')MFA.finish()">
+      <button class="btn btn-r" data-mfa-action onclick="MFA.finish()">Verify and enable</button>
+      <button class="btn btn-o" data-mfa-action onclick="MFA.cancel()">Cancel setup</button>
+    </div>
+    <div class="modal-footer"><button class="btn btn-o" onclick="MFA.close()">Close</button></div>
   </div>
 </div>
 
@@ -968,6 +1009,8 @@
 <script src="services/PersonalDataService.js"></script>
 <script src="services/BackupService.js"></script>
 <script src="personal-data.js"></script>
+<script src="services/MfaService.js"></script>
+<script src="mfa.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

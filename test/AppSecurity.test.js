@@ -25,7 +25,10 @@ beforeEach(() => {
   win.CONFIG = {supabaseUrl: 'https://example.supabase.co', supabaseKey: 'sb_publishable_test'};
   result = {data: [], error: null};
   client = {
-    auth: {onAuthStateChange: callback => { authCallback = callback; }, signOut: jest.fn(async () => ({error: null}))},
+    auth: {onAuthStateChange: callback => { authCallback = callback; }, signOut: jest.fn(async () => ({error: null})),
+      getSession:jest.fn(async()=>({data:{session:{access_token:'test',user:{id:'user-a'}}},error:null})),
+      mfa:{getAuthenticatorAssuranceLevel:jest.fn(async()=>({data:{currentLevel:'aal1',nextLevel:'aal1'},error:null})),
+        listFactors:jest.fn(async()=>({data:{all:[]},error:null}))}},
     from: jest.fn(() => chain(result)),
     rpc: jest.fn(async (_name, payload) => ({data: payload.p_session_id, error: null})),
   };
@@ -33,7 +36,7 @@ beforeEach(() => {
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
     'services/HabitService.js', 'services/NutritionService.js', 'services/BriefingService.js',
-    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'app.js']) {
+    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','app.js']) {
     run(read(file));
   }
   run("PROFILE={id:'user-a',timezone:'America/New_York',assigned_workout_plan:'custom'};");
@@ -84,7 +87,7 @@ test('a profile request completing after sign-out cannot reopen the dashboard', 
   let finish;
   run('loadProfile = () => window.pendingProfile;');
   win.pendingProfile = new Promise(resolve => { finish = resolve; });
-  const pending = run("applyAuthSession('SIGNED_IN',{user:{id:'user-a'}},_authEpoch)");
+  const pending = run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
   authCallback('SIGNED_OUT', null);
   finish({id: 'user-a', signup_complete: true});
   await pending;
@@ -96,6 +99,71 @@ test('auth callback returns synchronously without querying Supabase inside it', 
   client.from.mockClear();
   expect(authCallback('SIGNED_IN', {user: {id: 'user-b'}})).toBeUndefined();
   expect(client.from).not.toHaveBeenCalled();
+  expect(client.auth.mfa.listFactors).not.toHaveBeenCalled();
+});
+
+function requireAuthenticator(){
+ client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({data:{currentLevel:'aal1',nextLevel:'aal2'}});
+ client.auth.mfa.listFactors.mockResolvedValue({data:{all:[{id:'factor-a',friendly_name:'Phone',factor_type:'totp',status:'verified'}]}});
+}
+test('MFA blocks profile reads and auto-creation before opening private data',async()=>{
+ requireAuthenticator();
+ await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+ expect(client.from).not.toHaveBeenCalled();expect(run('PROFILE')).toBeNull();
+ expect(win.document.getElementById('s-mfa').classList.contains('show')).toBe(true);
+ expect(win.document.getElementById('mfa-factor').value).toBe('factor-a');
+});
+test('MFA status failure clears private content and offers retry',async()=>{
+ client.auth.mfa.listFactors.mockResolvedValue({error:{message:'PRIVATE token'}});
+ win.document.getElementById('home-command-brief').textContent='PRIVATE meeting';
+ await run("applyAuthSession('TOKEN_REFRESHED',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+ expect(client.from).not.toHaveBeenCalled();expect(run('PROFILE')).toBeNull();
+ expect(win.document.getElementById('app').textContent).not.toContain('PRIVATE');
+ expect(win.document.getElementById('mfa-error').textContent).toContain('Retry');
+});
+test('password recovery must pass MFA before the password screen',async()=>{
+ requireAuthenticator();
+ await run("applyAuthSession('PASSWORD_RECOVERY',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+ expect(win.document.getElementById('s-fpr').classList.contains('show')).toBe(false);
+ client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({data:{currentLevel:'aal2',nextLevel:'aal2'}});
+ await run('MFA.retry()');
+ expect(win.document.getElementById('s-fpr').classList.contains('show')).toBe(true);
+ expect(client.from).not.toHaveBeenCalled();
+});
+test('valid token refresh keeps current edits and skips data reinitialization',async()=>{
+ win.document.querySelector('#profile-modal input').value='Unsaved edit';
+ await run("applyAuthSession('TOKEN_REFRESHED',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+ expect(win.document.querySelector('#profile-modal input').value).toBe('Unsaved edit');
+ expect(client.from).not.toHaveBeenCalled();
+});
+test('a security retry completing after logout cannot restart sign-in',async()=>{
+ let finish;
+ client.auth.getSession.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ const pending=run('MFA.retry()');authCallback('SIGNED_OUT',null);
+ finish({data:{session:{access_token:'test',user:{id:'user-a'}}}});await pending;
+ expect(client.auth.mfa.listFactors).not.toHaveBeenCalled();
+ expect(run('PROFILE')).toBeNull();
+ expect(win.document.getElementById('s-mfa').classList.contains('show')).toBe(false);
+});
+test('late enrollment cannot render a secret after sign-out',async()=>{
+ let finish;
+ client.auth.mfa.enroll=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));
+ await run('MFA.open()');win.document.getElementById('mfa-name').value='Phone';
+ const pending=run('MFA.begin()');
+ authCallback('SIGNED_OUT',null);
+ finish({data:{id:'factor-a',totp:{secret:'PRIVATE-SETUP',qr_code:'<svg></svg>'}}});await pending;
+ expect(win.document.body.textContent).not.toContain('PRIVATE-SETUP');
+ expect(win.document.getElementById('mfa-qr').hasAttribute('src')).toBe(false);
+});
+test('closing the setup backdrop clears its secret and code',async()=>{
+ client.auth.mfa.enroll=jest.fn(async()=>({data:{id:'factor-a',totp:{secret:'PRIVATE-SETUP',qr_code:'<svg></svg>'}}}));
+ await run('MFA.open()');win.document.getElementById('mfa-name').value='Phone';await run('MFA.begin()');
+ expect(win.document.getElementById('mfa-secret').textContent).toBe('PRIVATE-SETUP');
+ win.document.getElementById('mfa-setup-code').value='012345';
+ win.document.getElementById('mfa-modal').click();
+ expect(win.document.getElementById('mfa-secret').textContent).toBe('');
+ expect(win.document.getElementById('mfa-setup-code').value).toBe('');
+ expect(win.document.getElementById('mfa-qr').hasAttribute('src')).toBe(false);
 });
 
 test('onboarding retains answers and re-enables retry when its single profile write fails', async () => {
