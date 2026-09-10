@@ -51,7 +51,7 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) for the security model, and [ROADMAP.md](ROADMAP.md) for the current Jarvis platform choices. [INTEGRATIONS.md](INTEGRATIONS.md) retains earlier integration notes.
 
-The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–006 are applied. Validation includes 145 local tests, live SQL isolation checks, 66 personal-record Auth/Data API assertions, and Chrome migration/conflict/persistence checks. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery/MFA work.
+The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–007 are applied. Validation includes 161 local tests, live SQL isolation and MFA checks, 66 personal-record Auth/Data API assertions, 20 post-commit MFA API assertions, 10 authenticator-removal assertions, and Chrome migration/conflict/persistence and MFA sign-in checks. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery work.
 
 The brief shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Use **Data & backups → Preview device migration** to move supported browser records into protected account storage. Review values and explicitly select replacements; original device records are preserved.
 
