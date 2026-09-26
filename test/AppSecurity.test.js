@@ -35,8 +35,8 @@ beforeEach(() => {
   win.supabase = {createClient: () => client};
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
-    'services/HabitService.js', 'services/NutritionService.js', 'services/BriefingService.js',
-    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','app.js']) {
+    'services/HabitService.js', 'services/NutritionService.js', 'services/PlanningService.js', 'services/BriefingService.js',
+    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','planning.js','app.js']) {
     run(read(file));
   }
   run("PROFILE={id:'user-a',timezone:'America/New_York',assigned_workout_plan:'custom'};");
@@ -52,11 +52,12 @@ test('custom workout markup stays text in the actual workout renderer', () => {
   expect(win.document.getElementById('wk-panels').textContent).toContain(win.payload);
 });
 
-test('questionnaire answers cannot escape the input value on rerender', () => {
+test('profile settings display saved personal details as input values', () => {
   win.payload = '\"><img src=x onerror="alert(1)">';
-  run('qStep=0;qAnswers[Q_STEPS[0].inputs[0].id]=payload;renderQStep();');
-  expect(win.document.querySelector('#q-steps img')).toBeNull();
-  expect(win.document.querySelector('#q-steps input').getAttribute('value')).toBe(win.payload);
+  run('PROFILE.display_name=payload;PROFILE.target_weight=175;openProfileModal();');
+  expect(win.document.querySelector('#profile-modal img')).toBeNull();
+  expect(win.document.getElementById('profile-display-name').value).toBe(win.payload);
+  expect(win.document.getElementById('profile-target-weight').value).toBe('175');
 });
 
 test('failed recipe retrieval cannot read a different user cache', async () => {
@@ -166,31 +167,74 @@ test('closing the setup backdrop clears its secret and code',async()=>{
  expect(win.document.getElementById('mfa-qr').hasAttribute('src')).toBe(false);
 });
 
-test('onboarding retains answers and re-enables retry when its single profile write fails', async () => {
-  run("qAnswers={cur_weight:'180',goal_weight:'170',days:'4'}");
-  result={data:null,error:{code:'offline'}};
-  await run('completeQuestionnaire()');
-  expect(run('PROFILE.signup_complete')).toBeUndefined();
-  expect(run('qAnswers.cur_weight')).toBe('180');
-  expect(win.document.getElementById('q-next').disabled).toBe(false);
-  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles']);
+test.each([false, true, null])('sign-in opens the dashboard with legacy setup status %s and preserves saved values', async signupComplete => {
+  const profile={id:'user-a',username:'user.a',display_name:'Returning user',timezone:'America/New_York',
+    signup_complete:signupComplete,questionnaire:{days:'3'},assigned_workout_plan:'custom',
+    assigned_meal_plan:'custom-meals',assigned_reading_list:'custom-books',start_weight:180,target_weight:170};
+  const update=jest.fn();
+  client.from.mockImplementation(table=>table==='profiles'
+    ? {...chain({data:profile,error:null}),select:()=>chain({data:profile,error:null}),update}
+    : chain({data:[],error:null}));
+  await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+  expect(win.document.querySelector('#app.show')).not.toBeNull();
+  expect(win.document.querySelector('.auth-screen.show')).toBeNull();
+  expect(win.document.getElementById('q-screen')).toBeNull();
+  expect(run('PROFILE')).toEqual(profile);
+  expect(update).not.toHaveBeenCalled();
+  expect(client.from.mock.calls.map(([table])=>table)).toContain('user_documents');
+  run('openProfileModal()');
+  expect(win.document.getElementById('profile-target-weight').value).toBe('170');
 });
 
-test('successful onboarding initializes personal records and does not create duplicate weigh-ins', async () => {
-  result={data:{id:'user-a',signup_complete:true,start_weight:180},error:null};
-  const initialized=jest.fn(async()=>true);win.initialized=initialized;
-  run('PersonalData={...PersonalData,initialize:initialized};loadAllContent=async()=>{};enterApp=async()=>{};');
-  await run('completeQuestionnaire()');
-  expect(initialized).toHaveBeenCalledWith(client,'user-a');
-  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles']);
+test('a missing profile is created and enters the dashboard without collecting answers', async () => {
+  const profile={id:'user-a',username:'new-user',display_name:'New user',timezone:'America/New_York',signup_complete:false};
+  const insert=jest.fn(()=>chain({data:profile,error:null}));
+  client.from.mockImplementation(table=>table==='profiles'
+    ? {select:()=>chain({data:null,error:null}),insert}
+    : chain({data:[],error:null}));
+  await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a',user_metadata:{username:'new-user',display_name:'New user'}}},_authEpoch)");
+  expect(insert).toHaveBeenCalledTimes(1);
+  expect(insert.mock.calls[0][0]).not.toHaveProperty('questionnaire');
+  expect(win.document.querySelector('#app.show')).not.toBeNull();
+  expect(win.document.getElementById('nav-uname').textContent).toBe('New user');
+  expect(client.from.mock.calls.map(([table])=>table)).toContain('user_documents');
 });
 
-test('late onboarding response cannot restore a signed-out profile', async () => {
-  let finish;client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
-  const pending=run('completeQuestionnaire()');authCallback('SIGNED_OUT',null);
-  finish({data:{id:'user-a',signup_complete:true},error:null});await pending;
+test('sign-out during personal-record initialization cannot reopen the dashboard', async () => {
+  client.from.mockImplementation(table=>{
+    if(table==='profiles')return chain({data:{id:'user-a',signup_complete:false,timezone:'America/New_York'},error:null});
+    if(table==='user_documents')authCallback('SIGNED_OUT',null);
+    return chain({data:[],error:null});
+  });
+  await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
   expect(run('PROFILE')).toBeNull();
   expect(win.document.querySelector('#app.show')).toBeNull();
+  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles','user_documents']);
+});
+
+test('an incomplete legacy profile still requires a password reset before entry', async () => {
+  result={data:{id:'user-a',signup_complete:false,force_password_reset:true,timezone:'America/New_York'},error:null};
+  await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+  expect(win.document.querySelector('#app.show')).toBeNull();
+  expect(win.document.getElementById('s-fpr').classList.contains('show')).toBe(true);
+  expect(client.from.mock.calls.map(([table])=>table)).toEqual(['profiles']);
+});
+
+test('a disabled profile cannot enter even when no setup is required', async () => {
+  result={data:{id:'user-a',signup_complete:false,is_disabled:true,timezone:'America/New_York'},error:null};
+  await run("applyAuthSession('INITIAL_SESSION',{access_token:'test',user:{id:'user-a'}},_authEpoch)");
+  expect(client.auth.signOut).toHaveBeenCalled();
+  expect(run('PROFILE')).toBeNull();
+  expect(win.document.querySelector('#app.show')).toBeNull();
+});
+
+test('administration no longer labels existing users as awaiting a questionnaire', async () => {
+  run("PROFILE.role='admin'");
+  result={data:[{id:'user-b',display_name:'Existing user',signup_complete:false}],error:null};
+  await run('renderAdmin()');
+  const text=win.document.getElementById('user-list').textContent;
+  expect(text).toContain('Existing user');
+  expect(text).not.toMatch(/Questionnaire pending|Setup complete/);
 });
 
 test('custom ingredients resolve from the current account without changing built-in macros', async () => {
@@ -272,7 +316,7 @@ test('calendar brief selects the actual database time column and uses its alias'
     ],error:null});}};
   });
   await run('renderHome()');
-  expect(selections).toEqual(['id,title,event_date,end_date,start_time:event_time,event_type']);
+  expect(selections).toEqual(['id,title,event_date,end_date,start_time:event_time,end_time,all_day,is_recurring,event_type']);
   expect(win.document.getElementById('home-command-brief').textContent).toContain('Morning appointment');
 });
 
@@ -339,4 +383,82 @@ test('late workout history cannot restore private notes after sign-out', async (
   finish({data:[{session_date:'2026-09-05',day_name:'PRIVATE',notes:'PRIVATE'}],error:null});
   await pending;
   expect(win.document.getElementById('wk-history').textContent).not.toContain('PRIVATE');
+});
+
+test('failed task saves preserve planning fields and retry the same task ID', async () => {
+  run('Planning.open();renderHome=async()=>{};');
+  win.document.getElementById('todo-title').value='Prepare application';
+  win.document.getElementById('todo-estimate').value='45';
+  win.document.getElementById('todo-next-action').value='Collect references';
+  const inserts=[];
+  client.from.mockImplementation(()=>({insert:payload=>{inserts.push(payload);return chain({data:null,error:{message:'PRIVATE'}});}}));
+  await run('Planning.save()');
+  expect(win.document.getElementById('todo-modal').classList.contains('open')).toBe(true);
+  expect(win.document.getElementById('todo-next-action').value).toBe('Collect references');
+  expect(win.document.getElementById('todo-save').disabled).toBe(false);
+  expect(win.document.getElementById('todo-error').textContent).not.toContain('PRIVATE');
+  client.from.mockImplementation(()=>({insert:payload=>{inserts.push(payload);return chain({data:payload,error:null});}}));
+  await run('Planning.save()');
+  expect(inserts[1].id).toBe(inserts[0].id);
+  expect(inserts[1]).toMatchObject({estimate_minutes:45,next_action:'Collect references',user_id:'user-a'});
+  expect(win.document.getElementById('todo-modal').classList.contains('open')).toBe(false);
+});
+
+test('late task save cannot reopen content after sign-out', async () => {
+  run('Planning.open()');win.document.getElementById('todo-title').value='Private task';
+  let finish,payload;
+  client.from.mockImplementation(()=>({insert:value=>{payload=value;return chain(new Promise(resolve=>{finish=resolve;}));}}));
+  const pending=run('Planning.save()');authCallback('SIGNED_OUT',null);
+  finish({data:payload,error:null});await pending;
+  expect(win.document.body.textContent).not.toContain('Private task');
+  expect(win.document.querySelector('.modal-bg.open')).toBeNull();
+});
+
+test('zero-row task changes never report successful completion', async () => {
+  run('toast=message=>window.lastToast=message');
+  // The controller captured toast during construction; inspect its actual output.
+  result={data:null,error:null};
+  await run("Planning.change('task-a',{status:'Done',completed:true})");
+  expect(win.document.getElementById('toast').textContent).toContain('could not be confirmed');
+});
+
+test('focus windows remain editable after a rejected save and never write to another account', async () => {
+  client.from.mockImplementation(()=>chain({data:[],error:null}));
+  await win.PersonalData.initialize(client,'user-a');
+  run('Planning.openWindows();Planning.addWindow({day:1,start:"09:00",end:"11:00"});');
+  client.rpc.mockResolvedValue({data:null,error:{code:'PT409'}});
+  await run('Planning.saveWindows()');
+  expect(win.document.getElementById('focus-windows-modal').classList.contains('open')).toBe(true);
+  expect(win.document.querySelector('#focus-window-rows input').value).toBe('09:00');
+  expect(client.rpc.mock.calls[0][1]).toEqual({p_documents:[{key:'focus_windows',payload:[{day:1,start:'09:00',end:'11:00'}],expected_revision:0}]});
+});
+
+test('an event end-time save failure keeps the event draft', async () => {
+  run('openEventModal()');
+  win.document.getElementById('ev-title').value='Appointment';
+  win.document.getElementById('ev-end-time').value='10:00';
+  result={data:null,error:{message:'offline'}};
+  await run('saveEvent()');
+  expect(win.document.getElementById('event-modal').classList.contains('open')).toBe(true);
+  expect(win.document.getElementById('ev-end-time').value).toBe('10:00');
+  expect(win.document.getElementById('ev-save').disabled).toBe(false);
+});
+
+test('the calendar shows chosen focus windows instead of fixed routine events', async () => {
+  client.from.mockImplementation(()=>chain({data:[{user_id:'user-a',document_key:'focus_windows',payload:[{day:1,start:'09:00',end:'10:00'}],revision:1}],error:null}));
+  await win.PersonalData.initialize(client,'user-a');
+  client.from.mockImplementation(()=>chain({data:[],error:null}));
+  run("calDate=new Date('2026-09-28T12:00:00')");
+  await run('renderDay()');
+  expect(win.document.getElementById('cal-day').textContent).toContain('Focus window 09:00–10:00');
+  expect(win.document.getElementById('cal-day').textContent).not.toContain('Workout');
+});
+
+test('a token refresh requiring MFA clears already rendered private data', async () => {
+  win.document.getElementById('home-command-brief').textContent='PRIVATE planning detail';
+  requireAuthenticator();
+  await run("applyAuthSession('TOKEN_REFRESHED',{access_token:'expired-aal2',user:{id:'user-a'}},_authEpoch)");
+  expect(win.document.getElementById('app').textContent).not.toContain('PRIVATE');
+  expect(win.document.getElementById('s-mfa').classList.contains('show')).toBe(true);
+  expect(win.document.querySelector('#app.show')).toBeNull();
 });

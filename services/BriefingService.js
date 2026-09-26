@@ -86,11 +86,14 @@
     const events = (data.events || [])
       .filter(event => event && event.event_date <= today && (event.end_date || event.event_date) >= today)
       .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
-    const focus = (preferences.includeTasks ? todos.slice(0, preferences.focusLimit) : []).map(item => ({
+    const availability = data.planning ? root.PlanningService.availability({...data.planning,today,events:data.events || [],unavailableSources:data.unavailableSources || []}) : null;
+    const fit = availability ? root.PlanningService.fit(preferences.includeTasks?todos:[],availability,data.goals || [],preferences.focusLimit) : null;
+    const focus = (fit ? fit.selected : preferences.includeTasks ? todos.slice(0, preferences.focusLimit) : []).map(item => ({
       kind: 'task',
       title: item.title || 'Untitled task',
-      reason: taskReason(item, today),
+      reason: taskReason(item, today) + (item.fitReason ? ' · '+item.fitReason : ''),
       id: item.id || null,
+      ...(fit ? {goalTitle:item.goalTitle,nextAction:item.nextAction,goalMissing:!!item.goal_id&&!item.goalTitle} : {}),
     }));
 
     if (preferences.includeCalendar && focus.length < preferences.focusLimit && events.length) {
@@ -109,17 +112,19 @@
       .filter(goal => goal && goal.g && goal.completed !== true)
       .map((goal, index) => ({title: String(goal.g), frequency: String(goal.freq || 'Ongoing'),
         priority: String(goal.p || 'Medium'), index}))
-      .sort((a, b) => ({High: 0, Medium: 1, Low: 2}[a.priority] ?? 1) -
-        ({High: 0, Medium: 1, Low: 2}[b.priority] ?? 1) || a.index - b.index)
+      .sort((a, b) => ({Critical:-1, High: 0, Medium: 1, Low: 2}[a.priority] ?? 1) -
+        ({Critical:-1, High: 0, Medium: 1, Low: 2}[b.priority] ?? 1) || a.index - b.index)
       .slice(0, 3);
     const headline = unavailableSources.length
       ? 'Your brief is incomplete. Some sources could not be loaded.'
       : focus.length
       ? `Start with ${focus[0].title}.`
+      : fit && todos.length ? 'Review tasks that need an estimate or a different focus window.'
       : 'Your runway is clear. Choose one meaningful next action.';
     const summary = `${unavailableSources.includes('Tasks') ? '?' : dueToday} tasks due, ${unavailableSources.includes('Calendar') ? '?' : events.length} events, ${unavailableSources.includes('Habits') ? '?' : completedHabits}/${totalHabits || 0} habits complete.`;
     const alerts = unavailableSources.map(source => `${source} unavailable. Refresh before relying on this brief.`);
     if (overdue) alerts.push(`${overdue} overdue task${overdue === 1 ? '' : 's'} need a decision.`);
+    if (availability) alerts.push(...availability.warnings);
     if (data.leakedPasswordProtection === false) alerts.push('Account protection needs attention.');
 
     return {
@@ -132,6 +137,7 @@
       directions,
       unavailableSources,
       refreshedAt: data.refreshedAt || null,
+      planning: fit ? {availability,...fit} : null,
     };
   }
 

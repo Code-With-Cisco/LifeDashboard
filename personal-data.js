@@ -4,7 +4,7 @@
   const S = root.PersonalDataService;
   let owner=null,client=null,epoch=0,ready=false,busy=false,rows=new Map(),plan=[],mode='';
   const copy=value=>JSON.parse(JSON.stringify(value));
-  const labels={goals:'Goals',habit_definitions:'Habit definitions',ingredients_protein:'Custom proteins',ingredients_side:'Custom sides'};
+  const labels={goals:'Goals',habit_definitions:'Habit definitions',ingredients_protein:'Custom proteins',ingredients_side:'Custom sides',focus_windows:'Weekly focus windows'};
   const label=key=>labels[key]||'Purchase decisions — '+key.slice('purchase_decisions:'.length);
   function reset(){epoch++;owner=null;client=null;ready=false;busy=false;rows=new Map();plan=[];mode='';}
   const legacy=()=>owner?S.findLegacy(owner,State.keys(),key=>State.get(key)):[];
@@ -151,5 +151,5 @@
     const success=await initialize(sb,userId);
     if(owner===userId){message(success?'Records reloaded. Create a new preview before applying changes.':'Records could not load. Original records were kept.');if(success)refreshViews();}
   }
-  root.PersonalData=Object.freeze({initialize,reset,read,save,open,previewMigration,apply,exportBackup,previewRestore,reload,status});
+  root.PersonalData=Object.freeze({initialize,reset,read,save,open,previewMigration,apply,exportBackup,previewRestore,reload,status,isReady:()=>ready});
 })(window);

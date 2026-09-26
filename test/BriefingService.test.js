@@ -1,4 +1,5 @@
 require('../services/BriefingService.js');
+require('../services/PlanningService.js');
 
 const Briefing = window.BriefingService;
 
@@ -107,5 +108,15 @@ describe('BriefingService', () => {
       morningEnabled: false,
       morningTime: '07:00',
     });
+  });
+
+  test('planning explains fit, links a goal and keeps overdue oversized work visible',()=>{
+    const brief=Briefing.build({today:'2026-09-28',goals:[{id:'g',g:'Finish course',p:'Critical'}],
+      todos:[{id:'big',title:'Long report',status:'Urgent',due_date:'2026-09-27',estimate_minutes:120},
+        {id:'small',title:'Study',goal_id:'g',estimate_minutes:30,next_action:'Read chapter 2'}],
+      planning:{timezone:'UTC',now:'2026-09-28T08:00:00Z',focusWindows:[{day:1,start:'09:00',end:'10:00'}]}});
+    expect(brief.focus[0]).toMatchObject({id:'small',goalTitle:'Finish course',nextAction:'Read chapter 2'});
+    expect(brief.focus[0].reason).toContain('09:00–09:30');
+    expect(brief.planning.deferred[0].id).toBe('big');expect(brief.metrics.overdue).toBe(1);
   });
 });

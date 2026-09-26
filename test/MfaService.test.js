@@ -51,6 +51,14 @@ test('removal refreshes the session and propagates refresh failure',async()=>{
  client.auth.refreshSession.mockResolvedValue({error:{message:'PRIVATE'}});
  await expect(service.remove('factor')).rejects.toThrow('session could not refresh');
 });
+test('malformed security state fails closed and missing refreshed sessions require sign-in',async()=>{
+ for(const all of [[null],[{id:'f',status:'unexpected'}],[{status:'verified'}]]){
+  client.auth.mfa.listFactors.mockResolvedValue({data:{all}});
+  await expect(service.status(session)).rejects.toThrow('Could not verify');
+ }
+ client.auth.refreshSession.mockResolvedValue({data:{session:null}});
+ await expect(service.remove('factor')).rejects.toThrow('Sign out and back in');
+});
 test('real SQL engine verifies MFA policies, preserved records and rollback/commit paths',()=>{
  const result=JSON.parse(execFileSync(process.execPath,[path.join(__dirname,'../scripts/test-mfa.js')],{encoding:'utf8',timeout:60000}));
  expect(result.result).toMatch(/^PASS:/);expect(result.rollbackAndCommit).toBe(true);

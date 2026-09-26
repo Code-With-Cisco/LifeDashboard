@@ -100,18 +100,6 @@
   </div>
 </div>
 
-<!-- ═══ QUESTIONNAIRE ════════════════════════════════════ -->
-<div id="q-screen">
-  <div class="q-wrap">
-    <div class="q-prog"><div class="q-prog-fill" id="q-prog-fill" style="width:0%"></div></div>
-    <div id="q-steps"></div>
-    <div class="q-nav" style="margin-top:8px">
-      <button class="q-btn back" id="q-back" onclick="qBack()" style="display:none">← Back</button>
-      <button class="q-btn primary" id="q-next" onclick="qNext()">Continue →</button>
-    </div>
-  </div>
-</div>
-
 <!-- ═══ MAIN APP ═════════════════════════════════════════ -->
 <div id="app">
 <button id="nav-scrim" class="nav-scrim" onclick="toggleMobileNav(false)" aria-label="Close navigation"></button>
@@ -262,6 +250,7 @@
           <button class="tb" onclick="setCalView('week')">Week</button>
           <button class="tb" onclick="setCalView('day')">Day</button>
         </div>
+        <button class="btn btn-o btn-sm" onclick="Planning.openWindows()">Focus windows</button>
         <button class="btn btn-r btn-sm" onclick="openEventModal()">+ Event</button>
         <button class="btn btn-o btn-sm" onclick="openModal('ics-modal')" title="Import .ics calendar file">&#x1F4C5; Import .ics</button>
       </div>
@@ -635,7 +624,8 @@
     </div>
     <div class="g2" style="gap:8px;margin-bottom:10px">
       <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">End Date (multi-day events)</div><input class="inp" id="ev-end-date" type="date"></div>
-      <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">All Day?</div><select class="inp sel" id="ev-allday"><option value="0">No — has a specific time</option><option value="1">Yes — all day event</option></select></div>
+      <div><label class="field-label" for="ev-end-time">End time (optional)</label><input class="inp" id="ev-end-time" type="time"></div>
+    </div><div class="g2"><div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">All Day?</div><select class="inp sel" id="ev-allday"><option value="0">No — has a specific time</option><option value="1">Yes — all day event</option></select></div>
     </div>
     <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Type</div>
       <select class="inp sel" id="ev-type">
@@ -644,7 +634,7 @@
       </select>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-r" onclick="saveEvent()">Save Event</button>
+      <button class="btn btn-r" id="ev-save" onclick="saveEvent()">Save Event</button>
       <button class="btn" id="ev-delete-btn" style="display:none;background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.3)" onclick="deleteEvent()">Delete</button>
       <button class="btn btn-o" onclick="closeModal('event-modal')">Cancel</button>
     </div>
@@ -788,7 +778,12 @@
         <input class="inp" id="todo-due" type="date">
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-r" onclick="saveTodo()">Save Task</button><button class="btn btn-o" onclick="closeModal('todo-modal')">Cancel</button></div>
+    <div class="g2"><div><label class="field-label" for="todo-goal">Linked goal</label><select class="inp" id="todo-goal"></select></div>
+      <div><label class="field-label" for="todo-estimate">Estimate (minutes)</label><input class="inp" id="todo-estimate" type="number" min="5" max="1440" step="1" placeholder="Optional"></div></div>
+    <p id="todo-goal-note" class="profile-note"></p>
+    <label class="field-label" for="todo-next-action">Next action</label><input class="inp" id="todo-next-action" maxlength="500" placeholder="The concrete step to take next">
+    <p id="todo-error" class="profile-note" role="status" aria-live="polite"></p>
+    <div class="modal-footer"><button class="btn btn-r" id="todo-save" onclick="saveTodo()">Save Task</button><button class="btn btn-o" onclick="closeModal('todo-modal')">Cancel</button></div>
   </div>
 </div>
 
@@ -993,6 +988,14 @@
   </div>
 </div>
 
+<div class="modal-bg" id="focus-windows-modal"><div class="modal">
+  <h2 class="modal-title">WEEKLY FOCUS WINDOWS</h2>
+  <p class="profile-note">Choose the hours you can use for tasks. Exclude work, sleep and other routines. Times use <span id="focus-timezone"></span>. Calendar commitments reduce these windows.</p>
+  <div id="focus-window-rows"></div>
+  <button class="btn btn-o" onclick="Planning.addWindow()">+ Add window</button>
+  <p id="focus-window-error" class="profile-note" role="status" aria-live="polite"></p>
+  <div class="modal-footer"><button class="btn btn-r" id="focus-window-save" onclick="Planning.saveWindows()">Save windows</button><button class="btn btn-o" onclick="closeModal('focus-windows-modal')">Cancel</button></div>
+</div></div>
 <div id="toast"></div>
 <script src="services/ProfileService.js"></script>
 <script src="services/WorkoutService.js"></script>
@@ -1005,12 +1008,14 @@
 <script src="services/RecipeService.js"></script>
 <script src="services/HabitService.js"></script>
 <script src="services/NutritionService.js"></script>
+<script src="services/PlanningService.js"></script>
 <script src="services/BriefingService.js"></script>
 <script src="services/PersonalDataService.js"></script>
 <script src="services/BackupService.js"></script>
 <script src="personal-data.js"></script>
 <script src="services/MfaService.js"></script>
 <script src="mfa.js"></script>
+<script src="planning.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

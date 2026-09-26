@@ -18,6 +18,7 @@
         const factors=unwrap(await client.auth.mfa.listFactors(),'Could not load authenticators. Retry when connected.');
         const all=Array.isArray(factors.all)?factors.all:null;
         if(!all||!['aal1','aal2'].includes(level.currentLevel)||!['aal1','aal2'].includes(level.nextLevel))throw new Error('Could not verify account security. Please sign in again.');
+        if(all.some(f=>!f||typeof f.id!=='string'||!f.id||!['verified','unverified'].includes(f.status)))throw new Error('Could not verify account security. Please sign in again.');
         const verified=all.filter(f=>f.status==='verified');
         return {allowed:level.currentLevel==='aal2'||(level.nextLevel!=='aal2'&&verified.length===0),
           currentLevel:level.currentLevel,all,totp:verified.filter(f=>f.factor_type==='totp')};
@@ -39,6 +40,7 @@
       async remove(factorId){
         unwrap(await client.auth.mfa.unenroll({factorId}),'Could not remove this authenticator. Verify your sign-in and try again.');
         const data=unwrap(await client.auth.refreshSession(),'Authenticator removed, but the session could not refresh. Sign out and back in.');
+        if(!data.session?.access_token||!data.session?.user?.id)throw new Error('Authenticator removed, but the session could not refresh. Sign out and back in.');
         return data.session;
       },
     });

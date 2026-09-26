@@ -34,29 +34,6 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 .auth-link{text-align:center;font-size:12px;color:var(--t3);cursor:pointer;padding:4px}
 .auth-link span{color:var(--red);text-decoration:underline}
 
-/* ── QUESTIONNAIRE ─────────────────────── */
-#q-screen{position:fixed;inset:0;z-index:9998;background:var(--bg);display:none;overflow-y:auto;padding:20px}
-#q-screen.show{display:block}
-.q-wrap{max-width:600px;margin:0 auto;padding:40px 0}
-.q-step{display:none}.q-step.show{display:block;animation:fadeIn .2s ease}
-.q-num{font-size:11px;color:var(--t3);letter-spacing:2px;margin-bottom:8px;font-weight:600}
-.q-title{font-family:"Bebas Neue",sans-serif;font-size:28px;letter-spacing:1px;margin-bottom:6px}
-.q-sub{font-size:13px;color:var(--t2);margin-bottom:24px;line-height:1.6}
-.q-options{display:grid;gap:10px;margin-bottom:24px}
-.q-opt{background:var(--s2);border:2px solid var(--b1);border-radius:var(--r2);padding:16px 18px;cursor:pointer;transition:all .15s;display:flex;gap:14px;align-items:flex-start}
-.q-opt:hover{border-color:var(--b3);background:var(--s3)}
-.q-opt.selected{border-color:var(--red);background:var(--red-ll)}
-.q-opt-icon{font-size:22px;flex-shrink:0;margin-top:1px}
-.q-opt-label{font-size:14px;font-weight:600;margin-bottom:3px}
-.q-opt-desc{font-size:12px;color:var(--t2)}
-.q-prog{height:3px;background:var(--s3);border-radius:3px;margin-bottom:32px;overflow:hidden}
-.q-prog-fill{height:100%;background:var(--red);border-radius:3px;transition:width .3s ease}
-.q-nav{display:flex;gap:10px}
-.q-btn{flex:1;padding:12px;border-radius:var(--r);border:none;font-family:"DM Sans",sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
-.q-btn.primary{background:var(--red);color:#fff}
-.q-btn.primary:hover{background:var(--red-d)}
-.q-btn.back{background:var(--s3);color:var(--t2);border:1px solid var(--b2)}
-
 /* ── FORCE PASSWORD RESET ──────────────── */
 #fpr-screen{position:fixed;inset:0;z-index:9997;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px}
 #fpr-screen.show{display:flex}
@@ -236,3 +213,11 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 :root .mfa-qr{display:block;background:white;padding:8px;margin:12px 0;max-width:100%;height:auto}
 :root .mfa-secret{display:block;overflow-wrap:anywhere;user-select:all;margin:12px 0}
 :root .mfa-factor{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+
+/* Planning forms and suggested focus time */
+.brief-source{background:none;border:0;color:var(--t1);font:inherit;font-weight:600;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.planning-summary{padding:12px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.planning-summary .profile-note{width:100%}
+.planning-deferred{margin:12px 0}
+.focus-window-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:6px;margin:10px 0}
+@media(max-width:520px){.focus-window-row{grid-template-columns:1fr 1fr}.focus-window-row select{grid-column:1 / -1}}

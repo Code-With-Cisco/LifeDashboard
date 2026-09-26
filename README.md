@@ -2,7 +2,13 @@
 
 A private personal command center for habits, nutrition, recipes, workouts, finances, reading, goals, tasks, and calendar events. The home page produces a deterministic daily command brief: what is due, what is on the calendar, habit progress, and the best next actions. Each user can tune the ranking rule, focus count, and included sources without handing personal data to an AI service.
 
+After sign-in and any required account-security checks, users go directly to the dashboard. There is no introductory questionnaire. Existing profile values and assigned plans are preserved.
+
 Signed-in users can edit their display name, username, timezone, health targets, take-home pay, and hourly rate from the profile control in the navigation rail. These values drive the relevant Dashboard, nutrition, financial, and purchase-decision views.
+
+Tasks can link to a saved goal, carry a 5–1440 minute estimate, and name a concrete next action. Set weekly **Focus windows** from Schedule or the daily brief. The brief subtracts calendar commitments and elapsed time, suggests tasks that fit an uninterrupted window, and keeps oversized or unestimated tasks visible for review. Suggestions never create calendar events. Calendar events now support optional end times; unknown durations block time conservatively. Fixed workout/walk/meal-prep calendar entries have been replaced by chosen focus windows.
+
+Migration **008 is applied in production**. Its rollback and committed transactions preserved existing records; live API checks verified planning writes, ownership and MFA enforcement. See the [planning rollout](database/README.md#task-planning-008).
 
 The browser application is static and uses Supabase for authentication and user-scoped data. It deliberately does not perform privileged account administration or store provider credentials.
 
@@ -51,7 +57,7 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) for the security model, and [ROADMAP.md](ROADMAP.md) for the current Jarvis platform choices. [INTEGRATIONS.md](INTEGRATIONS.md) retains earlier integration notes.
 
-The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–007 are applied. Validation includes 161 local tests, live SQL isolation and MFA checks, 66 personal-record Auth/Data API assertions, 20 post-commit MFA API assertions, 10 authenticator-removal assertions, and Chrome migration/conflict/persistence and MFA sign-in checks. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery work.
+The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–008 are applied. Current validation includes 185 local tests, live SQL isolation and MFA checks, 55 planning Auth/Data API assertions and two failed sign-ins after fixture removal. Chrome verified the planning UI with synthetic records; earlier releases verified personal-record migration and MFA sign-in against the live API. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery work.
 
 The brief shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Use **Data & backups → Preview device migration** to move supported browser records into protected account storage. Review values and explicitly select replacements; original device records are preserved.
 

@@ -1,6 +1,6 @@
 # Database verification and deployment
 
-Status, September 10: **migrations 001–007 are applied in production** with the owner's approval. Public signup is disabled, email confirmation enabled, and secure email change enabled. Verified authenticators require AAL2 for dashboard data access. Raw production audit output and personal rows are not included here. `security-audit.sql` remains a read-only inventory tool.
+Status, September 26: **migrations 001–008 are applied in production** with the owner's approval. Public signup is disabled, email confirmation enabled, and secure email change enabled. Verified authenticators require AAL2 for dashboard data access. Raw production audit output and personal rows are not included here. `security-audit.sql` remains a read-only inventory tool.
 
 Migration 001 passed its cross-user tests before and during commit. The remaining three migrations then passed all four SQL suites in a rollback-only transaction and again in the committed transaction. Internal fingerprints verified that every pre-existing public-table and Auth user record was unchanged. SQL fixtures were rolled back. Post-commit checks confirmed 25 tables with RLS, 44 policies, no anonymous table/column grants, six functions with fixed search paths and restricted execution, and the three intended triggers. Independent zero-row Data API requests to all 25 tables returned HTTP 401 / PostgreSQL 42501. The authorization/schema baselines were preserved privately outside Git; they are not a full database backup or a restore drill.
 
@@ -21,6 +21,20 @@ The existing account was confirmed and enabled when checked after the Auth chang
 No migration deletes or rewrites existing personal rows. Migration 002 changes defaults for future catalog records; it preserves existing template flags. Migration 004 installs an `auth.users` trigger based on the inspected `encrypted_password` column. The real Auth password-change flow passed using a disposable account: incorrect current passwords were rejected, the reset flag remained set after rejection, and a successful change cleared the flag and restored data access. Do not edit a real account's password or hash in SQL.
 
 ## Local verification
+
+### Task planning (008)
+
+Migration `20260926_008_task_planning.sql` is **applied**. The September 26 read-only inspection confirmed the real task/calendar columns, document constraints, grants, owner policies and all 26 restrictive MFA policies. The additive migration adds optional task goal IDs, estimates and next actions, optional calendar end times, and the `focus_windows` document key. It changes no grants, policies, functions or existing values. Goal IDs resolve only inside the signed-in user's goals document; removing a goal leaves an unavailable link rather than deleting tasks.
+
+`node scripts/prepare-planning.js` produces a rollback-only transaction with bounded lock/statement timeouts, existing-record fingerprints held only in temporary tables, the two-user planning SQL tests and the full MFA SQL suite. `node scripts/test-planning.js` verifies rollback, commit, repeated-application rejection and synthetic record preservation in PostgreSQL via PGlite. Both live rollback verification and the committed transaction passed against the production schema, preserving all existing public, Auth user and factor records and rolling back every SQL fixture.
+
+Do not rerun the already-applied migration. For another environment, review the real schema and permissions, verify a rollback transaction, then review `--commit` output and apply it before the matching client: home queries select the new columns. A client rollback can leave the additive schema in place; do not drop columns containing new planning records. The existing MFA recovery procedure remains unchanged.
+
+The manual-only `scripts/test-live-planning.js` accepts `verify` or `removed` plus an absolute private fixture JSON path outside the repository. It uses the public client key and two precreated disposable Auth accounts; temporary TOTP material stays in memory. September 26: 55 real Auth/Data API assertions passed planning-field round trips, owner writes, bidirectional cross-user denial, invalid inputs, revision conflicts and password-only/AAL2 access. The exact disposable accounts and descendants were removed; two subsequent sign-ins failed and their temporary credentials were discarded. Chrome separately verified the production build with synthetic loopback records: direct entry, task edits, chosen windows, calendar duration subtraction and sign-out. This does not establish full production-origin or mobile coverage.
+
+Focus windows use the existing revision-checked document RPC and are included in personal-record encrypted backups. Restore these backups with this client version or newer. Task details and calendar entries remain outside that subset export. No provider connection or external calendar synchronization is added.
+
+Capacity is computed in the profile timezone from chosen weekly windows and saved calendar events. Unknown event durations are held conservatively; all-day or untimed commitments block the day. Unsupported recurrence, unloaded sources, potentially truncated calendar responses, and nearby daylight-saving clock changes suppress a confirmed capacity claim. These cases require review rather than an invented free slot.
 
 ### Authenticator MFA (007)
 

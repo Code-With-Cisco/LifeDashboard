@@ -3,7 +3,7 @@
   'use strict';
   const MAX_BYTES = 5 * 1024 * 1024;
   const MAX_DOCUMENT_BYTES = 262144;
-  const KEYS = ['goals', 'habit_definitions', 'ingredients_protein', 'ingredients_side'];
+  const KEYS = ['goals', 'habit_definitions', 'ingredients_protein', 'ingredients_side', 'focus_windows'];
   const DANGEROUS = new Set(['__proto__', 'prototype', 'constructor']);
   const clone = value => JSON.parse(JSON.stringify(value));
   const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -30,6 +30,10 @@
         Array.isArray(s.goals) && s.goals.length <= 500 && s.goals.every(g => object(g) && text(g.g) &&
           ['Daily','Weekly','Monthly'].includes(g.freq) && ['Critical','High','Medium'].includes(g.p) &&
           (g.id == null || text(g.id,100))));
+    } else if (key === 'focus_windows') {
+      valid = Array.isArray(payload) && payload.length <= 28 && payload.every(w => object(w) &&
+        Number.isInteger(w.day) && w.day >= 0 && w.day <= 6 &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(w.start) && /^([01]\d|2[0-3]):[0-5]\d$/.test(w.end) && w.end > w.start);
     } else if (key === 'habit_definitions') {
       valid = Array.isArray(payload) && payload.length <= 100 && payload.every(s => object(s) && text(s.cat,80) &&
         text(s.label,100) && Array.isArray(s.habits) && s.habits.length <= 500 &&
@@ -46,6 +50,7 @@
     return clone(payload);
   }
   function legacyKey(userId, key) {
+    if (key === 'focus_windows') return 'focus_windows_' + userId;
     if (key === 'goals') return 'goals_' + userId;
     if (key === 'habit_definitions') return 'habits_' + userId;
     if (key === 'ingredients_protein') return 'custom_proteins_' + userId;

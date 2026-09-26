@@ -42,7 +42,7 @@
 // ════════════════════════════════════════════════════════════════
 
 let _authEpoch=0, _activeAuthUserId=null;
-const _privateShell=[...document.querySelectorAll('#app, #q-screen, .modal-bg')]
+const _privateShell=[...document.querySelectorAll('#app, .modal-bg')]
   .map(element=>({id:element.id,template:element.cloneNode(true)}));
 const {createClient}=supabase;
 let publicConfig;
@@ -109,6 +109,10 @@ function debounce(fn,wait){
 let PROFILE=null,CONTENT={},currentPage='home',habitDate=new Date().toLocaleDateString('en-CA',{timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York'}),
     calView='month',calDate=new Date(),bookEditMode=false,logDayIdx=0,mealTab='preset',
     debtEditId=null,subEditId=null,evEditId=null,habitCache={};
+const Planning=PlanningUI.create(sb,{
+  profile:()=>PROFILE,goals:()=>getUserGoalData(),open:openModal,close:closeModal,toast,confirm:confirmDialog,
+  refresh:()=>{renderHome();if(currentPage==='todo')renderTodo();if(currentPage==='dash')renderDashTodos();if(currentPage==='schedule')renderCal();}
+});
 const CACHE_TTL=86400000;
 /**
  * Populate the global CONTENT object with nulls. Overridden in Stage 4
@@ -312,11 +316,11 @@ function clearPrivateSession(){
   _passwordRecoveryPending=false;
   MFA.reset();
   PersonalData.reset();
+  Planning.reset();
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
   PROFILE=null;CONTENT={};habitCache={};currentPage='home';
   State.clearPrivateCaches();Logger.clear();
-  qAnswers={};qStep=0;
   debtEditId=null;subEditId=null;evEditId=null;
   _editingHabit=null;_editingGoal=null;
   bookState.curBookId=null;bookState.curBookPages=0;
@@ -364,7 +368,6 @@ async function createProfile(session){
     username:meta.username||session.user.email?.split('@')[0]||'user',
     display_name:meta.display_name||meta.username||session.user.email?.split('@')[0]||'User',
     role:'standard',
-    signup_complete:false,
     force_password_reset:false,
     assigned_workout_plan:'shred-advanced',
     assigned_meal_plan:'high-protein-deficit',
@@ -416,7 +419,6 @@ async function applyAuthSession(event,session,epoch){
   if(profile.is_disabled){await logout();return;}
   PROFILE=profile;
   if(profile.force_password_reset){show('s-fpr');return;}
-  if(!profile.signup_complete){hideAuth();startQuestionnaire();return;}
   await PersonalData.initialize(sb,profile.id);
   if(epoch!==_authEpoch)return;
   await loadAllContent();
@@ -441,120 +443,6 @@ sb.auth.onAuthStateChange((event,session)=>{
   },0);
 });
 
-// QUESTIONNAIRE
-const Q_STEPS=[
-  {id:'goal',title:"What's your primary fitness goal?",sub:'Sets your workout plan and calorie targets.',opts:[
-    {icon:'&#x1F525;',label:'Lose weight & get lean',desc:'Fat loss with muscle preservation.',val:'weight-loss'},
-    {icon:'&#x1F4AA;',label:'Build muscle',desc:'Maximize muscle gain with calorie surplus.',val:'muscle-gain'},
-    {icon:'&#x26A1;',label:'Both - recomposition',desc:'Lose fat and build muscle simultaneously.',val:'recomposition'},
-    {icon:'&#x1F3C3;',label:'Improve endurance',desc:'Cardio, stamina, and general health.',val:'endurance'}]},
-  {id:'level',title:'What is your current fitness level?',sub:'Determines exercise selection and training volume.',opts:[
-    {icon:'&#x1F331;',label:'Beginner',desc:'New or returning. Under 6 months consistent.',val:'beginner'},
-    {icon:'&#x1F4C8;',label:'Intermediate',desc:'6 months to 2 years. Know the basics.',val:'intermediate'},
-    {icon:'&#x1F3C6;',label:'Advanced',desc:'3+ years. Comfortable with complex movements.',val:'advanced'}]},
-  {id:'injuries',title:'Any injuries or physical limitations?',sub:'Your plan will be built around any issues.',opts:[
-    {icon:'&#x2705;',label:'None',desc:'Full range of motion available.',val:'none'},
-    {icon:'&#x1F9B5;',label:'Knee issues',desc:'Lower body movements will be modified.',val:'knee'},
-    {icon:'&#x1F519;',label:'Back issues',desc:'Will avoid heavy spinal loading.',val:'back'},
-    {icon:'&#x1F937;',label:'Shoulder issues',desc:'Pressing movements will be modified.',val:'shoulder'}]},
-  {id:'days',title:'How many days per week can you train?',sub:'Consistency beats perfection every time.',opts:[
-    {icon:'3&#xFE0F;&#x20E3;',label:'3 days',desc:'Full body, three sessions. Solid progress.',val:'3'},
-    {icon:'4&#xFE0F;&#x20E3;',label:'4 days',desc:'Upper/lower split. Good volume.',val:'4'},
-    {icon:'6&#xFE0F;&#x20E3;',label:'5-6 days',desc:'High frequency. Maximum results.',val:'6'}]},
-  {id:'equipment',title:'What equipment do you have access to?',sub:'Determines which exercises are in your plan.',opts:[
-    {icon:'&#x1F3CB;&#xFE0F;',label:'Full gym',desc:'Cables, barbells, dumbbells, machines.',val:'full-gym'},
-    {icon:'&#x1F3E0;',label:'Home gym',desc:'Dumbbells, bench, limited machines.',val:'home-gym'},
-    {icon:'&#x1F93B;',label:'Bodyweight only',desc:'No equipment.',val:'bodyweight'}]},
-  {id:'nutrition',title:'How do you want to approach nutrition?',sub:'Your meal plan will be calibrated to your style.',opts:[
-    {icon:'&#x1F4CA;',label:'Structured - track macros',desc:'Precise targets. Log everything. Max results.',val:'structured'},
-    {icon:'&#x1F4CB;',label:'Moderate - general guidelines',desc:'Follow a plan without obsessive tracking.',val:'moderate'},
-    {icon:'&#x1F37D;&#xFE0F;',label:'Flexible - just meal ideas',desc:'Inspiration only. No tracking required.',val:'flexible'}]},
-  {id:'reading',title:'What kinds of books interest you most?',sub:'Your 12-month reading plan sequenced for you.',opts:[
-    {icon:'&#x1F9E0;',label:'Self-improvement & habits',desc:'Psychology, philosophy, productivity, mindset.',val:'self-improvement-first'},
-    {icon:'&#x1F4BC;',label:'Business & finance',desc:'Strategy, persuasion, investing, wealth.',val:'business-focus'},
-    {icon:'&#x1F4D6;',label:'Fiction & stories',desc:'Build the reading habit with great stories first.',val:'fiction-first'},
-    {icon:'&#x1F3B2;',label:'Mix of everything',desc:'No strong preference.',val:'self-improvement-first'}]},
-  {id:'financial',title:"What's your primary financial goal?",sub:'Your financial roadmap will be prioritized accordingly.',opts:[
-    {icon:'&#x1F4B3;',label:'Pay off debt first',desc:'Eliminate high-interest debt before anything else.',val:'debt-payoff'},
-    {icon:'&#x1F3E6;',label:'Build emergency fund',desc:'Financial security before growth.',val:'savings-focus'},
-    {icon:'&#x1F4C8;',label:'Start investing',desc:'Roth IRA, index funds, compounding.',val:'savings-focus'},
-    {icon:'&#x1F3AF;',label:'All of the above',desc:'Balanced approach across all three.',val:'debt-payoff'}]},
-];
-let qAnswers={},qStep=0;
-function startQuestionnaire(){document.getElementById('q-screen').classList.add('show');qStep=0;renderQStep();}
-function renderQStep(){
-  const s=Q_STEPS[qStep];
-  document.getElementById('q-prog-fill').style.width=Math.round(qStep/Q_STEPS.length*100)+'%';
-  document.getElementById('q-back').style.display=qStep>0?'block':'none';
-  document.getElementById('q-next').textContent=qStep===Q_STEPS.length-1?'Build My Dashboard':'Continue';
-  document.getElementById('q-steps').innerHTML=`
-    <div class="q-step show">
-      <div class="q-num">QUESTION ${qStep+1} OF ${Q_STEPS.length}</div>
-      <div class="q-title">${s.title}</div>
-      <div class="q-sub">${s.sub}</div>
-      <div class="q-options">${s.opts.map(o=>`
-        <div class="q-opt${qAnswers[s.id]===o.val?' selected':''}" onclick="selectOpt('${s.id}','${o.val}',this)">
-          <div class="q-opt-icon">${o.icon}</div>
-          <div><div class="q-opt-label">${o.label}</div><div class="q-opt-desc">${o.desc}</div></div>
-        </div>`).join('')}
-      </div>
-    </div>`;
-}
-function selectOpt(id,val,el){
-  qAnswers[id]=val;
-  document.querySelectorAll('.q-opt').forEach(o=>o.classList.remove('selected'));
-  el.classList.add('selected');
-}
-function qBack(){if(qStep>0){qStep--;renderQStep();}}
-async function qNext(){
-  if(!qAnswers[Q_STEPS[qStep].id]){toast('Select an option to continue');return;}
-  if(qStep<Q_STEPS.length-1){qStep++;renderQStep();return;}
-  await completeQuestionnaire();
-}
-async function completeQuestionnaire(){
-  if(!PROFILE)return;
-  const button=document.getElementById('q-next');
-  if(button.disabled)return;
-  const epoch=_authEpoch,userId=PROFILE.id;
-  button.disabled=true;button.textContent='Building your dashboard...';
-  try{
-    const answers=JSON.parse(JSON.stringify(qAnswers)),asgn=assignPlans(answers);
-    const payload={questionnaire:answers,assigned_workout_plan:asgn.workout,
-      assigned_meal_plan:asgn.meal,assigned_reading_list:asgn.reading,signup_complete:true};
-    // Starting weight belongs to onboarding; daily weigh-ins remain separate records.
-    for(const [input,column] of [['goal_weight','target_weight'],['cur_weight','start_weight']]){
-      if(answers[input]){
-        const value=Number(answers[input]);
-        if(!Number.isFinite(value)||value<=0||value>1500)throw new Error('Invalid weight.');
-        payload[column]=value;
-      }
-    }
-    const{data,error}=await sb.from('profiles').update(payload).eq('id',userId).select().single();
-    if(epoch!==_authEpoch)return;
-    if(error||!data||data.id!==userId)throw new Error('Save could not be confirmed.');
-    PROFILE=data;
-    await PersonalData.initialize(sb,userId);
-    if(epoch!==_authEpoch)return;
-    await loadAllContent();
-    if(epoch!==_authEpoch)return;
-    document.getElementById('q-screen').classList.remove('show');
-    await enterApp();
-  }catch{
-    if(epoch===_authEpoch)toast('Setup could not finish. Your answers are kept; please retry.');
-  }finally{
-    if(epoch===_authEpoch){button.disabled=false;button.textContent='Build My Dashboard';}
-  }
-}
-function assignPlans(a){
-  const days=+a.days||4;
-  let workout='shred-intermediate';
-  if(days>=5&&(a.goal==='recomposition'||a.goal==='weight-loss')&&a.level!=='beginner')workout='shred-advanced';
-  else if(a.goal==='muscle-gain'&&a.level==='advanced'&&days>=5)workout='ppl-advanced';
-  else if(a.level==='beginner'||days<=3)workout='beginner-fullbody';
-  const meal=(a.nutrition==='structured'&&a.goal!=='muscle-gain')?'high-protein-deficit':
-    a.goal==='muscle-gain'?'maintenance-muscle':'balanced-deficit';
-  return{workout,meal,reading:a.reading||'self-improvement-first'};
-}
 const QUOTES=[["The pain you feel today will be the strength you feel tomorrow.", "Unknown"], ["Do not count the days, make the days count.", "Muhammad Ali"], ["The only bad workout is the one that didn't happen.", "Unknown"], ["Success is the sum of small efforts repeated day in and day out.", "Robert Collier"], ["It does not matter how slowly you go as long as you do not stop.", "Confucius"], ["Your body can stand almost anything. It's your mind you have to convince.", "Unknown"], ["The difference between who you are and who you want to be is what you do.", "Unknown"], ["Discipline is the bridge between goals and accomplishment.", "Jim Rohn"], ["If it doesn't challenge you, it doesn't change you.", "Fred DeVito"], ["One month from now you will wish you started today.", "Unknown"], ["You don't have to be great to start, but you have to start to be great.", "Zig Ziglar"], ["The only way out is through.", "Robert Frost"], ["Strength comes from overcoming what you once thought you couldn't.", "Unknown"], ["Champions keep playing until they get it right.", "Billie Jean King"], ["The secret of getting ahead is getting started.", "Mark Twain"], ["It always seems impossible until it is done.", "Nelson Mandela"], ["Push yourself because no one else is going to do it for you.", "Unknown"], ["Small steps in the right direction beat giant leaps in the wrong one.", "Unknown"], ["The harder you work for something, the greater you feel when you achieve it.", "Unknown"], ["Don't wish for it. Work for it.", "Unknown"], ["Your future self is watching you right now through your memories.", "Aubrey Marcus"], ["Energy and persistence conquer all things.", "Benjamin Franklin"], ["You are confined only by the walls you build yourself.", "Unknown"], ["Success isn't always about greatness, it's about consistency.", "Dwayne Johnson"], ["The body achieves what the mind believes.", "Unknown"], ["Excellence is not a destination but a continuous journey.", "Brian Tracy"], ["Today is another chance to get better.", "Unknown"], ["Be so good they can't ignore you.", "Steve Martin"], ["Hard work beats talent when talent doesn't work hard.", "Tim Notke"], ["The will to win means nothing without the will to prepare.", "Juma Ikangaa"]];
 const WORDS=[["Resilience", "noun", "The capacity to recover quickly from difficulties; toughness.", "His resilience after setbacks was what made him exceptional."], ["Tenacity", "noun", "The quality of being determined and persistent regardless of obstacles.", "Her tenacity in training set her apart from everyone else."], ["Acumen", "noun", "The ability to make good judgments and quick decisions.", "Financial acumen is built through disciplined practice, not luck."], ["Fortitude", "noun", "Courage in pain or adversity; mental and emotional strength.", "It takes fortitude to wake at 5:30 AM and choose the hard thing."], ["Perspicacious", "adjective", "Having a ready insight into things; shrewd and perceptive.", "A perspicacious investor sees opportunity where others see risk."], ["Equanimity", "noun", "Mental calmness and composure in difficult situations.", "He maintained equanimity even when the plan fell apart."], ["Efficacious", "adjective", "Successful in producing a desired result; effective.", "Consistent small habits are more efficacious than sporadic big efforts."], ["Stoic", "adjective", "Enduring pain or hardship without showing feelings.", "A stoic attitude toward discomfort is a trainable skill."], ["Indefatigable", "adjective", "Persisting tirelessly; incapable of being fatigued.", "An indefatigable work ethic separates the good from the great."], ["Laconic", "adjective", "Using very few words; brief and to the point.", "His laconic answer said everything: he simply showed up."], ["Autodidact", "noun", "A person who has learned without formal instruction.", "Every great builder in history was an autodidact at their core."], ["Cogent", "adjective", "Clear, logical, and convincing in argument.", "A cogent financial plan is built on facts, not feelings."], ["Sagacious", "adjective", "Having keen mental discernment and good judgment.", "Sagacious decisions made in your 20s compound over decades."], ["Intrepid", "adjective", "Fearless and adventurous.", "The intrepid mindset is built one hard morning at a time."], ["Assiduous", "adjective", "Showing great care and diligence.", "Assiduous practice turns the difficult into the automatic."], ["Prudent", "adjective", "Acting with care and thought for the future.", "Prudent spending today creates the freedom you want tomorrow."], ["Magnanimous", "adjective", "Very generous or forgiving.", "Being magnanimous in victory and gracious in defeat defines character."], ["Stalwart", "adjective", "Loyal, reliable, and hardworking.", "A stalwart commitment to the daily process is the only system that works."], ["Dauntless", "adjective", "Showing fearlessness and determination.", "A dauntless attitude toward challenge is a muscle, train it daily."], ["Veracious", "adjective", "Speaking the truth; truthful.", "Be veracious with yourself first, your habits never lie."], ["Luminary", "noun", "A person who inspires or influences others.", "Every luminary you admire was once a beginner who refused to quit."], ["Redoubtable", "adjective", "Formidable; commanding respect.", "Build a redoubtable version of yourself, one discipline at a time."], ["Alacrity", "noun", "Brisk and cheerful readiness to act.", "He attacked each morning with alacrity that set the tone for everything."], ["Inure", "verb", "To accustom to something unpleasant until it is tolerated.", "Consistent early mornings inure you to discomfort in every area of life."], ["Sanguine", "adjective", "Optimistic, especially in difficult situations.", "Remain sanguine about the process, progress is rarely linear."], ["Meticulous", "adjective", "Showing great attention to detail; precise.", "A meticulous approach prevents the injuries that derail progress."], ["Perspicuity", "noun", "Clearness and lucidity of expression.", "Perspicuity in your goals separates achievers from dreamers."], ["Tenuous", "adjective", "Very weak or slight.", "A tenuous connection to your goals is easily broken, make it a system."], ["Imperious", "adjective", "Domineering; assuming power.", "Don't let an imperious inner critic convince you that effort isn't enough."], ["Fortuitous", "adjective", "Happening by chance with a fortunate result.", "Success looks fortuitous from outside but is systematic on the inside."]];
 
@@ -747,10 +635,16 @@ function scheduleMorningBrief(preferences){
     scheduleMorningBrief(preferences);
   },delay);
 }
+function focusWindowEvents(day){
+  return PersonalData.read('focus_windows',[]).filter(w=>w.day===day).map(w=>({
+    title:'Focus window '+w.start+'–'+w.end,event_time:w.start,time:w.start,event_type:'p',type:'p'}));
+}
 function refreshDailyBrief(){
   if(!_latestBriefInput)return;
   const preferences=getBriefPreferences();
-  const brief=BriefingService.build({..._latestBriefInput,preferences});
+  const brief=BriefingService.build({..._latestBriefInput,preferences,planning:{
+    focusWindows:PersonalData.read('focus_windows',[]),timezone:PROFILE?.timezone||'UTC',now:new Date().toISOString()
+  }});
   renderDailyBrief(brief);
   scheduleMorningBrief(preferences);
 }
@@ -763,9 +657,11 @@ function renderDailyBrief(brief){
       <div class="brief-rank">${index+1}</div>
       <div style="min-width:0;flex:1">
         <div class="brief-kind">${kindLabel[item.kind]||'FOCUS'} · ${escapeHtml(item.reason)}</div>
-        <div class="brief-title">${escapeHtml(item.title)}</div>
+        <button class="brief-source" onclick="${item.kind==='task'&&safeIdentifier(item.id)?`Planning.edit('${safeIdentifier(item.id)}')`:item.kind==='event'?"goto('schedule')":item.kind==='task'?"goto('todo')":"goto('workout')"}">${escapeHtml(item.title)}</button>
+        ${item.nextAction?`<div class="profile-note">Next: ${escapeHtml(item.nextAction)}</div>`:''}
+        ${item.goalTitle?`<div class="profile-note">Goal: ${escapeHtml(item.goalTitle)}</div>`:item.goalMissing?'<div class="profile-note">Linked goal unavailable</div>':''}
       </div>
-    </div>`).join(''):`<div class="brief-empty">${brief.unavailableSources?.length?'Refresh unavailable sources before choosing priorities.':'No deadline is driving the day. Pick one meaningful next action.'}</div>`;
+    </div>`).join(''):`<div class="brief-empty">${brief.unavailableSources?.length?'Refresh unavailable sources before choosing priorities.':brief.planning?.deferred.length?'Review the tasks below to choose an estimate, deadline or another focus window.':'No tasks are selected. Choose one meaningful next action.'}</div>`;
   const alertsHtml=brief.alerts.map(alert=>`<div class="brief-alert">${escapeHtml(alert)}</div>`).join('');
   const focusCount=brief.preferences.focusLimit+' focus item'+(brief.preferences.focusLimit===1?'':'s');
   const directionsHtml=(brief.directions||[]).length?`<div class="sh" style="margin-top:16px">GOALS TO KEEP IN VIEW</div>${brief.directions.map(goal=>`<div class="brief-focus"><div style="min-width:0"><div class="brief-kind">${escapeHtml(goal.frequency)} · ${escapeHtml(goal.priority)} priority</div><div class="brief-title">${escapeHtml(goal.title)}</div></div></div>`).join('')}`:'';
@@ -773,7 +669,9 @@ function renderDailyBrief(brief){
   el.innerHTML=`
     <div class="brief-headline">${escapeHtml(brief.headline)}</div>
     <div class="brief-summary">${escapeHtml(brief.summary)}</div>
+    ${brief.planning?`<div class="planning-summary"><strong>${brief.planning.availability.known?brief.planning.availability.minutes+' minutes available · '+brief.planning.plannedMinutes+' minutes suggested':'Focus time not confirmed'}</strong><button class="btn btn-o btn-xs" onclick="Planning.openWindows()">Edit focus windows</button><div class="profile-note">Suggestions use your profile timezone and saved calendar. Nothing is automatically scheduled.</div></div>`:''}
     <div class="brief-grid">${focusHtml}</div>
+    ${brief.planning?.deferred.length?`<details class="planning-deferred"><summary>${brief.planning.deferred.length} tasks to review</summary>${brief.planning.deferred.map(t=>`<div class="brief-focus"><div><button class="brief-source" onclick="Planning.edit('${safeIdentifier(t.id)}')">${escapeHtml(t.title)}</button><div class="profile-note">${escapeHtml(t.fitReason)}${t.due_date?' · Due '+escapeHtml(t.due_date):''}</div></div></div>`).join('')}</details>`:''}
     ${alertsHtml}
     ${directionsHtml}
     ${refreshed?`<div class="brief-delivery">Updated ${escapeHtml(refreshed)} · <button class="btn btn-o btn-xs" onclick="renderHome()">Refresh brief</button></div>`:''}
@@ -841,13 +739,7 @@ async function renderHome(){
   const wkData=CONTENT.workouts?.plans?.[plan];
   const dow=new Date(today+'T12:00:00Z').getUTCDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const todayEl=document.getElementById('home-today');
-  if(todayEl)todayEl.innerHTML=[
-    {t:'6:00 AM',l:todayWk?(todayWk.rest?'Rest Day + Meal Prep':'Workout: '+todayWk.focus):'See Workout tab'},
-    {t:'7:40 AM',l:'Breakfast -- log before eating'},
-    {t:'3:30 PM',l:'Protein shake or Chobani'},
-    {t:'7:30 PM',l:'Evening walk -- 30 min Zone 1'},
-    {t:'9:00 PM',l:'Reading -- 30 min, no phone'}
-  ].map(e=>`<div class="ev-chip"><span class="ev-time">${e.t}</span><span style="font-size:13px;font-weight:500">${escapeHtml(e.l)}</span></div>`).join('');
+  if(todayEl)todayEl.textContent='Loading today’s commitments…';
   const days=Array.from({length:14},(_,index)=>{
     const date=new Date(today+'T12:00:00Z');date.setUTCDate(date.getUTCDate()-index);
     return date.toISOString().slice(0,10);
@@ -857,12 +749,14 @@ async function renderHome(){
     sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',userId).gte('log_date',days[13]).lte('log_date',today),
     sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',userId),
     sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',userId),
-    sb.from('calendar_events').select('id,title,event_date,end_date,start_time:event_time,event_type').eq('user_id',userId),
-    sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed').eq('user_id',userId).neq('status','Done'),
+    sb.from('calendar_events').select('id,title,event_date,end_date,start_time:event_time,end_time,all_day,is_recurring,event_type').eq('user_id',userId),
+    sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed,goal_id,estimate_minutes,next_action').eq('user_id',userId).neq('status','Done'),
   ]);
   if(epoch!==_authEpoch||request!==_homeRequest)return;
   const labels=['Weight','Habits','Debt payments','Subscriptions','Calendar','Tasks'];
   const unavailableSources=results.flatMap((result,index)=>result.status==='rejected'||result.value.error?[labels[index]]:[]);
+  if(!PersonalData.isReady())unavailableSources.push('Planning');
+  for(const index of [4,5])if(results[index].status==='fulfilled'&&results[index].value.data?.length>=1000&&!unavailableSources.includes(labels[index]))unavailableSources.push(labels[index]);
   const [wts,history,ub_d,ub_s,evs,briefTodos]=results.map(result=>result.status==='fulfilled'&&!result.value.error?result.value.data||[]:[]);
   set('qs-wt',wts.length?wts[0].weight_lbs:'--');
   const habits=history.filter(h=>h.log_date===today);
@@ -880,6 +774,14 @@ async function renderHome(){
     today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
     habitTotal:totalHabits,workout:todayWk||null,goals,unavailableSources,refreshedAt:new Date().toISOString()
   };
+  if(todayEl){
+    const commitments=(evs||[]).filter(e=>e.event_date<=today&&(e.end_date||e.event_date)>=today)
+      .map(e=>({time:e.all_day?'All day':e.start_time?.slice(0,5)||'Time unset',title:e.title}));
+    const windows=focusWindowEvents(dow).map(e=>({time:e.event_time,title:e.title}));
+    const rows=[...commitments,...windows];
+    todayEl.innerHTML=(unavailableSources.includes('Calendar')?'<div class="profile-note">Calendar unavailable. Refresh before relying on this plan.</div>':'')+
+      (rows.length?rows.map(e=>`<div class="ev-chip"><span class="ev-time">${escapeHtml(e.time)}</span><span>${escapeHtml(e.title)}</span></div>`).join(''):'<div class="profile-note">No saved commitments or focus windows today.</div>');
+  }
   refreshDailyBrief();
   const evEl=document.getElementById('home-events');
   if(evEl){
@@ -1279,17 +1181,13 @@ async function renderMonth(){
       }
     }
   });
-  const wkP={1:'Workout',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
   let html='<div class="cal-grid">';
   D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
   for(let i=0;i<first.getDay();i++){const d=new Date(y,m,1-first.getDay()+i);html+=`<div class="cal-day dim"><div class="cal-dn">${d.getDate()}</div></div>`;}
   for(let day=1;day<=last.getDate();day++){
     const ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
     const isToday=ds===todayStr();const dow=new Date(ds+'T12:00:00').getDay();
-    const evs=[];
-    if(wkP[dow])evs.push({title:wkP[dow],event_type:'r'});
-    if(dow>=1&&dow<=5)evs.push({title:'Evening Walk',event_type:'g'});
-    if(dow===0)evs.push({title:'Meal Prep',event_type:'g'});
+    const evs=focusWindowEvents(dow);
     (ebd[ds]||[]).forEach(e=>evs.push(e));
     html+=`<div class="cal-day${isToday?' today':''}" role="button" tabindex="0" aria-label="Add event on ${escapeAttr(ds)}" onclick="openEventModal('${ds}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openEventModal('${ds}')}"><div class="cal-dn">${day}</div>`;
     evs.slice(0,3).forEach(e=>{
@@ -1313,8 +1211,7 @@ async function renderWeek(){
   const rangeStart=dates[0].toLocaleDateString('en-CA');
   const rangeEnd=dates[6].toLocaleDateString('en-CA');
   if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
-  const wkP={1:'Upper Push',2:'Lower Body',3:'Upper Pull',4:'Conditioning',5:'Full Body',6:'Long Cardio'};
-  const hours=[6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
+  const hours=Array.from({length:24},(_,i)=>i);
   const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
     .or(`event_date.gte.${rangeStart},end_date.gte.${rangeStart}`)
     .lte('event_date',rangeEnd);
@@ -1352,10 +1249,7 @@ async function renderWeek(){
     html+=`<div style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace;text-align:right;padding-right:5px;height:40px;display:flex;align-items:flex-start;padding-top:3px">${ampm}</div>`;
     dates.forEach(d=>{
       const k=d.toISOString().split('T')[0];const isT=k===todayStr();const dow=d.getDay();
-      const evs=[];
-      if(h===6&&wkP[dow])evs.push({title:wkP[dow],event_type:'r'});
-      if(h===19&&dow>=1&&dow<=5)evs.push({title:'Walk',event_type:'g'});
-      if(h===11&&dow===0)evs.push({title:'Meal Prep',event_type:'g'});
+      const evs=focusWindowEvents(dow).filter(e=>parseInt(e.event_time)===h);
       (ebd[k]||[]).filter(e=>e.event_time&&parseInt(e.event_time)===h).forEach(e=>evs.push(e));
       const cols={r:'var(--red-l)',g:'var(--grn-l)',a:'var(--amb-l)',b:'var(--blu-l)'};
       html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>{
@@ -1371,8 +1265,7 @@ async function renderDay(){
   const title=document.getElementById('cal-title');
   const ds=calDate.toISOString().split('T')[0];
   if(title)title.textContent=D7L[calDate.getDay()]+', '+fmtD(calDate);
-  const sched=CONTENT.schedule?.templates?.['standard-commuter'];
-  const schedItems=sched?.weekday||[];
+  const schedItems=focusWindowEvents(calDate.getDay());
   const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
     .or(`event_date.eq.${ds},end_date.gte.${ds}`)
     .lte('event_date',ds);
@@ -1393,6 +1286,7 @@ function openEventModal(dateStr,editId,eventData){
     document.getElementById('ev-title').value=eventData.title||'';
     document.getElementById('ev-date').value=eventData.event_date||todayStr();
     document.getElementById('ev-time').value=eventData.event_time||'';
+    document.getElementById('ev-end-time').value=eventData.end_time||'';
     document.getElementById('ev-end-date').value=eventData.end_date||'';
     document.getElementById('ev-allday').value=eventData.all_day?'1':'0';
     document.getElementById('ev-type').value=eventData.event_type||'b';
@@ -1400,6 +1294,7 @@ function openEventModal(dateStr,editId,eventData){
     document.getElementById('ev-title').value='';
     document.getElementById('ev-date').value=dateStr||todayStr();
     document.getElementById('ev-time').value='09:00';
+    document.getElementById('ev-end-time').value='';
     document.getElementById('ev-end-date').value='';
     document.getElementById('ev-allday').value='0';
     document.getElementById('ev-type').value='b';
@@ -1411,20 +1306,28 @@ async function saveEvent(){
   const startDate=document.getElementById('ev-date').value;if(!startDate){toast('Select a start date');return;}
   const endDate=document.getElementById('ev-end-date').value;
   const allDay=document.getElementById('ev-allday').value==='1';
+  const endTime=allDay?null:document.getElementById('ev-end-time').value||null;
+  const startTime=allDay?null:document.getElementById('ev-time').value||null;
+  if(endDate&&endDate<startDate){toast('End date must not precede start date.');return;}
+  if(endTime&&(!startTime||((!endDate||endDate===startDate)&&endTime<=startTime))){toast('End time must follow the start time.');return;}
   const ev={
     user_id:PROFILE.id,
     event_date:startDate,
     end_date:endDate&&endDate>startDate?endDate:null,
-    event_time:allDay?null:document.getElementById('ev-time').value,
+    event_time:startTime,end_time:endTime,
     all_day:allDay,
     title,
     event_type:document.getElementById('ev-type').value
   };
-  if(evEditId){await sb.from('calendar_events').update(ev).eq('id',evEditId).eq('user_id',PROFILE.id);}
-  else{await sb.from('calendar_events').insert(ev);}
-  closeModal('event-modal');
-  toast(evEditId?'Event updated!':'Event added!');
-  renderCal();
+  const epoch=_authEpoch,button=document.getElementById('ev-save');if(button.disabled)return;
+  button.disabled=true;
+  try{
+    const query=evEditId?sb.from('calendar_events').update(ev).eq('id',evEditId).eq('user_id',PROFILE.id):sb.from('calendar_events').insert(ev);
+    const {data,error}=await query.select('id').single();if(epoch!==_authEpoch)return;
+    if(error||!data)throw new Error();
+    closeModal('event-modal');toast('Event saved.');renderCal();renderHome();
+  }catch(_){if(epoch===_authEpoch)toast('Event could not be saved. Your changes are kept; please retry.');}
+  finally{if(epoch===_authEpoch)button.disabled=false;}
 }
 
 // RECIPES
@@ -1780,7 +1683,7 @@ async function renderAdmin(){
   if(PROFILE?.role!=='admin'){document.getElementById('page-admin').innerHTML='<div style="color:var(--t3);padding:20px">Admin access required.</div>';return;}
   const epoch=_authEpoch;
   let response;
-  try{response=await sb.from('profiles').select('id,username,display_name,role,is_disabled,force_password_reset,signup_complete,created_at').order('created_at');}
+  try{response=await sb.from('profiles').select('id,username,display_name,role,is_disabled,force_password_reset,created_at').order('created_at');}
   catch{response={error:true};}
   if(epoch!==_authEpoch)return;
   if(response.error){
@@ -1814,7 +1717,7 @@ async function renderAdmin(){
           ${u.force_password_reset?'<span class="badge b-a">Reset Pending</span>':''}
           ${u.id===PROFILE.id?'<span class="badge b-g">You</span>':''}
         </div>
-        <div style="font-size:11px;color:var(--t3)">@${username} - Joined ${escapeHtml(joined)} - ${u.signup_complete?'Setup complete':'Questionnaire pending'}</div>
+        <div style="font-size:11px;color:var(--t3)">@${username} - Joined ${escapeHtml(joined)}</div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--t2)">
             <input type="checkbox" ${isAdmin?'checked':''} style="accent-color:var(--red);width:14px;height:14px" onchange="toggleAdminRole('${uid}',this.checked)" ${u.id===PROFILE.id||!uid?'disabled':''}>
@@ -2015,7 +1918,10 @@ function getUserGoalData(){
   if(!PROFILE)return [];
   return PersonalData.read('goals',[]);
 }
-function saveUserGoalData(data){return savePersonalDocument('goals',data);}
+function saveUserGoalData(data){
+  const withIds=data.map(s=>({...s,goals:s.goals.map(g=>({...g,id:g.id||crypto.randomUUID()}))}));
+  return savePersonalDocument('goals',withIds);
+}
 function toggleGoalEdit(){
   goalEditMode=!goalEditMode;
   const btn=document.getElementById('goals-edit-btn');
@@ -2035,7 +1941,7 @@ async function confirmAddGoal(){
   const data=getUserGoalData();
   let s=data.find(d=>d.sec===sec);
   if(!s){s={sec,col:'t2',goals:[]};data.push(s);}
-  s.goals.push({freq,g,p,id:'g_'+Date.now()});
+  s.goals.push({freq,g,p,id:crypto.randomUUID()});
   if(!await saveUserGoalData(data))return;
   closeModal('add-goal-modal');
   renderGoals();
@@ -2199,78 +2105,6 @@ updateFinancialBoxes=async function(){
   if(fce)fce.style.color=freeCash>=0?'var(--amb)':'var(--red)';
   set('fin-total-debt',fmt(totalDebt));
   set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
-};
-
-// ── QUESTIONNAIRE — ADD PROFILE INFO STEP ───────────────────────
-// Add body_profile as first Q step (inject into existing array)
-const BODY_PROFILE_STEP={
-  id:'body_profile',
-  title:'Tell us about yourself',
-  sub:'Personalizes your targets, progress tracking, and calorie goals.',
-  type:'inputs',
-  inputs:[
-    {id:'age',label:'Age',type:'number',placeholder:'28',unit:'years',min:16,max:80},
-    {id:'gender',label:'Gender',type:'select',opts:['Male','Female','Non-binary','Prefer not to say']},
-    {id:'cur_weight',label:'Current Weight',type:'number',placeholder:'220',unit:'lbs',required:true},
-    {id:'goal_weight',label:'Goal Weight (target)',type:'number',placeholder:'165',unit:'lbs',required:true},
-  ]
-};
-Q_STEPS.unshift(BODY_PROFILE_STEP);
-
-// Extend renderQStep to handle 'inputs' type
-const _origRenderQStep=renderQStep;
-renderQStep=function(){
-  const s=Q_STEPS[qStep];
-  document.getElementById('q-prog-fill').style.width=Math.round(qStep/Q_STEPS.length*100)+'%';
-  document.getElementById('q-back').style.display=qStep>0?'block':'none';
-  document.getElementById('q-next').textContent=qStep===Q_STEPS.length-1?'Build My Dashboard':'Continue';
-  document.getElementById('q-next').disabled=false;
-  if(s.type==='inputs'){
-    document.getElementById('q-steps').innerHTML=`
-      <div class="q-step show">
-        <div class="q-num">QUESTION ${qStep+1} OF ${Q_STEPS.length}</div>
-        <div class="q-title">${s.title}</div>
-        <div class="q-sub">${s.sub}</div>
-        <div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">
-          ${s.inputs.map(inp=>`
-            <div>
-              <div style="font-size:11px;font-weight:600;color:var(--t3);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">${inp.label}${inp.unit?' ('+inp.unit+')':''}${inp.required?' *':''}</div>
-              ${inp.type==='select'
-                ?`<select class="inp sel" id="qi-${inp.id}" style="background:var(--s3)">
-                    <option value="">Select...</option>
-                    ${(inp.opts||[]).map(o=>`<option value="${o}"${qAnswers[inp.id]===o?' selected':''}>${o}</option>`).join('')}
-                  </select>`
-                :`<div style="display:flex;align-items:center;gap:10px">
-                    <input class="inp" id="qi-${inp.id}" type="${inp.type||'text'}" placeholder="${inp.placeholder||''}" value="${escapeAttr(qAnswers[inp.id]||'')}" ${inp.min!==undefined?'min='+inp.min:''} ${inp.max!==undefined?'max='+inp.max:''} style="flex:1">
-                    ${inp.unit?`<span style="font-size:13px;color:var(--t3);white-space:nowrap">${inp.unit}</span>`:''}
-                  </div>`
-              }
-            </div>`).join('')}
-        </div>
-      </div>`;
-  }else{
-    _origRenderQStep();
-  }
-};
-
-// Extend qNext to handle 'inputs' type
-const _origQNext=qNext;
-qNext=async function(){
-  const s=Q_STEPS[qStep];
-  if(s.type==='inputs'){
-    // Read input values into qAnswers
-    (s.inputs||[]).forEach(inp=>{
-      const el=document.getElementById('qi-'+inp.id);
-      if(el)qAnswers[inp.id]=el.value;
-    });
-    // Validate required
-    const missing=(s.inputs||[]).find(inp=>inp.required&&!qAnswers[inp.id]);
-    if(missing){toast('Please fill in: '+missing.label);return;}
-    if(qStep<Q_STEPS.length-1){qStep++;renderQStep();}
-    else await completeQuestionnaire();
-  }else{
-    await _origQNext();
-  }
 };
 
 // ── EDIT EXISTING HABITS ─────────────────────────────────────────
@@ -2670,77 +2504,6 @@ const TODO_STATUS_COLORS={
   'Important':'p','Not Urgent':'g','Done':'d'
 };
 
-async function renderTodo(){
-  const el=document.getElementById('todo-list');if(!el)return;
-  el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
-  let items=[];
-  try{
-    const{data,error}=await sb.from('todo_items').select('*').eq('user_id',PROFILE.id).order('created_at',{ascending:false});
-    if(error){
-      // Table might not exist yet
-      if(error.code==='42P01'){
-        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7"><strong>One-time setup needed:</strong><br>Run this SQL in Supabase SQL Editor to enable the To Do List:<br><br><code style="background:var(--s3);padding:4px 8px;border-radius:4px;font-family:DM Mono,monospace;font-size:11px;display:block;margin-top:6px">CREATE TABLE IF NOT EXISTS public.todo_items (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT DEFAULT \'Not Started\', due_date DATE, completed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE public.todo_items ENABLE ROW LEVEL SECURITY; CREATE POLICY "Users own todos" ON public.todo_items FOR ALL USING (auth.uid() = user_id);</code></div>';
-        return;
-      }
-      throw error;
-    }
-    items=data||[];
-  }catch(e){console.error('todo error:',e);el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks. Check console.</div>';return;}
-
-  const filtered=todoFilter==='All'?items:items.filter(i=>i.status===todoFilter);
-  const pending=items.filter(i=>i.status!=='Done').length;
-  const done=items.filter(i=>i.status==='Done').length;
-
-  if(!filtered.length){
-    el.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--t3)">
-      <div style="font-size:32px;margin-bottom:10px">${todoFilter==='Done'?'&#x1F389;':'&#x1F4CB;'}</div>
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${todoFilter==='All'?'No tasks yet':'No '+todoFilter+' tasks'}</div>
-      <div style="font-size:12px">${todoFilter==='All'?'Hit + Add Task to get started.':'Change the filter to see other tasks.'}</div>
-    </div>`;
-    return;
-  }
-
-  // Stats row
-  let html=`<div class="g4" style="margin-bottom:14px">
-    <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v" style="color:var(--t1)">${items.length}</div><div class="stat-s">tasks</div></div>
-    <div class="stat card-r"><div class="stat-l">URGENT</div><div class="stat-v" style="color:var(--red)">${items.filter(i=>i.status==='Urgent').length}</div><div class="stat-s">need action</div></div>
-    <div class="stat card-b"><div class="stat-l">IN PROGRESS</div><div class="stat-v" style="color:var(--blu)">${items.filter(i=>i.status==='In Progress').length}</div><div class="stat-s">active</div></div>
-    <div class="stat card-g"><div class="stat-l">DONE</div><div class="stat-v" style="color:var(--grn)">${done}</div><div class="stat-s">completed</div></div>
-  </div>`;
-
-  filtered.forEach(item=>{
-    const sc=TODO_STATUS_COLORS[item.status]||'d';
-    const isDone=item.status==='Done';
-    const today=new Date();today.setHours(0,0,0,0);
-    let dueHtml='';
-    if(item.due_date){
-      const due=new Date(item.due_date+'T12:00:00');
-      const diff=Math.round((due-today)/86400000);
-      const dueStr=diff===0?'Due Today':diff<0?Math.abs(diff)+'d overdue':diff===1?'Due Tomorrow':'Due in '+diff+'d';
-      const dueCol=diff<0?'var(--red)':diff===0?'var(--amb)':'var(--t3)';
-      dueHtml=`<span style="font-size:11px;color:${dueCol};font-family:DM Mono,monospace;font-weight:${diff<=0?600:400}">${dueStr}</span>`;
-    }
-    html+=`<div class="card" style="margin-bottom:8px;border-left:3px solid var(--${sc});${isDone?'opacity:0.6':''}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-            <div style="font-size:14px;font-weight:600;${isDone?'text-decoration:line-through;color:var(--t3)':''}">${item.title}</div>
-            <span class="badge b-${sc}">${item.status}</span>
-            ${dueHtml}
-          </div>
-          ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${item.description}</div>`:''}
-        </div>
-        <div style="display:flex;gap:5px;flex-shrink:0;align-items:center">
-          ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${item.id}')">&#x2713; Done</button>`:'<button class="btn btn-o btn-xs" onclick="markTodoUndone(\''+item.id+'\')">Undo</button>'}
-          <button class="btn btn-o btn-xs" onclick="editTodo('${item.id}')">&#x270F;&#xFE0F;</button>
-          <button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="deleteTodo('${item.id}')">&#x2715;</button>
-        </div>
-      </div>
-    </div>`;
-  });
-  el.innerHTML=html;
-}
-
 function filterTodos(f,btn){
   todoFilter=f;
   document.querySelectorAll('#todo-filter-tabs .tb').forEach(b=>b.classList.remove('on'));
@@ -2748,35 +2511,12 @@ function filterTodos(f,btn){
   renderTodo();
 }
 
-function openTodoModal(id){
-  document.getElementById('todo-modal-title').textContent=id?'EDIT TASK':'ADD TASK';
-  document.getElementById('todo-edit-id').value=id||'';
-  if(!id){document.getElementById('todo-title').value='';document.getElementById('todo-desc').value='';document.getElementById('todo-status').value='Not Started';document.getElementById('todo-due').value='';}
-  openModal('todo-modal');
-}
-async function editTodo(id){
-  const{data}=await sb.from('todo_items').select('*').eq('id',id).single();
-  if(!data)return;
-  document.getElementById('todo-modal-title').textContent='EDIT TASK';
-  document.getElementById('todo-edit-id').value=id;
-  document.getElementById('todo-title').value=data.title||'';
-  document.getElementById('todo-desc').value=data.description||'';
-  document.getElementById('todo-status').value=data.status||'Not Started';
-  document.getElementById('todo-due').value=data.due_date||'';
-  openModal('todo-modal');
-}
-async function saveTodo(){
-  const title=document.getElementById('todo-title').value.trim();
-  if(!title){toast('Enter a task title');return;}
-  const id=document.getElementById('todo-edit-id').value;
-  const payload={user_id:PROFILE.id,title,description:document.getElementById('todo-desc').value.trim()||null,status:document.getElementById('todo-status').value,due_date:document.getElementById('todo-due').value||null};
-  if(id){await sb.from('todo_items').update(payload).eq('id',id);}
-  else{await sb.from('todo_items').insert(payload);}
-  closeModal('todo-modal');renderTodo();toast(id?'Task updated!':'Task added!');
-}
-async function markTodoDone(id){await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);renderTodo();toast('Task marked done!');}
-async function markTodoUndone(id){await sb.from('todo_items').update({status:'Not Started',completed:false}).eq('id',id);renderTodo();}
-async function deleteTodo(id){if(!await confirmDialog('Delete this task?'))return;await sb.from('todo_items').delete().eq('id',id);renderTodo();toast('Task deleted');}
+function openTodoModal(){Planning.open();}
+async function editTodo(id){await Planning.edit(id);}
+async function saveTodo(){await Planning.save();}
+async function markTodoDone(id){await Planning.change(id,{status:'Done',completed:true});}
+async function markTodoUndone(id){await Planning.change(id,{status:'Not Started',completed:false});}
+async function deleteTodo(id){await Planning.remove(id);}
 
 // ── RECIPES — EDIT MODE ──────────────────────────────────────
 let spiceEditMode=false;
@@ -3004,47 +2744,8 @@ if(_s1_origLoadProfile){
 
 // ── ITEM 4: Push-back logic with escalating responses ────────────
 async function pushBackTodo(id){
-  const{data:item}=await sb.from('todo_items')
-    .select('id,title,push_back_count,due_date,description,status')
-    .eq('id',id).maybeSingle();
-  if(!item)return;
-  const count=(item.push_back_count||0)+1;
-  const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
-
-  if(count===1){
-    // First push: move to tomorrow, no message of shame
-    const d=new Date();d.setDate(d.getDate()+1);
-    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
-    await sb.from('todo_items').update({due_date:dateStr,push_back_count:1}).eq('id',id);
-    toast('Pushed to tomorrow.');
-    renderTodo();
-    _refreshDashTodosIfVisible();
-  }else if(count===2){
-    // Second push: move to 2 days out, mild disappointment
-    const d=new Date();d.setDate(d.getDate()+2);
-    const dateStr=d.toLocaleDateString('en-CA',{timeZone:tz});
-    await sb.from('todo_items').update({due_date:dateStr,push_back_count:2}).eq('id',id);
-    toast("Seriously? Stop pushing this back.",4000);
-    renderTodo();
-    _refreshDashTodosIfVisible();
-  }else{
-    // Third+ push: force them to pick a real date
-    await sb.from('todo_items').update({push_back_count:count}).eq('id',id);
-    // Pre-fill the edit modal and add a warning banner
-    await editTodo(id);
-    setTimeout(()=>{
-      const titleEl=document.getElementById('todo-modal-title');
-      if(titleEl)titleEl.textContent='PICK A REAL DATE.';
-      const modal=document.querySelector('#todo-modal .modal');
-      if(modal&&!modal.querySelector('.pb-warning')){
-        const warn=document.createElement('div');
-        warn.className='pb-warning';
-        warn.style.cssText='background:var(--red-ll);border:1px solid rgba(232,64,64,.3);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--red);font-weight:600;margin-bottom:12px;line-height:1.5';
-        warn.textContent="You've pushed this back too many times. Pick a date you'll actually do it and commit.";
-        modal.insertBefore(warn,modal.children[1]);
-      }
-    },60);
-  }
+  await Planning.edit(id);
+  if(document.getElementById('todo-modal').classList.contains('open'))toast('Choose a new deadline and save when ready.');
 }
 
 function _refreshDashTodosIfVisible(){
@@ -3054,9 +2755,9 @@ function _refreshDashTodosIfVisible(){
   }
 }
 
-// ── REDEFINE renderTodo with Push Back button ────────────────────
-// (Replaces earlier definition — now includes push-back button)
-renderTodo=async function(){
+// Task list
+async function renderTodo(){
+  if(!PROFILE)return;const epoch=_authEpoch;
   const el=document.getElementById('todo-list');if(!el)return;
   el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
   let items=[];
@@ -3065,13 +2766,15 @@ renderTodo=async function(){
       .eq('user_id',PROFILE.id).order('created_at',{ascending:false});
     if(error){
       if(error.code==='42P01'){
-        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7">Run <strong>todo_table.sql</strong> in Supabase SQL Editor to enable the To Do List.</div>';
+        el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7">Tasks are unavailable. Please contact the administrator and retry after the service is restored.</div>';
         return;
       }
       throw error;
     }
+    if(epoch!==_authEpoch)return;
     items=data||[];
   }catch(e){
+    if(epoch!==_authEpoch)return;
     el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks.</div>';
     console.error('todo error:',e);return;
   }
@@ -3097,7 +2800,7 @@ renderTodo=async function(){
 
   const STATUS_COL={'Not Started':'d','In Progress':'b','On Hold':'a','Urgent':'r','Important':'p','Not Urgent':'g','Done':'d'};
   const STATUS_ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5,'Done':6};
-  const sorted=[...filtered].sort((a,b)=>(STATUS_ORDER[a.status]||9)-(STATUS_ORDER[b.status]||9));
+  const sorted=[...filtered].sort((a,b)=>(STATUS_ORDER[a.status]??9)-(STATUS_ORDER[b.status]??9));
 
   let html=`<div class="g4" style="margin-bottom:14px">
     <div class="stat"><div class="stat-l">TOTAL</div><div class="stat-v">${items.length}</div><div class="stat-s">tasks</div></div>
@@ -3128,6 +2831,9 @@ renderTodo=async function(){
             ${pbCount>0&&!isDone?`<span style="font-size:10px;color:var(--t3);font-family:DM Mono,monospace">(pushed ${pbCount}x)</span>`:''}
           </div>
           ${item.description?`<div style="font-size:12px;color:var(--t2);line-height:1.6">${escapeHtml(item.description)}</div>`:''}
+          ${item.estimate_minutes?`<div class="profile-note">Estimate: ${escapeHtml(item.estimate_minutes)} minutes</div>`:''}
+          ${item.next_action?`<div class="profile-note">Next: ${escapeHtml(item.next_action)}</div>`:''}
+          ${item.goal_id?`<div class="profile-note">Goal: ${escapeHtml(getUserGoalData().flatMap(s=>s.goals).find(g=>g.id===item.goal_id)?.g||'Linked goal unavailable')}</div>`:''}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           ${!isDone?`<button class="btn btn-g btn-xs" onclick="markTodoDone('${itemId}')" ${itemId?'':'disabled'}>&#x2713; Done</button>`:`<button class="btn btn-o btn-xs" onclick="markTodoUndone('${itemId}')" ${itemId?'':'disabled'}>Undo</button>`}
@@ -3148,8 +2854,9 @@ renderTodo=async function(){
 
 // ── Open a user event for editing (called from calendar chip) ────
 async function openUserEvent(eventId){
-  if(!eventId)return;
+  if(!eventId||!PROFILE)return;const epoch=_authEpoch;
   const{data:ev,error}=await sb.from('calendar_events').select('*').eq('id',eventId).eq('user_id',PROFILE.id).single();
+  if(epoch!==_authEpoch)return;
   if(error||!ev){toast('Could not load event');return;}
   openEventModal(null,eventId,ev);
 }
@@ -3157,11 +2864,15 @@ async function openUserEvent(eventId){
 // ── Delete current event being edited ───────────────────────────
 async function deleteEvent(){
   if(!evEditId){toast('No event selected');return;}
+  const epoch=_authEpoch,eventId=evEditId,userId=PROFILE.id;
   if(!await confirmDialog('Delete this event?'))return;
-  await sb.from('calendar_events').delete().eq('id',evEditId).eq('user_id',PROFILE.id);
-  closeModal('event-modal');
-  toast('Event deleted');
-  renderCal();
+  if(epoch!==_authEpoch)return;
+  try{
+    const {data,error}=await sb.from('calendar_events').delete().eq('id',eventId).eq('user_id',userId).select('id').single();
+    if(epoch!==_authEpoch)return;
+    if(error||data?.id!==eventId)throw new Error();
+    closeModal('event-modal');toast('Event deleted');renderCal();renderHome();
+  }catch(_){if(epoch===_authEpoch)toast('Event removal could not be confirmed. Please retry.');}
 }
 
 // ── Multi-day event chip style override ─────────────────────────
@@ -3232,13 +2943,7 @@ async function renderDashTodos(){
   }).join('')+`<div style="margin-top:8px;text-align:center"><a href="#" onclick="goto('todo');return false" style="font-size:11px;color:var(--t3)">View all tasks →</a></div>`;
 }
 
-async function dashMarkDone(id){
-  await sb.from('todo_items').update({status:'Done',completed:true}).eq('id',id);
-  renderDashTodos();
-  // Also refresh full todo list if visible
-  if(document.getElementById('page-todo')?.classList.contains('active'))renderTodo();
-  toast('Done! 💪');
-}
+async function dashMarkDone(id){await markTodoDone(id);}
 
 // Patch renderDash to also render the todo panel
 const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
