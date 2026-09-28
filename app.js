@@ -114,6 +114,36 @@ const Planning=PlanningUI.create(sb,{
   refresh:()=>{renderHome();if(currentPage==='todo')renderTodo();if(currentPage==='dash')renderDashTodos();if(currentPage==='schedule')renderCal();}
 });
 const CACHE_TTL=86400000;
+const Writes=DataOperations.create({
+  session:()=>PROFILE?{userId:PROFILE.id,epoch:_authEpoch}:null,
+  notify:message=>toast(message),uuid:()=>crypto.randomUUID()
+});
+const CalendarImport=CalendarImportUI.create({
+  session:()=>PROFILE?{userId:PROFILE.id,epoch:_authEpoch,zone:PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone}:null,
+  list:userId=>API.calendarImport.list(userId),insert:(userId,rows)=>API.calendarImport.insert(userId,rows),
+  refresh:()=>{renderCal();renderHome();}
+});
+function writeRecord(key,table,payload,match,success){
+  return Writes.run(key,{table,payload,match},ctx=>API.records.write(table,ctx.userId,payload,{match,id:match?null:ctx.id()}),success);
+}
+function getNutritionTargets(){
+  const plan=CONTENT.meals?.plans?.[PROFILE?.assigned_meal_plan||'high-protein-deficit'];
+  return {...NutritionService.getPlanTargets(PROFILE?.assigned_meal_plan),...plan?.targets,
+    ...(PROFILE?.calorie_target!=null?{calories:PROFILE.calorie_target}:{}),
+    ...(PROFILE?.protein_target!=null?{protein_g:PROFILE.protein_target}:{})};
+}
+async function readSection(query,elementId){
+  const epoch=_authEpoch;
+  try{
+    const {data,error}=await query;
+    if(epoch!==_authEpoch)return null;
+    if(error||!Array.isArray(data))throw new Error();
+    return data;
+  }catch(_){
+    if(epoch===_authEpoch){const el=document.getElementById(elementId);if(el)el.textContent='Could not load this section. Please retry.';}
+    return null;
+  }
+}
 /**
  * Populate the global CONTENT object with nulls. Overridden in Stage 4
  * by the DB-powered implementation that loads from Supabase.
@@ -317,6 +347,8 @@ function clearPrivateSession(){
   MFA.reset();
   PersonalData.reset();
   Planning.reset();
+  Writes.reset();
+  CalendarImport.reset();
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
   PROFILE=null;CONTENT={};habitCache={};currentPage='home';
@@ -802,12 +834,14 @@ async function renderHome(){
 async function logWeight(){
   const v=parseFloat(document.getElementById('wt-in').value);
   if(!v||v<100||v>500){toast('Enter a valid weight');return;}
-  await sb.from('weight_logs').insert({user_id:PROFILE.id,log_date:todayStr(),weight_lbs:v});
-  document.getElementById('wt-in').value='';
-  renderWeightLog();toast('Weight logged: '+v+' lbs');
+  await writeRecord('weight','weight_logs',{log_date:todayStr(),weight_lbs:v},null,()=>{
+    document.getElementById('wt-in').value='';renderWeightLog();toast('Weight logged: '+v+' lbs');
+  });
 }
 async function renderWeightLog(){
-  const{data:logs}=await sb.from('weight_logs').select('log_date,weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(5);
+  if(!PROFILE)return;
+  const logs=await readSection(sb.from('weight_logs').select('log_date,weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(5),'wt-log');
+  if(!logs)return;
   const el=document.getElementById('wt-log');if(!el)return;
   el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
     ||'<div style="color:var(--t3);font-size:12px">No entries yet.</div>';
@@ -821,26 +855,30 @@ async function renderWeightLog(){
   }
 }
 async function renderDash(){
+  if(!PROFILE)return;
+  const epoch=_authEpoch;
   const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
   if(mPlan){
     const c=document.getElementById('d-cal-tgt');if(c)c.textContent=mPlan.targets.calories+'/day';
     const p=document.getElementById('d-pro-tgt');if(p)p.textContent=mPlan.targets.protein_g+'g/day';
   }
   await renderWeightLog();
+  if(epoch!==_authEpoch||!PROFILE)return;
   const wkData=CONTENT.workouts?.plans?.[PROFILE.assigned_workout_plan||'shred-advanced'];
   const dow=new Date().getDay();const todayWk=WorkoutService.forWeekday(wkData,dow);
   const tw=document.getElementById('dash-wk');
   if(tw&&todayWk)tw.innerHTML=`<div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:1px;margin-bottom:6px">${D7L[dow].toUpperCase()}</div><div style="font-size:13px;font-weight:600;margin-bottom:3px">${escapeHtml(todayWk.focus)}</div><div style="font-size:12px;color:var(--t3)">${escapeHtml((todayWk.muscles||[]).join(' - '))}</div>${todayWk.has_hiit?'<div style="font-size:11px;color:var(--red);margin-top:5px">HIIT finisher included</div>':''}`;
   const wdays=[];
   for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);wdays.push({k:d.toISOString().split('T')[0],d});}
-  const{data:hAll}=await sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',PROFILE.id).in('log_date',wdays.map(w=>w.k));
+  const hAll=await readSection(sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',PROFILE.id).in('log_date',wdays.map(w=>w.k)),'dash-week');
+  if(epoch!==_authEpoch||!PROFILE)return;
   const byDate={};(hAll||[]).forEach(h=>{if(!byDate[h.log_date])byDate[h.log_date]={};if(h.completed)byDate[h.log_date][h.habit_id]=true;});
   const ALL_H=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
   const wdEl=document.getElementById('dash-week');if(!wdEl)return;
   const hdrs='<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px"><div style="width:130px;flex-shrink:0"></div>'+wdays.map(({k,d})=>`<div style="width:26px;text-align:center;font-size:10px;font-weight:${k===todayStr()?700:400};color:${k===todayStr()?'var(--red)':'var(--t3)'}">${D7[d.getDay()]}</div>`).join('')+'</div>';
   const rows=ALL_H.map(id=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+id+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'✓':''}</div>`;}).join('')+'</div>');
-  wdEl.innerHTML=hdrs+rows.join('');
-  const{data:ms}=await sb.from('milestone_status').select('*').eq('user_id',PROFILE.id);
+  if(hAll)wdEl.innerHTML=hdrs+rows.join('');
+  const ms=await readSection(sb.from('milestone_status').select('*').eq('user_id',PROFILE.id),'milestone-grid');if(!ms)return;
   const msMap={};(ms||[]).forEach(m=>msMap[m.milestone_name]=m.status);
   const MILES=[{name:'Month 1',tgt:'~210 lbs',col:'r',desc:'Lock in routine. First 10 lbs.'},{name:'Month 2',tgt:'~200 lbs',col:'a',desc:'Break 200. Progressive overload.'},{name:'Month 3',tgt:'~190 lbs',col:'a',desc:'Visible definition.'},{name:'Month 4-6',tgt:'~165 lbs',col:'g',desc:'Final shred. Goal achieved.'}];
   const mgEl=document.getElementById('milestone-grid');
@@ -865,16 +903,17 @@ const ALL_H_IDS=['wake','hydrate','mobility','workout','hiit','kneerehab','walk'
  *  the UI then writes to Supabase; shows a toast if the write fails.
  * @param {string} id - habit_id (e.g. 'wake', 'workout') */
 async function toggleHabit(id){
-  const cur=habitCache[id]||false;const newVal=!cur;habitCache[id]=newVal;
-  const hc=document.getElementById('hc-'+id);const hb=document.getElementById('hb-'+id);
-  if(hc){hc.classList.toggle('done',newVal);if(hb)hb.textContent=newVal?'✓':'';}
-  // Upsert keeps the operation idempotent — toggling the same habit twice is safe.
-  // Conflict key: (user_id, log_date, habit_id) ensures one row per user/day/habit.
-  try{
-    await API.habits.upsert(PROFILE.id,id,habitDate,newVal);
-  }catch(e){console.error('[habit] upsert failed:',e.message);toast('Error saving habit — check connection');}
-  renderCatProg();renderStreakBar();
+  if(!PROFILE)return;const date=habitDate,newVal=!habitCache[id];
+  return Writes.run('habit-'+date+'-'+id,{date,id,newVal},ctx=>API.habits.upsert(ctx.userId,id,date,newVal),()=>{
+    if(habitDate!==date)return;
+    habitCache[id]=newVal;
+    const hc=document.getElementById('hc-'+id),hb=document.getElementById('hb-'+id);
+    if(hc){hc.classList.toggle('done',newVal);hc.setAttribute('aria-checked',String(newVal));}
+    if(hb)hb.textContent=newVal?'✓':'';
+    renderCatProg();renderStreakBar();
+  });
 }
+
 async function chDay(d){
   const nd=new Date(habitDate+'T12:00:00');nd.setDate(nd.getDate()+d);
   const tmrw=new Date();tmrw.setDate(tmrw.getDate()+1);
@@ -1078,13 +1117,14 @@ async function renderNutrition(){
   }
 }
 async function deleteMeal(id){
-  const{error}=await sb.from('meal_logs').delete().eq('id',id).eq('user_id',PROFILE.id);
-  if(error){toast('Could not remove meal');console.error('[nutrition] remove meal failed:',error);return;}
-  renderNutrition();toast('Meal removed');
+  return Writes.run('meal-delete-'+id,{id},ctx=>API.records.write('meal_logs',ctx.userId,{}, {match:{id},remove:true}),()=>{renderNutrition();toast('Meal removed');});
 }
 async function addMealEntry(name,cal,pro,car,fat){
-  await sb.from('meal_logs').insert({user_id:PROFILE.id,log_date:todayStr(),meal_name:name,calories:+cal,protein_g:+pro,carbs_g:+car,fat_g:+fat});
-  renderNutrition();
+  const payload={log_date:todayStr(),meal_name:String(name).trim(),calories:+cal,protein_g:+pro,carbs_g:+car,fat_g:+fat};
+  if(!payload.meal_name || [cal,pro,car,fat].some(v=>!Number.isFinite(+v)||+v<0)){
+    toast('Enter a meal name and nonnegative, finite macros.');return false;
+  }
+  return writeRecord('meal-log','meal_logs',payload,null,()=>{renderNutrition();});
 }
 function quickLog(name,cal,pro,car,fat){addMealEntry(name,cal,pro,car,fat);toast('Logged: '+name);}
 function openMealModal(){
@@ -1156,6 +1196,7 @@ async function renderCal(){
   else await renderDay();
 }
 async function renderMonth(){
+  if(!PROFILE)return;
   const el=document.getElementById('cal-month');if(!el)return;
   const y=calDate.getFullYear(),m=calDate.getMonth();
   const title=document.getElementById('cal-title');if(title)title.textContent=M12[m]+' '+y;
@@ -1163,9 +1204,9 @@ async function renderMonth(){
   const mS=y+'-'+String(m+1).padStart(2,'0')+'-01';
   const mE=y+'-'+String(m+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
   // Fetch events that START in this month OR span into this month
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
     .or(`event_date.gte.${mS},end_date.gte.${mS}`)
-    .lte('event_date',mE);
+    .lte('event_date',mE),'cal-month');if(!uEvs)return;
   const ebd={};
   (uEvs||[]).forEach(e=>{
     // Add event to every day it spans
@@ -1204,6 +1245,7 @@ async function renderMonth(){
   html+='</div>';el.innerHTML=html;
 }
 async function renderWeek(){
+  if(!PROFILE)return;
   const el=document.getElementById('cal-week');if(!el)return;
   const title=document.getElementById('cal-title');
   const sw=new Date(calDate);sw.setDate(calDate.getDate()-calDate.getDay());
@@ -1212,9 +1254,9 @@ async function renderWeek(){
   const rangeEnd=dates[6].toLocaleDateString('en-CA');
   if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
   const hours=Array.from({length:24},(_,i)=>i);
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
     .or(`event_date.gte.${rangeStart},end_date.gte.${rangeStart}`)
-    .lte('event_date',rangeEnd);
+    .lte('event_date',rangeEnd),'cal-week');if(!uEvs)return;
   const ebd={};
   (uEvs||[]).forEach(e=>{
     // Add event to every day it spans
@@ -1261,14 +1303,15 @@ async function renderWeek(){
   html+='</div></div>';el.innerHTML=html;
 }
 async function renderDay(){
+  if(!PROFILE)return;
   const el=document.getElementById('cal-day');if(!el)return;
   const title=document.getElementById('cal-title');
-  const ds=calDate.toISOString().split('T')[0];
+  const ds=calDate.toLocaleDateString('en-CA');
   if(title)title.textContent=D7L[calDate.getDay()]+', '+fmtD(calDate);
   const schedItems=focusWindowEvents(calDate.getDay());
-  const{data:uEvs}=await sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
+  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
     .or(`event_date.eq.${ds},end_date.gte.${ds}`)
-    .lte('event_date',ds);
+    .lte('event_date',ds),'cal-day');if(!uEvs)return;
   const all=[...schedItems,...(uEvs||[]).map(e=>({id:e.id,time:e.event_time,title:e.title,type:e.event_type,allDay:e.all_day}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
   const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',p:'var(--pur)',d:'var(--b2)'};
   el.innerHTML=all.map(e=>{
@@ -1319,15 +1362,9 @@ async function saveEvent(){
     title,
     event_type:document.getElementById('ev-type').value
   };
-  const epoch=_authEpoch,button=document.getElementById('ev-save');if(button.disabled)return;
-  button.disabled=true;
-  try{
-    const query=evEditId?sb.from('calendar_events').update(ev).eq('id',evEditId).eq('user_id',PROFILE.id):sb.from('calendar_events').insert(ev);
-    const {data,error}=await query.select('id').single();if(epoch!==_authEpoch)return;
-    if(error||!data)throw new Error();
+  return writeRecord('calendar-event','calendar_events',ev,evEditId?{id:evEditId}:null,()=>{
     closeModal('event-modal');toast('Event saved.');renderCal();renderHome();
-  }catch(_){if(epoch===_authEpoch)toast('Event could not be saved. Your changes are kept; please retry.');}
-  finally{if(epoch===_authEpoch)button.disabled=false;}
+  });
 }
 
 // RECIPES
@@ -1459,7 +1496,7 @@ function addBook(){
 // FINANCIAL
 async function renderFinancial(){await renderDebtList();await renderSubList();await renderFinCal();await renderRoadmap();}
 async function renderDebtList(){
-  const{data:debts}=await sb.from('debt_tracker').select('*').eq('user_id',PROFILE.id);
+  const debts=await readSection(sb.from('debt_tracker').select('*').eq('user_id',PROFILE.id),'debt-list');if(!debts)return;
   const el=document.getElementById('debt-list');if(!el)return;
   el.innerHTML=(debts||[]).map(d=>{
     const mo=d.interest_rate?d.balance*(d.interest_rate/100/12):0;
@@ -1474,7 +1511,7 @@ async function renderDebtList(){
 }
 function openDebtModal(){debtEditId=null;document.getElementById('debt-modal-title').textContent='ADD DEBT';['d-name','d-bal','d-pay','d-rate','d-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('debt-edit-id').value='';openModal('debt-modal');}
 async function editDebt(id){
-  const{data:d}=await sb.from('debt_tracker').select('*').eq('id',id).single();if(!d)return;
+  const epoch=_authEpoch;const{data:d,error}=await sb.from('debt_tracker').select('*').eq('id',id).eq('user_id',PROFILE.id).single();if(epoch!==_authEpoch)return;if(error||!d){toast('Could not load debt.');return;}
   debtEditId=id;document.getElementById('debt-modal-title').textContent='EDIT DEBT';
   document.getElementById('d-name').value=d.debt_name;document.getElementById('d-bal').value=d.balance;
   document.getElementById('d-pay').value=d.monthly_payment;document.getElementById('d-rate').value=d.interest_rate;
@@ -1483,53 +1520,53 @@ async function editDebt(id){
 async function saveDebt(){
   const name=document.getElementById('d-name').value.trim();if(!name){toast('Enter a name');return;}
   const debt={user_id:PROFILE.id,debt_name:name,balance:+document.getElementById('d-bal').value||0,monthly_payment:+document.getElementById('d-pay').value||0,interest_rate:+document.getElementById('d-rate').value||0,due_day:+document.getElementById('d-due').value||1};
-  const q=debtEditId?sb.from('debt_tracker').update(debt).eq('id',debtEditId):sb.from('debt_tracker').insert(debt);
-  const{error}=await q;
-  if(error){toast('Error saving debt: '+error.message);console.error('[debt] save failed:',error);return;}
-  closeModal('debt-modal');renderDebtList();renderFinCal();toast('Debt saved');
+  if([debt.balance,debt.monthly_payment,debt.interest_rate].some(v=>!Number.isFinite(v)||v<0)||!Number.isInteger(debt.due_day)||debt.due_day<1||debt.due_day>31){toast('Use nonnegative amounts and a due day from 1 to 31.');return false;}
+  return writeRecord('debt','debt_tracker',debt,debtEditId?{id:debtEditId}:null,()=>{
+    closeModal('debt-modal');renderDebtList();renderFinCal();updateFinancialBoxes();toast('Debt saved');
+  });
 }
 async function removeDebt(id){
+  const epoch=_authEpoch;
   if(!await confirmDialog('Remove this debt?'))return;
-  const{error}=await sb.from('debt_tracker').delete().eq('id',id);
-  if(error){toast('Error removing debt: '+error.message);console.error('[debt] remove failed:',error);return;}
-  renderDebtList();renderFinCal();toast('Removed');
+  if(epoch!==_authEpoch)return;
+  return Writes.run('debt-delete-'+id,{id},ctx=>API.records.write('debt_tracker',ctx.userId,{}, {match:{id},remove:true}),()=>{renderDebtList();renderFinCal();updateFinancialBoxes();toast('Removed');});
 }
 async function renderSubList(){
-  const{data:subs}=await sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id);
+  const subs=await readSection(sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id),'sub-list');if(!subs)return;
   const el=document.getElementById('sub-list');if(!el)return;
   const ACOL={Keep:'g',Cancel:'r',Pause:'a',Review:'b'};
   el.innerHTML=(subs||[]).map(s=>{const subId=safeIdentifier(s.id);return`<div class="fin-row"><div><div class="fin-name">${escapeHtml(s.sub_name)}</div><div class="fin-note">Due day ${Number(s.renewal_day)||'--'}</div></div><div style="display:flex;gap:5px;align-items:center"><span class="badge b-${ACOL[s.action]||'d'}">${escapeHtml(s.action)}</span><div class="fin-amt">$${Number(s.monthly_cost||0).toFixed(2)}</div><button class="btn btn-o btn-xs" onclick="editSub('${subId}')" ${subId?'':'disabled'}>Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeSub('${subId}')" ${subId?'':'disabled'}>X</button></div></div>`;}).join('')||'<div style="color:var(--t3);font-size:12px">No subscriptions.</div>';
 }
 function openSubModal(){subEditId=null;document.getElementById('sub-modal-title').textContent='ADD SUBSCRIPTION';['s-name','s-cost','s-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('s-action').value='Keep';document.getElementById('sub-edit-id').value='';openModal('sub-modal');}
-async function editSub(id){const{data:s}=await sb.from('subscription_tracker').select('*').eq('id',id).single();if(!s)return;subEditId=id;document.getElementById('sub-modal-title').textContent='EDIT SUBSCRIPTION';document.getElementById('s-name').value=s.sub_name;document.getElementById('s-cost').value=s.monthly_cost;document.getElementById('s-due').value=s.renewal_day;document.getElementById('s-action').value=s.action;document.getElementById('sub-edit-id').value=id;openModal('sub-modal');}
+async function editSub(id){const epoch=_authEpoch;const{data:s,error}=await sb.from('subscription_tracker').select('*').eq('id',id).eq('user_id',PROFILE.id).single();if(epoch!==_authEpoch)return;if(error||!s){toast('Could not load subscription.');return;}subEditId=id;document.getElementById('sub-modal-title').textContent='EDIT SUBSCRIPTION';document.getElementById('s-name').value=s.sub_name;document.getElementById('s-cost').value=s.monthly_cost;document.getElementById('s-due').value=s.renewal_day;document.getElementById('s-action').value=s.action;document.getElementById('sub-edit-id').value=id;openModal('sub-modal');}
 async function saveSub(){
   const name=document.getElementById('s-name').value.trim();if(!name){toast('Enter a name');return;}
   const sub={user_id:PROFILE.id,sub_name:name,monthly_cost:+document.getElementById('s-cost').value||0,renewal_day:+document.getElementById('s-due').value||1,action:document.getElementById('s-action').value};
-  const q=subEditId?sb.from('subscription_tracker').update(sub).eq('id',subEditId):sb.from('subscription_tracker').insert(sub);
-  const{error}=await q;
-  if(error){toast('Error saving subscription: '+error.message);console.error('[sub] save failed:',error);return;}
-  closeModal('sub-modal');renderSubList();renderFinCal();toast('Saved: '+name);
+  if(!Number.isFinite(sub.monthly_cost)||sub.monthly_cost<0||!Number.isInteger(sub.renewal_day)||sub.renewal_day<1||sub.renewal_day>31){toast('Use a nonnegative cost and a renewal day from 1 to 31.');return false;}
+  return writeRecord('subscription','subscription_tracker',sub,subEditId?{id:subEditId}:null,()=>{closeModal('sub-modal');renderSubList();renderFinCal();updateFinancialBoxes();toast('Saved: '+name);});
 }
 async function removeSub(id){
+  const epoch=_authEpoch;
   if(!await confirmDialog('Remove subscription?'))return;
-  const{error}=await sb.from('subscription_tracker').delete().eq('id',id);
-  if(error){toast('Error removing subscription: '+error.message);console.error('[sub] remove failed:',error);return;}
-  renderSubList();renderFinCal();toast('Removed');
+  if(epoch!==_authEpoch)return;
+  return Writes.run('subscription-delete-'+id,{id},ctx=>API.records.write('subscription_tracker',ctx.userId,{}, {match:{id},remove:true}),()=>{renderSubList();renderFinCal();updateFinancialBoxes();toast('Removed');});
 }
 async function renderFinCal(){
+  if(!PROFILE)return;
   const el=document.getElementById('fin-cal');if(!el)return;
   const now=new Date();const y=now.getFullYear();const m=now.getMonth();
   const hdr=document.getElementById('fin-cal-hdr');if(hdr)hdr.textContent=M12[m]+' '+y;
   const first=new Date(y,m,1);const last=new Date(y,m+1,0);
-  const[{data:debts},{data:subs},{data:bills2}]=await Promise.all([
-    sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),
-    sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),
-    sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),
+  const[debts,subs,bills2]=await Promise.all([
+    readSection(sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),'fin-cal'),
+    readSection(sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),'fin-cal'),
+    readSection(sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),'fin-cal'),
   ]);
+  if(!debts||!subs||!bills2)return;
   const bMap={};
-  (debts||[]).forEach(d=>{if(!d.due_day)return;if(!bMap[d.due_day])bMap[d.due_day]=[];bMap[d.due_day].push({name:d.debt_name,c:'r'});});
-  (subs||[]).forEach(s=>{if(!s.renewal_day)return;if(!bMap[s.renewal_day])bMap[s.renewal_day]=[];bMap[s.renewal_day].push({name:s.sub_name,c:s.action==='Keep'?'b':'d'});});
-  (bills2||[]).forEach(b=>{if(!b.due_day)return;if(!bMap[b.due_day])bMap[b.due_day]=[];bMap[b.due_day].push({name:b.bill_name,c:'a'});});
+  (debts||[]).forEach(d=>{d={...d,due_day:Math.min(d.due_day,last.getDate())};if(!d.due_day)return;if(!bMap[d.due_day])bMap[d.due_day]=[];bMap[d.due_day].push({name:d.debt_name,c:'r'});});
+  (subs||[]).forEach(s=>{s={...s,renewal_day:Math.min(s.renewal_day,last.getDate())};if(!s.renewal_day)return;if(!bMap[s.renewal_day])bMap[s.renewal_day]=[];bMap[s.renewal_day].push({name:s.sub_name,c:s.action==='Keep'?'b':'d'});});
+  (bills2||[]).forEach(b=>{b={...b,due_day:Math.min(b.due_day,last.getDate())};if(!b.due_day)return;if(!bMap[b.due_day])bMap[b.due_day]=[];bMap[b.due_day].push({name:b.bill_name,c:'a'});});
   let html='';D7.forEach(d=>html+=`<div class="cal-dh">${d}</div>`);
   for(let i=0;i<first.getDay();i++)html+='<div></div>';
   const cMap={r:'red',b:'blu',a:'amb',d:'t3'};
@@ -1537,16 +1574,17 @@ async function renderFinCal(){
     const isToday=day===now.getDate();const bills=bMap[day]||[];
     html+=`<div style="min-height:56px;background:var(--s2);border:1px solid ${isToday?'var(--red)':'var(--b1)'};border-radius:6px;padding:4px">
       <div style="font-size:11px;font-weight:600;margin-bottom:2px;color:${isToday?'var(--red)':'var(--t3)'}">${day}</div>
-      ${bills.map(b=>`<div style="font-size:9px;padding:1px 4px;border-radius:3px;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--${cMap[b.c]||'t3'}-l);color:var(--${cMap[b.c]||'t3'})">${b.name}</div>`).join('')}
+      ${bills.map(b=>`<div style="font-size:9px;padding:1px 4px;border-radius:3px;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--${cMap[b.c]||'t3'}-l);color:var(--${cMap[b.c]||'t3'})">${escapeHtml(b.name)}</div>`).join('')}
     </div>`;
   }
   el.innerHTML=html;
 }
 async function renderRoadmap(){
-  const rdmData=CONTENT.schedule?.financial_roadmap?.['debt-payoff'];if(!rdmData)return;
-  const{data:rs}=await sb.from('roadmap_status').select('*').eq('user_id',PROFILE.id);
-  const rsMap={};(rs||[]).forEach(r=>rsMap[r.step_number]=r.status);
   const el=document.getElementById('roadmap-list');if(!el)return;
+  const rdmData=CONTENT.schedule?.financial_roadmap?.['debt-payoff'];
+  if(!rdmData){el.innerHTML='<p>No financial roadmap is configured. Use Goals to set your priorities.</p><button class="btn btn-o" onclick="goto(\'goals\')">Open Goals</button>';return;}
+  const rs=await readSection(sb.from('roadmap_status').select('*').eq('user_id',PROFILE.id),'roadmap-list');if(!rs)return;
+  const rsMap={};(rs||[]).forEach(r=>rsMap[r.step_number]=r.status);
   el.innerHTML=rdmData.steps.map(s=>`<div class="card" style="margin-bottom:7px;border-left:3px solid var(--${s.col})"><div style="display:flex;gap:12px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--${s.col});line-height:1;flex-shrink:0">${s.num}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:3px"><div style="font-size:13px;font-weight:600">${s.action}</div><div style="display:flex;gap:6px;align-items:center"><span class="badge b-d">${s.timing}</span><select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:120px" onchange="saveRoadmap(${s.num},this.value)"><option${rsMap[s.num]==='Not Started'?' selected':''}>Not Started</option><option${rsMap[s.num]==='In Progress'?' selected':''}>In Progress</option><option${rsMap[s.num]==='Complete'?' selected':''}>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">${s.why}</div></div></div></div>`).join('');
 }
 async function saveRoadmap(num,val){await sb.from('roadmap_status').upsert({user_id:PROFILE.id,step_number:num,status:val});}
@@ -1785,14 +1823,12 @@ function editStat(elId, key, defaultVal, unit){
 async function saveStat(elId,key,unit,value){
   const v=parseFloat(value);
   const col=STAT_COL[key];
-  if(!isNaN(v)&&v>0&&col){
-    PROFILE[col]=v;
-    await sb.from('profiles').update({[col]:v}).eq('id',PROFILE.id);
-  }
-  const display=(col&&PROFILE[col])||v||(key==='tgt_weight'?165:key==='cal_target'?1900:185);
-  const el=document.getElementById(elId);
-  if(el)el.textContent=display.toLocaleString()+(unit==='g'?'g':'');
-  toast('Saved: '+display+(unit==='g'?'g':' '+unit));
+  if(!Number.isFinite(v)||v<=0||!col){toast('Enter a positive number.');return;}
+  return writeRecord('stat-'+col,'profiles',{[col]:v},{id:PROFILE.id},()=>{
+    PROFILE[col]=v;loadDashStats();
+    const el=document.getElementById(elId);if(el)el.textContent=v.toLocaleString()+(unit==='g'?'g':'');
+    toast('Saved: '+v+(unit==='g'?'g':' '+unit));
+  });
 }
 function loadDashStats(){
   const tgt=PROFILE.target_weight??165;
@@ -1960,6 +1996,7 @@ async function removeGoal(secIdx,goalIdx){
 renderGoals=function(){
   const el=document.getElementById('goals-list');if(!el)return;
   const data=getUserGoalData();
+  if(!data.length){el.innerHTML='<p>No goals yet. Add a goal, then link tasks to it from To Do List.</p><button class="btn btn-r" onclick="openAddGoal()">+ Add New Goal</button>';return;}
   el.innerHTML=data.map((gs,si)=>`
     <div class="sh">${gs.sec}</div>
     ${gs.goals.map((g,gi)=>`
@@ -2010,14 +2047,6 @@ renderFinancial=async function(){
   await _origRenderFinancial();
   await updateFinancialBoxes();
 }
-const _origSaveDebt=saveDebt;
-saveDebt=async function(){await _origSaveDebt();await updateFinancialBoxes();}
-const _origRemoveDebt=removeDebt;
-removeDebt=async function(id){await _origRemoveDebt(id);await updateFinancialBoxes();}
-const _origSaveSub=saveSub;
-saveSub=async function(){await _origSaveSub();await updateFinancialBoxes();}
-const _origRemoveSub=removeSub;
-removeSub=async function(id){await _origRemoveSub(id);await updateFinancialBoxes();}
 
 // ── PATCH enterApp to load dash stats ───────────────────────────
 const _origEnterApp=enterApp;
@@ -2079,14 +2108,12 @@ function editTakeHome(){
   el.innerHTML=`<input type="number" value="${cur}" step="1" style="width:90px;background:none;border:none;border-bottom:2px solid var(--grn);color:var(--grn);font-family:Bebas Neue,sans-serif;font-size:inherit;text-align:center;outline:none" onblur="saveTakeHome(this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
   el.querySelector('input').select();
 }
-function saveTakeHome(value){
-  const v=parseFloat(value);
-  if(!isNaN(v)&&v>0){
-    PROFILE.take_home_pay=v;
-    sb.from('profiles').update({take_home_pay:v}).eq('id',PROFILE.id);
-  }
-  updateFinancialBoxes();
+async function saveTakeHome(value){
+  const v=Number(value);
+  if(!Number.isFinite(v)||v<0){toast('Enter a nonnegative take-home amount.');return;}
+  return writeRecord('take-home','profiles',{take_home_pay:v},{id:PROFILE.id},()=>{PROFILE.take_home_pay=v;updateFinancialBoxes();toast('Take-home pay saved.');});
 }
+
 updateFinancialBoxes=async function(){
   const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
   const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
@@ -2208,6 +2235,7 @@ function openAddGoalForSection(sectionIndex){
 renderGoals=function(){
   const el=document.getElementById('goals-list');if(!el)return;
   const data=getUserGoalData();
+  if(!data.length){el.innerHTML='<p>No goals yet. Add a goal, then link tasks to it from To Do List.</p><button class="btn btn-r" onclick="openAddGoal()">+ Add New Goal</button>';return;}
   el.innerHTML=data.map((gs,si)=>`
     <div class="sh">${escapeHtml(gs.sec)}</div>
     ${gs.goals.map((g,gi)=>`
@@ -2317,11 +2345,17 @@ openMealModal=function(){
 
 // ── NUTRITION PAGE — FRACTION-STYLE PROGRESS BOXES ──────────────
 renderNutrition=async function(){
-  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
-  if(!mPlan)return;
-  const tgt=mPlan.targets;
+  if(!PROFILE)return;
+  const epoch=_authEpoch,userId=PROFILE.id;
+  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit']||{};
+  const tgt=getNutritionTargets();
   // Fetch consumed meals first
-  const{data:meals2}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  const{data:meals2,error}=await sb.from('meal_logs').select('*').eq('user_id',userId).eq('log_date',todayStr()).order('created_at');
+  if(epoch!==_authEpoch)return;
+  if(error){
+    for(const id of ['nut-targets','nut-bars','nut-remaining','meal-entries']){const el=document.getElementById(id);if(el)el.textContent='Nutrition unavailable. Please retry.';}
+    return;
+  }
   const tot={cal:0,pro:0,car:0,fat:0};
   (meals2||[]).forEach(m=>{tot.cal+=m.calories||0;tot.pro+=m.protein_g||0;tot.car+=m.carbs_g||0;tot.fat+=m.fat_g||0;});
   // Fraction-style progress boxes
@@ -2354,7 +2388,7 @@ renderNutrition=async function(){
   const barsEl=document.getElementById('nut-bars');if(barsEl)barsEl.innerHTML='';
   const remEl=document.getElementById('nut-remaining');if(remEl)remEl.innerHTML='';
   // Meal entries list
-  const{data:mealEntries}=await sb.from('meal_logs').select('*').eq('user_id',PROFILE.id).eq('log_date',todayStr()).order('created_at');
+  const mealEntries=meals2||[];
   const mEl=document.getElementById('meal-entries');
   if(mEl)mEl.innerHTML=(mealEntries||[]).map(m=>{const mealId=safeIdentifier(m.id);return`<div class="meal-entry"><div class="meal-entry-name">${escapeHtml(m.meal_name)}</div><div class="meal-macros">${Number(m.calories)||0}cal - ${Number(m.protein_g)||0}P - ${Number(m.carbs_g)||0}C - ${Number(m.fat_g)||0}F</div>${mealId?`<button class="meal-del" onclick="deleteMeal('${mealId}')" aria-label="Remove ${escapeAttr(m.meal_name)} from today's meals">x</button>`:''}</div>`;}).join('')
     ||(mealEntries?.length===0?'<div style="color:var(--t3);font-size:12px;padding:6px 0">No meals logged yet today.</div>':'');
@@ -2384,57 +2418,6 @@ function quickLogPlanMeal(category,index){
   if(meal)quickLog(meal.name,Number(meal.cal)||0,Number(meal.protein)||0,Number(meal.carbs)||0,Number(meal.fat)||0);
 }
 
-// ── ICS CALENDAR IMPORT ─────────────────────────────────────────
-async function importICS(input){
-  const file=input.files?.[0];if(!file){return;}
-  toast('Reading '+file.name+'...');
-  const text=await file.text();
-  const events=parseICS(text);
-  if(!events.length){toast('No events found in file.');input.value='';return;}
-  let imported=0,skipped=0;
-  for(const ev of events){
-    if(!ev.date||!ev.title)continue;
-    const{error}=await sb.from('calendar_events').insert({
-      user_id:PROFILE.id,
-      event_date:ev.date,
-      event_time:ev.time||'09:00',
-      title:ev.title.slice(0,100),
-      event_type:'b',
-    });
-    if(!error)imported++;else skipped++;
-  }
-  toast(`Imported ${imported} event${imported!==1?'s':''} from ${file.name}${skipped?' ('+skipped+' skipped)':''}`);
-  input.value='';
-  renderCal();
-}
-function parseICS(text){
-  const events=[];let cur=null;
-  const lines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
-  for(let i=0;i<lines.length;i++){
-    let line=lines[i];
-    // Handle line folding (lines starting with space/tab are continuations)
-    while(i+1<lines.length&&(lines[i+1].startsWith(' ')||lines[i+1].startsWith('\t'))){
-      i++;line+=lines[i].slice(1);
-    }
-    if(line==='BEGIN:VEVENT'){cur={};}
-    else if(line==='END:VEVENT'){if(cur&&cur.date&&cur.title)events.push(cur);cur=null;}
-    else if(cur){
-      const colon=line.indexOf(':');if(colon<0)continue;
-      const key=line.slice(0,colon).split(';')[0].toUpperCase();
-      const val=line.slice(colon+1);
-      if(key==='SUMMARY')cur.title=val.replace(/\\n/g,' ').replace(/\\,/g,',').trim();
-      else if(key==='DTSTART'||key==='DTSTART'){
-        const clean=val.replace(/[TZ]/g,'').replace(/-/g,'');
-        if(clean.length>=8){
-          cur.date=clean.slice(0,4)+'-'+clean.slice(4,6)+'-'+clean.slice(6,8);
-          if(clean.length>=12)cur.time=clean.slice(8,10)+':'+clean.slice(10,12);
-        }
-      }
-    }
-  }
-  return events;
-}
-
 // ── PATCH setMealTab to handle removed manual tab ────────────────
 const _origSetMealTab=setMealTab;
 setMealTab=function(tab,btn){
@@ -2461,7 +2444,9 @@ function getHabitLabel(id){
 // ── PATCH renderDash to show proper habit labels in heatmap ──────
 const _origRenderDash=renderDash;
 renderDash=async function(){
+  const epoch=_authEpoch;
   await _origRenderDash();
+  if(epoch!==_authEpoch||!PROFILE)return;
   // Re-render the habit heatmap with clean labels
   const wdEl=document.getElementById('dash-week');if(!wdEl)return;
   // The heatmap was already rendered in _origRenderDash, but with raw IDs.
@@ -2709,11 +2694,7 @@ async function detectAndSaveTimezone(){
   if(PROFILE.timezone)return; // already saved
   const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
   if(!tz)return;
-  try{
-    await sb.from('profiles').update({timezone:tz}).eq('id',PROFILE.id);
-    PROFILE.timezone=tz;
-    console.log('[tz] detected and saved:',tz);
-  }catch(e){console.warn('[tz] could not save timezone:',e);}
+  return writeRecord('detect-timezone','profiles',{timezone:tz},{id:PROFILE.id},()=>{PROFILE.timezone=tz;});
 }
 
 // Patch enterApp to run timezone detection before rendering
@@ -2722,25 +2703,6 @@ enterApp=async function(){
   if(_s1_origEnterApp)await _s1_origEnterApp();
   await detectAndSaveTimezone();
 };
-
-// Also patch the onAuthStateChange profile load path to save timezone early
-// We do this by wrapping loadProfile
-const _s1_origLoadProfile=typeof loadProfile==='function'?loadProfile:null;
-if(_s1_origLoadProfile){
-  loadProfile=async function(session){
-    const profile=await _s1_origLoadProfile(session);
-    if(profile&&!profile.timezone){
-      const tz=Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if(tz){
-        try{
-          await sb.from('profiles').update({timezone:tz}).eq('id',profile.id);
-          profile.timezone=tz;
-        }catch(e){}
-      }
-    }
-    return profile;
-  };
-}
 
 // ── ITEM 4: Push-back logic with escalating responses ────────────
 async function pushBackTodo(id){
@@ -2948,8 +2910,11 @@ async function dashMarkDone(id){await markTodoDone(id);}
 // Patch renderDash to also render the todo panel
 const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
 renderDash=async function(){
+  const epoch=_authEpoch;
   if(_s2_origRenderDash)await _s2_origRenderDash();
+  if(epoch!==_authEpoch||!PROFILE)return;
   await renderDashTodos();
+  if(epoch!==_authEpoch||!PROFILE)return;
   loadDashStats();
 };
 
@@ -2967,8 +2932,8 @@ goto=function(pid){
 
 // ── BILLS CRUD ───────────────────────────────────────────────────
 async function renderBillsList(){
-  const{data:bills,error}=await sb.from('bills_tracker').select('*')
-    .eq('user_id',PROFILE.id).order('due_day',{ascending:true});
+  const bills=await readSection(sb.from('bills_tracker').select('*')
+    .eq('user_id',PROFILE.id).order('due_day',{ascending:true}),'bill-list');if(!bills)return;
   const el=document.getElementById('bill-list');if(!el)return;
   if(!bills?.length){
     el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:4px 0">No bills tracked.</div>';
@@ -2989,6 +2954,7 @@ async function renderBillsList(){
 }
 
 async function openBillModal(editId){
+  const epoch=_authEpoch;
   document.getElementById('bill-modal-title').textContent=editId?'EDIT BILL':'ADD BILL';
   document.getElementById('bill-edit-id').value=editId||'';
   document.getElementById('bill-name').value='';
@@ -2999,6 +2965,7 @@ async function openBillModal(editId){
     openModal('bill-modal');
   }else{
     const{data,error}=await sb.from('bills_tracker').select('*').eq('id',editId).eq('user_id',PROFILE.id).single();
+    if(epoch!==_authEpoch)return;
     if(error||!data){toast('Could not load bill');return;}
     document.getElementById('bill-name').value=data.bill_name||'';
     document.getElementById('bill-amount').value=data.amount??'';
@@ -3018,33 +2985,31 @@ async function saveBill(){
   const isVariable=document.getElementById('bill-variable').value==='1';
   const editId=document.getElementById('bill-edit-id').value;
   const payload={user_id:PROFILE.id,bill_name:name,amount,due_day:dueDay,is_variable:isVariable};
-  let error;
-  if(editId){
-    ({error}=await sb.from('bills_tracker').update(payload).eq('id',editId).eq('user_id',PROFILE.id));
-  }else{
-    ({error}=await sb.from('bills_tracker').insert(payload));
-  }
-  if(error){toast('Could not save bill');console.error('[bill] save failed:',error);return;}
-  closeModal('bill-modal');
-  await Promise.all([renderBillsList(),updateFinancialBoxes(),renderFinCal()]);
-  toast(editId?'Bill updated!':'Bill added!');
+  return writeRecord('bill','bills_tracker',payload,editId?{id:editId}:null,()=>{
+    closeModal('bill-modal');renderBillsList();updateFinancialBoxes();renderFinCal();toast(editId?'Bill updated!':'Bill added!');
+  });
 }
 
 async function removeBill(id){
+  const epoch=_authEpoch;
   if(!await confirmDialog('Remove this bill?'))return;
-  const{error}=await sb.from('bills_tracker').delete().eq('id',id).eq('user_id',PROFILE.id);
-  if(error){toast('Error removing bill: '+error.message);console.error('[bill] remove failed:',error);return;}
-  await Promise.all([renderBillsList(),updateFinancialBoxes(),renderFinCal()]);
-  toast('Bill removed');
+  if(epoch!==_authEpoch)return;
+  return Writes.run('bill-delete-'+id,{id},ctx=>API.records.write('bills_tracker',ctx.userId,{}, {match:{id},remove:true}),()=>{renderBillsList();updateFinancialBoxes();renderFinCal();toast('Bill removed');});
 }
 
 // ── UPDATED updateFinancialBoxes (5-box: includes bills) ─────────
 updateFinancialBoxes=async function(){
+  if(!PROFILE)return;const epoch=_authEpoch;
   const results=await Promise.allSettled([
     sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id),
     sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id),
     sb.from('bills_tracker').select('amount,due_day').eq('user_id',PROFILE.id),
   ]);
+  if(epoch!==_authEpoch)return;
+  if(results.some(r=>r.status==='rejected'||r.value.error)){
+    for(const id of ['fin-bills-total','fin-subs-total','fin-free-cash','fin-total-debt']){const el=document.getElementById(id);if(el)el.textContent='Unavailable';}
+    return;
+  }
   const debts=results[0].status==='fulfilled'?results[0].value.data||[]:[];
   const subs=results[1].status==='fulfilled'?results[1].value.data||[]:[];
   const bills=results[2].status==='fulfilled'?results[2].value.data||[]:[]; results.forEach((r,i)=>{if(r.status==='rejected')console.error('[fin] financial query '+(i+1)+' failed:',r.reason);});
@@ -3083,7 +3048,8 @@ updateFinancialBoxes=async function(){
 
 // ── UPDATED renderFinancial to include bills ─────────────────────
 renderFinancial=async function(){
-  const safe=async(fn,name)=>{try{await fn();}catch(e){console.error('[fin] '+name+':',e);}};
+  const epoch=_authEpoch;
+  const safe=async(fn,name)=>{if(epoch!==_authEpoch||!PROFILE)return;try{await fn();}catch(_){if(epoch===_authEpoch)toast('Financial data could not be loaded.');}};
   await safe(renderDebtList,'renderDebtList');
   await safe(renderBillsList,'renderBillsList');
   await safe(renderSubList,'renderSubList');
@@ -3093,24 +3059,6 @@ renderFinancial=async function(){
 };
 
 // Bills are now fetched inside the base renderFinCal — no override needed.
-
-// ── PATCH saveBill/removeDebt/removeSub hooks already in place ───
-// Wrap existing removeDebt and removeSub to also call updateFinancialBoxes
-const _s3_origRemoveDebt=typeof removeDebt==='function'?removeDebt:null;
-if(_s3_origRemoveDebt){
-  removeDebt=async function(id){
-    await _s3_origRemoveDebt(id);
-    await updateFinancialBoxes();
-  };
-}
-const _s3_origRemoveSub=typeof removeSub==='function'?removeSub:null;
-if(_s3_origRemoveSub){
-  removeSub=async function(id){
-    await _s3_origRemoveSub(id);
-    await updateFinancialBoxes();
-  };
-}
-
 
 // ════════════════════════════════════════════════════════════════
 // STAGE 4 — DB-powered content loading
@@ -3161,7 +3109,7 @@ async function loadWorkoutPlansFromDB(){
   ]);
   const plans=templateResult.data||[];
   const userPlans=userResult.data||[];
-  if(templateResult.error||(!plans.length&&!userPlans.length))return null;
+  if(templateResult.error||userResult.error||(!plans.length&&!userPlans.length))return null;
   const knee=typeof workouts!=='undefined'?workouts?.knee_rehab:null;
   // Keyed by plan_key (matches the shape expected by renderWorkout)
   const plansObj={};
@@ -3203,7 +3151,6 @@ async function loadWorkoutPlansFromDB(){
 async function loadRecipesFromDB(){
   try{
     const recs=await API.recipes.list();
-    if(!recs?.length)return null;
     // Group recipes by their flavor profile ID
     const profileMap={};
     recs.forEach(r=>{
@@ -3213,7 +3160,7 @@ async function loadRecipesFromDB(){
       const rows=[];
       if(r.dry_rub)rows.push({label:'Dry Rub / Spices',spices:r.dry_rub});
       if(r.sauce)rows.push({label:'Sauce / Liquid',spices:r.sauce});
-      profileMap[r.profile_id].recipes.push({name:r.name,color:r.color_tag||'green',rows,method:r.method||'',id:r.id,rating:r.rating});
+      profileMap[r.profile_id].recipes.push({...r,_isTemplate:!!r.is_template,color:r.color_tag||'green',rows,method:r.method||''});
     });
     // Custom recipes are stored in the recipes table (created_by = PROFILE.id, is_template = false)
     // and are already included in the SELECT above, so no localStorage fallback is needed.
@@ -3282,7 +3229,7 @@ renderHabits=async function(){
   }catch(e){
     Logger.error('habits','renderHabits.catch',e);
     if(epoch!==_authEpoch||requestedDate!==habitDate)return;
-    hData=State.cacheGet(userId,'habits_'+requestedDate)||[];
+    const el=document.getElementById('h-habits-list');if(el)el.textContent='Habits could not be loaded. Please retry.';return;
   }
   habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
   const secs=getUserHabitSecs();
@@ -3321,7 +3268,9 @@ renderHabits=async function(){
 // ── FIX toggleHabit to also update dashboard heatmap cell ────────
 const _fixOrigToggleHabit=typeof toggleHabit==='function'?toggleHabit:null;
 toggleHabit=async function(hid){
+  const epoch=_authEpoch,date=habitDate;
   if(_fixOrigToggleHabit)await _fixOrigToggleHabit(hid);
+  if(epoch!==_authEpoch||habitDate!==date)return;
   // Update the hcheck div styling directly for instant feedback
   const hc=document.getElementById('hc-'+hid);
   const hb=document.getElementById('hb-'+hid);
@@ -3514,9 +3463,11 @@ function updateRemainingDisplay(){
 
 // ── FETCH TODAY'S REMAINING MACROS ───────────────────────────────
 async function fetchRemainingMacros(){
-  const plan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
-  const tgt=plan?.targets||{calories:1900,protein_g:185,carbs_g:175,fat_g:55};
-  const{data:logs}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  if(!PROFILE)return;
+  const epoch=_authEpoch,tgt=getNutritionTargets();
+  const{data:logs,error}=await sb.from('meal_logs').select('calories,protein_g,carbs_g,fat_g').eq('user_id',PROFILE.id).eq('log_date',todayStr());
+  if(epoch!==_authEpoch)return;
+  if(error){mealModal.remaining={cal:99999,pro:99999,car:99999,fat:99999};updateRemainingDisplay();toast('Remaining nutrition could not be loaded.');return;}
   const consumed={cal:0,pro:0,car:0,fat:0};
   (logs||[]).forEach(l=>{consumed.cal+=l.calories||0;consumed.pro+=l.protein_g||0;consumed.car+=l.carbs_g||0;consumed.fat+=l.fat_g||0;});
   mealModal.remaining={
@@ -3593,8 +3544,8 @@ const _debouncedLibSearch=debounce(()=>renderLibrary(),300);
 
 // ── UPDATE quickLogClose to track usage + accept mealId ──────────
 const _s5_origQuickLogClose=quickLogClose;
-quickLogClose=function(name,cal,pro,car,fat,mealId){
-  addMealEntry(name,cal,pro,car,fat);
+quickLogClose=async function(name,cal,pro,car,fat,mealId){
+  if(!await addMealEntry(name,cal,pro,car,fat))return;
   closeModal('meal-modal');
   toast('Logged: '+name);
   // Track usage in DB (non-blocking)
@@ -3607,8 +3558,8 @@ quickLogClose=function(name,cal,pro,car,fat,mealId){
 
 // Also patch quickLog (used from nutrition reference panel)
 const _s5_origQuickLog=typeof quickLog==='function'?quickLog:null;
-quickLog=function(name,cal,pro,car,fat,mealId){
-  addMealEntry(name,cal,pro,car,fat);
+quickLog=async function(name,cal,pro,car,fat,mealId){
+  if(!await addMealEntry(name,cal,pro,car,fat))return;
   toast('Logged: '+name);
   if(mealId)sb.rpc('increment_meal_usage',{meal_id:mealId}).then(()=>{}).catch(()=>{});
   fetchRemainingMacros();
@@ -3672,22 +3623,17 @@ submitMeal=async function(){
     const car=+document.getElementById('c-car')?.value||0;
     const fat=+document.getElementById('c-fati')?.value||0;
     if(!cal&&!pro){toast('Select ingredients or enter macros');return;}
-    // Save to meals table in DB with auto-suggested tags
-    const tags=suggestMealTags(name,pk,sk,'');
-    try{
-      const{data:newMeal,error:mealErr}=await sb.from('meals').insert({
-        name,meal_type:'custom',calories:cal,protein_g:pro,carbs_g:car,fat_g:fat,
-        instructions:name,tags,is_template:false,created_by:PROFILE.id
-      }).select().single();
-      if(mealErr){console.error('[meal] insert failed:',mealErr.message);}
-      else if(newMeal){toast('Custom meal saved to your library!');}
-    }catch(e){console.error('[meal] unexpected error saving custom meal:',e.message);}
-    // Log it regardless
-    ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
-    await addMealEntry(name,cal,pro,car,fat);
-    closeModal('meal-modal');
-    toast('Logged: '+name);
-    fetchRemainingMacros();
+    if([cal,pro,car,fat].some(v=>!Number.isFinite(v)||v<0)){toast('Enter nonnegative, finite macros.');return;}
+    const log={meal_name:name,log_date:todayStr(),calories:cal,protein_g:pro,carbs_g:car,fat_g:fat};
+    const library={name,meal_type:'custom',calories:cal,protein_g:pro,carbs_g:car,fat_g:fat,
+      instructions:name,tags:suggestMealTags(name,pk,sk,''),is_template:false};
+    await Writes.run('custom-meal',{log,library},async ctx=>{
+      await ctx.step('library',()=>API.records.write('meals',ctx.userId,library,{id:ctx.id('library')}));
+      return ctx.step('log',()=>API.records.write('meal_logs',ctx.userId,log,{id:ctx.id('log')}));
+    },()=>{
+      ['c-cal','c-pro','c-car','c-fati'].forEach(id=>{const el=document.getElementById(id);if(el)delete el.dataset.manual;});
+      closeModal('meal-modal');toast('Meal saved to your library and logged.');renderNutrition();fetchRemainingMacros();
+    });
     return;
   }
   if(_s5_origSubmitMeal)await _s5_origSubmitMeal();
@@ -3708,14 +3654,15 @@ const bookState={
 
 // ── LOAD BOOKS FROM DB (proper format for renderBooks) ───────────
 loadBooksFromDB=async function(){
-  if(!PROFILE)return null;
+  if(!PROFILE)return null;const epoch=_authEpoch;
   const{data:userList,error}=await sb.from('user_reading_list')
     .select('*,books!inner(*)')
     .eq('user_id',PROFILE.id)
     .order('month_plan',{nullsLast:true})
     .order('created_at');
-  if(error||!userList?.length)return null;
-  const booksArr=userList.map((ul,idx)=>({
+  if(epoch!==_authEpoch)return null;
+  if(error)throw new Error('Reading list unavailable');
+  const booksArr=(userList||[]).map((ul,idx)=>({
     id:ul.book_id,             // UUID — used for all DB operations
     _url_id:ul.id,             // user_reading_list row UUID
     title:ul.books.title,
@@ -3779,13 +3726,14 @@ function setLibGenre(genre,btn){
 
 // ── RENDER LIBRARY BROWSER ───────────────────────────────────────
 async function renderLibrary(){
+  if(!PROFILE)return;const epoch=_authEpoch;
   const el=document.getElementById('lib-list');if(!el)return;
   el.innerHTML='<div style="color:var(--t3);text-align:center;padding:20px">Loading library...</div>';
   const search=(document.getElementById('lib-search')?.value||'').toLowerCase().trim();
   // Fetch all template books
-  const{data:allBooks}=await sb.from('books').select('*').eq('is_template',true).order('title');
+  const allBooks=await readSection(sb.from('books').select('*').eq('is_template',true).order('title'),'lib-list');if(!allBooks||epoch!==_authEpoch)return;
   // Get user's shelf for "already added" check
-  const{data:userList}=await sb.from('user_reading_list').select('book_id').eq('user_id',PROFILE.id);
+  const userList=await readSection(sb.from('user_reading_list').select('book_id').eq('user_id',PROFILE.id),'lib-list');if(!userList||epoch!==_authEpoch)return;
   const onShelf=new Set((userList||[]).map(u=>u.book_id));
   // Apply filters
   let filtered=(allBooks||[]);
@@ -3820,19 +3768,20 @@ async function renderLibrary(){
 // ── ADD TO SHELF ──────────────────────────────────────────────────
 async function addToShelf(bookId){
   if(!safeIdentifier(bookId))return;
-  const{data:existing}=await sb.from('user_reading_list').select('id').eq('user_id',PROFILE.id).eq('book_id',bookId).maybeSingle();
-  if(existing){toast('Already on your shelf!');return;}
-  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:bookId,status:'To Be Read',format:'Physical'});
-  toast('Book added to your shelf');
-  renderLibrary(); // refresh "On Shelf" buttons
+  await Writes.run('shelf-'+bookId,{bookId},async ctx=>{
+    const {data,error}=await sb.from('user_reading_list').select('id').eq('user_id',ctx.userId).eq('book_id',bookId).maybeSingle();
+    ctx.check();if(error)throw error;
+    return data||API.records.write('user_reading_list',ctx.userId,{book_id:bookId,status:'To Be Read',format:'Physical'},{id:ctx.id()});
+  },()=>{toast('Book is on your shelf');renderLibrary();});
 }
 
 // ── FETCH + SORT BOOKS (data only, no DOM) ────────────────────────
 /** Loads books from DB, merges into CONTENT, applies localStorage sort order.
  * @returns {Array} sorted book array, or empty array on failure */
 async function fetchAndSortBooks(){
-  const fresh=await loadBooksFromDB();
-  if(fresh)CONTENT.books=fresh;
+  const epoch=_authEpoch;const fresh=await loadBooksFromDB();
+  if(epoch!==_authEpoch||!PROFILE||!fresh)return null;
+  CONTENT.books=fresh;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];
   if(!listData)return[];
@@ -3904,12 +3853,17 @@ function buildBookCardHtml(bk,idx){
 
 // ── UPDATED renderBooks (orchestrator: fetch → sort → render) ─────
 renderBooks=async function(){
-  const bks=await fetchAndSortBooks();
+  if(!PROFILE)return;const epoch=_authEpoch;
+  let bks;try{bks=await fetchAndSortBooks();}catch(_){if(epoch===_authEpoch){document.getElementById('book-list').textContent='Reading list unavailable. Please retry.';document.getElementById('cur-book-wrap').style.display='none';}return;}
+  if(epoch!==_authEpoch||!bks)return;
   if(!bks.length){
+    bookState.curBookId=null;bookState.curBookPages=0;
+    document.getElementById('cur-book-wrap').style.display='none';
     const el=document.getElementById('book-list');
     if(el)el.innerHTML='<div style="color:var(--t3);padding:20px;text-align:center">No books on your shelf yet. Browse the Library tab to add some.</div>';
     return;
   }
+  document.getElementById('cur-book-wrap').style.display=bookState.view==='shelf'?'':'none';
   const reading=bks.find(b=>b.status==='Reading')||bks[0];
   renderCurrentlyReadingCard(reading);
   const el=document.getElementById('book-list');if(!el)return;
@@ -3917,36 +3871,29 @@ renderBooks=async function(){
 };
 // ── UPDATED interaction functions (write to user_reading_list) ────
 setBookStatus=async function(bookId,status){
-  const{error}=await sb.from('user_reading_list').update({status}).eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(error){toast('Error updating status: '+error.message);console.error('[book] setBookStatus failed:',error);return;}
-  toast('Status: '+status);
-  await renderBooks();
+  if(!['To Be Read','Reading','Read','Dropped'].includes(status))return;
+  return writeRecord('book-status-'+bookId,'user_reading_list',{status},{book_id:bookId},()=>{toast('Status: '+status);renderBooks();});
 };
 setRating=async function(bookId,rating){
-  const{error}=await sb.from('user_reading_list').update({rating}).eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(error){toast('Error saving rating: '+error.message);console.error('[book] setRating failed:',error);return;}
-  await renderBooks();
+  if(!Number.isInteger(rating)||rating<1||rating>5)return;
+  return writeRecord('book-rating-'+bookId,'user_reading_list',{rating},{book_id:bookId},()=>renderBooks());
 };
 toggleFormat=async function(bookId,format){
-  const{error}=await sb.from('user_reading_list').update({format}).eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(error){toast('Error saving format: '+error.message);console.error('[book] toggleFormat failed:',error);return;}
-  await renderBooks();
+  if(!['Physical','Audiobook','Ebook'].includes(format))return;
+  return writeRecord('book-format-'+bookId,'user_reading_list',{format},{book_id:bookId},()=>renderBooks());
 };
 
 // ── PAGE PROGRESS ─────────────────────────────────────────────────
 async function savePageProgress(bookId,totalPages,currentPage){
-  const cp=parseInt(currentPage)||0;
+  const cp=Number(currentPage);
+  if(!Number.isInteger(cp)||cp<0||(totalPages>0&&cp>totalPages)){toast('Enter a page between zero and the book length.');return;}
   const tz=PROFILE.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today=new Date().toLocaleDateString('en-CA',{timeZone:tz});
   const updates={current_page:cp};
-  if(cp>0)updates.started_at=today;
+  const book=Object.values(CONTENT.books?.lists||{}).flatMap(list=>list.books||[]).find(b=>b.id===bookId);
+  if(cp>0&&!book?.started_at)updates.started_at=today;
   if(totalPages>0&&cp>=totalPages){updates.finished_at=today;updates.status='Read';}
-  const{error}=await sb.from('user_reading_list').update(updates).eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(error){toast('Error saving progress: '+error.message);console.error('[book] savePageProgress failed:',error);return;}
-  if(bookId===bookState.curBookId){
-    const pct=totalPages>0?Math.round(cp/totalPages*100):0;
-    const rp=document.getElementById('read-pct');if(rp)rp.textContent=pct+'%';
-  }
+  return writeRecord('book-progress-'+bookId,'user_reading_list',updates,{book_id:bookId},()=>renderBooks());
 }
 async function saveCurrentPage(val){
   if(bookState.curBookId)await savePageProgress(bookState.curBookId,bookState.curBookPages,val);
@@ -3954,16 +3901,12 @@ async function saveCurrentPage(val){
 
 // ── REMOVE FROM SHELF ─────────────────────────────────────────────
 async function removeFromShelf(bookId){
+  const epoch=_authEpoch;
   if(!await confirmDialog('Remove this book from your shelf?'))return;
-  const{error}=await sb.from('user_reading_list').delete().eq('user_id',PROFILE.id).eq('book_id',bookId);
-  if(error){toast('Error removing book: '+error.message);console.error('[book] removeFromShelf failed:',error);return;}
-  // Remove book from the persistent order list
-  if(PROFILE.book_list_order){
-    PROFILE.book_list_order=PROFILE.book_list_order.filter(b=>b.id!==bookId);
-    sb.from('profiles').update({book_list_order:PROFILE.book_list_order}).eq('id',PROFILE.id);
-  }
-  toast('Removed from shelf');
-  await renderBooks();
+  if(epoch!==_authEpoch)return;
+  await Writes.run('shelf-remove-'+bookId,{bookId},ctx=>API.records.write('user_reading_list',ctx.userId,{}, {match:{book_id:bookId},remove:true}),()=>{
+    toast('Removed from shelf');renderBooks();
+  });
 }
 
 // ── ADD CUSTOM BOOK ───────────────────────────────────────────────
@@ -3978,12 +3921,12 @@ window.saveBook=async function(){
   if(!title||!author){toast('Enter title and author');return;}
   const pages=parseInt(document.getElementById('bk-pages')?.value)||0;
   const genre=document.getElementById('bk-genre')?.value||'general';
-  const{data:newBook,error}=await sb.from('books').insert({title,author,genres:[genre],page_count:pages,is_template:false,created_by:PROFILE.id}).select().single();
-  if(error){toast('Error saving book');return;}
-  await sb.from('user_reading_list').insert({user_id:PROFILE.id,book_id:newBook.id,status:'To Be Read',format:'Physical'});
-  closeModal('book-modal');
-  toast('Book added to shelf!');
-  await renderBooks();
+  if(!Number.isInteger(pages)||pages<0){toast('Enter a nonnegative page count.');return;}
+  const payload={title,author,genres:[genre],page_count:pages,is_template:false};
+  await Writes.run('custom-book',payload,async ctx=>{
+    const book=await ctx.step('book',()=>API.records.write('books',ctx.userId,payload,{id:ctx.id('book')}));
+    return ctx.step('shelf',()=>API.records.write('user_reading_list',ctx.userId,{book_id:book.id,status:'To Be Read',format:'Physical'},{id:ctx.id('shelf')}));
+  },()=>{closeModal('book-modal');toast('Book added to shelf!');renderBooks();});
 };
 
 // ── PATCH goto to render library or shelf ─────────────────────────
@@ -3997,23 +3940,16 @@ goto=function(pid){
 };
 
 // ── PATCH moveBook to use position index not month ────────────────
-moveBook=function(id,dir){
+moveBook=async function(id,dir){
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const bks=CONTENT.books?.lists?.[listId]?.books||[];
-  const stored=PROFILE.book_list_order||bks.map(b=>({id:b.id}));
+  const stored=bks.map(b=>({id:b.id}));
   const i=stored.findIndex(b=>b.id===id);
   if(i<0)return;
   const ni=i+dir;
   if(ni<0||ni>=stored.length)return;
   [stored[i],stored[ni]]=[stored[ni],stored[i]];
-  PROFILE.book_list_order=stored;
-  sb.from('profiles').update({book_list_order:stored}).eq('id',PROFILE.id);
-  // Also update CONTENT order
-  if(CONTENT.books?.lists?.[listId]){
-    const orderMap=Object.fromEntries(stored.map((b,idx)=>[b.id,idx]));
-    CONTENT.books.lists[listId].books=[...bks].sort((a,b)=>(orderMap[a.id]??999)-(orderMap[b.id]??999));
-  }
-  renderBooks();
+  await writeRecord('book-order','profiles',{book_list_order:stored},{id:PROFILE.id},()=>{PROFILE.book_list_order=stored;renderBooks();});
 };
 
 
@@ -4038,10 +3974,10 @@ function populatePlanSelector(){
 }
 
 async function switchWorkoutPlan(planKey){
-  await sb.from('profiles').update({assigned_workout_plan:planKey}).eq('id',PROFILE.id);
-  PROFILE.assigned_workout_plan=planKey;
-  renderWorkout();
-  toast('Plan switched to '+CONTENT.workouts?.plans?.[planKey]?.name);
+  if(!CONTENT.workouts?.plans?.[planKey])return;
+  return writeRecord('workout-plan-selection','profiles',{assigned_workout_plan:planKey},{id:PROFILE.id},()=>{
+    PROFILE.assigned_workout_plan=planKey;renderWorkout();toast('Plan switched to '+CONTENT.workouts.plans[planKey].name);
+  });
 }
 
 // Patch renderWorkout to also populate selector + history
@@ -4255,11 +4191,9 @@ async function savePlan(){
   });
   if(!days.length){toast('Add at least one day');return;}
   const normalizedDays=WorkoutService.normalizeCustomDays(days);
-  const{data:savedPlan,error}=await sb.from('user_workout_plans').insert({
-    user_id:PROFILE.id,template_id:null,name,description:desc,is_active:false,
-    custom_days:normalizedDays
-  }).select().single();
-  if(error||!savedPlan){toast('Error saving plan: '+(error?.message||'unknown error'));return;}
+  const epoch=_authEpoch;
+  const payload={template_id:null,name,description:desc,is_active:false,custom_days:normalizedDays};
+  return writeRecord('plan-builder','user_workout_plans',payload,null,async savedPlan=>{
   const planKey='custom_'+savedPlan.id;
   if(!CONTENT.workouts)CONTENT.workouts={plans:{},knee_rehab:null};
   if(!CONTENT.workouts.plans)CONTENT.workouts.plans={};
@@ -4268,11 +4202,9 @@ async function savePlan(){
   toast('Plan "'+name+'" saved!');
   // Ask if user wants to activate it
   if(await confirmDialog('Activate "'+name+'" as your current plan?')){
-    PROFILE.assigned_workout_plan=planKey;
-    await sb.from('user_workout_plans').update({is_active:true}).eq('id',savedPlan.id).eq('user_id',PROFILE.id);
-    await sb.from('profiles').update({assigned_workout_plan:PROFILE.assigned_workout_plan}).eq('id',PROFILE.id);
-    renderWorkout();
+    if(epoch===_authEpoch)await switchWorkoutPlan(planKey);
   }
+  });
 }
 
 // ── goto patch: render history on workout tab open ────────────────
@@ -4309,10 +4241,17 @@ function previewRecipeRating(){
 
 // ── DEFINITIVE renderSpice (DB + rating badges) ───────────────────
 renderSpice=function(){
-  const baseData=CONTENT.spice?.profiles;if(!baseData)return;
+  const baseData=CONTENT.spice?.profiles;
   const tabsEl=document.getElementById('spice-tabs');
   const panelsEl=document.getElementById('spice-panels');
   if(!tabsEl||!panelsEl)return;
+  if(!baseData?.length){
+    tabsEl.innerHTML='';
+    panelsEl.innerHTML=baseData
+      ?'<p>No recipes yet. Add your first recipe to get started.</p><button class="btn btn-r" onclick="openSpiceModal(\'basics\')">+ Add Recipe</button>'
+      :'<p>Could not load recipes.</p><button class="btn btn-o" onclick="retryRecipes()">Retry recipes</button>';
+    return;
+  }
   tabsEl.innerHTML=baseData.map((p,i)=>`<button class="tb${i===0?' on':''}" onclick="setSpiceTab(${i})">${escapeHtml((p.label||p.id).split(' ').slice(0,2).join(' '))}</button>`).join('');
   panelsEl.innerHTML=baseData.map((p,i)=>`
     <div class="spice-panel" id="sp-${i}" style="display:${i===0?'block':'none'}">
@@ -4350,6 +4289,13 @@ renderSpice=function(){
     </div>`).join('');
   setSpiceTab(0);
 };
+
+async function retryRecipes(){
+  const epoch=_authEpoch;
+  const fresh=await loadRecipesFromDB();
+  if(epoch!==_authEpoch||!PROFILE)return;
+  CONTENT.spice=fresh;renderSpice();
+}
 
 // ── UPDATED openSpiceModal (loads full DB recipe data) ────────────
 openSpiceModal=async function(profileId,editKey){
@@ -4426,42 +4372,29 @@ saveSpiceRecipe=async function(){
     rating,color_tag:rating==='good'?'green':rating==='needs-care'?'red':'amber',
     is_template:false,created_by:PROFILE.id
   };
-  try{
-    if(editKey&&!isTemplate){
-      // Update existing user recipe in DB
-      await API.recipes.update(payload,editKey,PROFILE.id);
-    }else if(editKey&&isTemplate){
-      // Template recipe — save as NEW custom version (don't modify template)
-      payload.name=name+(name.includes('(Custom)')?'':'');
-      await API.recipes.insert(payload);
-      toast('Saved as your custom version');
-    }else{
-      // New recipe
-      await API.recipes.insert(payload);
-    }
-  }catch(e){Logger.error('spice','saveRecipe.db_error',e);toast('Error saving: '+e.message);console.error(e);return;}
-  Logger.log('spice','saveRecipe.success',{name,editKey});
-  // Refresh content from DB
-  const fresh=await loadRecipesFromDB();
-  if(fresh)CONTENT.spice=fresh;
-  closeModal('spice-modal');
-  spiceEditMode=true;
-  renderSpice();
-  toast(editKey&&!isTemplate?'Recipe updated!':'Recipe saved!');
+  const epoch=_authEpoch;
+  return writeRecord('recipe','recipes',payload,editKey&&!isTemplate?{id:editKey}:null,async()=>{
+    closeModal('spice-modal');toast(editKey&&!isTemplate?'Recipe updated!':'Recipe saved!');
+    const fresh=await loadRecipesFromDB();
+    if(epoch!==_authEpoch)return;
+    if(fresh)CONTENT.spice=fresh;
+    spiceEditMode=true;renderSpice();
+  });
 };
 
 // ── UPDATED removeSpiceRecipe (DB delete, user recipes only) ──────
 removeSpiceRecipe=async function(id){
-  // Check if it's a user recipe
+  if(!PROFILE)return;const epoch=_authEpoch;
   const rec=await API.recipes.getMeta(id);
-  if(rec&&rec.is_template){toast("Library recipes can't be deleted — you can edit them instead");return;}
-  if(rec&&rec.created_by!==PROFILE.id){toast("Can only delete your own recipes");return;}
-  if(!await confirmDialog('Delete this recipe?'))return;
-  await API.recipes.delete(id);
-  const fresh=await loadRecipesFromDB();
-  if(fresh)CONTENT.spice=fresh;
-  renderSpice();
-  toast('Recipe deleted');
+  if(epoch!==_authEpoch)return;
+  if(!rec){toast('Could not load recipe. Please retry.');return;}
+  if(rec.is_template||rec.created_by!==PROFILE.id){toast('Only your own recipes can be removed.');return;}
+  if(!await confirmDialog('Delete this recipe?')||epoch!==_authEpoch)return;
+  await Writes.run('recipe-delete-'+id,{id},ctx=>API.records.write('recipes',ctx.userId,{}, {match:{id},remove:true}),async()=>{
+    toast('Recipe deleted');const fresh=await loadRecipesFromDB();
+    if(epoch!==_authEpoch)return;
+    if(fresh)CONTENT.spice=fresh;renderSpice();
+  });
 };
 
 // ── UPDATED loadRecipesFromDB (marks template vs user recipes) ────
@@ -4471,7 +4404,7 @@ loadRecipesFromDB=async function(){
   Logger.log('recipes','loadFromDB.start');
   try{
     const recs=await API.recipes.list();
-    if(!recs?.length){Logger.log('recipes','loadFromDB.empty');return null;}
+    if(!Array.isArray(recs))throw new Error('Invalid recipe response');
     Logger.log('recipes','loadFromDB.success',{count:recs.length});
     const profileMap={};
     recs.forEach(r=>{

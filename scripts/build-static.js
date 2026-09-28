@@ -22,10 +22,11 @@ prepareBrowser(path.join(output, 'vendor'));
 
 const files = [
   '.nojekyll', 'index.html', 'styles.css', 'logs.js', 'state.js', 'utils.js',
-  'api.js', 'render.js', 'main.js', 'app.js', 'personal-data.js', 'planning.js', 'services/PlanningService.js', 'mfa.js', 'services/MfaService.js',
+  'api.js', 'render.js', 'main.js', 'app.js', 'data-operations.js', 'personal-data.js', 'planning.js', 'services/PlanningService.js', 'mfa.js', 'services/MfaService.js',
   'services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js', 'services/BriefingService.js',
   'services/RecipeService.js', 'services/HabitService.js', 'services/NutritionService.js',
   'services/PersonalDataService.js', 'services/BackupService.js',
+  'services/CalendarImportService.js', 'calendar-import.js',
 ];
 
 for (const relative of files) {

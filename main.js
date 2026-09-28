@@ -93,17 +93,7 @@ window.Main = {
    * @returns {Promise<void>}
    */
   deleteRecipe: async function(id) {
-    Logger.log('main', 'deleteRecipe.start', {id});
-    try {
-      await API.recipes.delete(id);
-      const fresh = await loadRecipesFromDB();
-      if (fresh) CONTENT.spice = fresh;
-      if (typeof renderSpice === 'function') renderSpice();
-      if (typeof toast === 'function') toast('Recipe deleted');
-    } catch(e) {
-      Logger.error('main', 'deleteRecipe', e);
-      if (typeof toast === 'function') toast('Error deleting recipe');
-    }
+    await removeSpiceRecipe(id);
   },
 
   /**

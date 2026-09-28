@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 dist/
+handoff-local/
 graphify-out/
 .claude/
 config.js

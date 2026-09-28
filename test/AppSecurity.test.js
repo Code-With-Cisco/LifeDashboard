@@ -36,13 +36,175 @@ beforeEach(() => {
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
     'services/HabitService.js', 'services/NutritionService.js', 'services/PlanningService.js', 'services/BriefingService.js',
-    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','planning.js','app.js']) {
+    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','planning.js','data-operations.js','services/CalendarImportService.js','calendar-import.js','app.js']) {
     run(read(file));
   }
   run("PROFILE={id:'user-a',timezone:'America/New_York',assigned_workout_plan:'custom'};");
 });
 
 afterEach(() => dom.window.close());
+
+test('empty recipes offer the first add action and clear a previous catalog',async()=>{
+  run("CONTENT.spice={profiles:[{id:'basics',label:'Basics',recipes:[{id:'old',name:'Old recipe'}]}]};renderSpice();");
+  result={data:[],error:null};
+  await run('(async()=>{CONTENT.spice=await loadRecipesFromDB();renderSpice();})()');
+  expect(win.document.getElementById('spice-panels').textContent).not.toContain('Old recipe');
+  expect(win.document.getElementById('spice-panels').textContent).toContain('Add Recipe');
+});
+
+test('unavailable recipes offer retry while empty goals offer an add action',()=>{
+  run('CONTENT.spice=null;renderSpice();renderGoals();');
+  expect(win.document.getElementById('spice-panels').textContent).toContain('Retry recipes');
+  expect(win.document.getElementById('goals-list').textContent).toContain('Add New Goal');
+});
+
+test('timezone detection never accepts an unconfirmed or old-session write',async()=>{
+  run('delete PROFILE.timezone');result={data:null,error:null};
+  await run('detectAndSaveTimezone()');expect(run('PROFILE.timezone')).toBeUndefined();
+  let finish;win.API.records.write=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));
+  const pending=run('detectAndSaveTimezone()');authCallback('SIGNED_OUT',null);run("PROFILE={id:'user-b'}");
+  finish({timezone:'America/New_York'});await pending;expect(run('PROFILE.timezone')).toBeUndefined();
+});
+
+test('a dashboard read finishing after sign-out cannot restore private content',async()=>{
+  let finish;client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderDash()');authCallback('SIGNED_OUT',null);
+  finish({data:[{log_date:'2026-09-28',weight_lbs:201}],error:null});await pending;
+  expect(win.document.getElementById('wt-log').textContent).not.toContain('201');
+  expect(client.from).toHaveBeenCalledTimes(1);
+});
+
+test('failed weight save retains the input and retries with the same ID',async()=>{
+  win.document.getElementById('wt-in').value='200';
+  const ids=[];win.API.records.write=jest.fn(async(_t,_u,_p,opts)=>{ids.push(opts.id);throw new Error('PRIVATE');});
+  await run('logWeight()');await run('logWeight()');
+  expect(win.document.getElementById('wt-in').value).toBe('200');
+  expect(ids[0]).toBe(ids[1]);expect(win.document.getElementById('toast').textContent).not.toContain('Weight logged');
+});
+test('failed preset meal save keeps the modal open and never increments usage',async()=>{
+  run("openModal('meal-modal')");result={data:null,error:{message:'Denied'}};
+  await run("quickLogClose('Lunch',500,40,50,10,'meal-a')");
+  expect(win.document.getElementById('meal-modal').classList.contains('open')).toBe(true);
+  expect(client.rpc).not.toHaveBeenCalled();expect(win.document.getElementById('toast').textContent).not.toContain('Logged:');
+});
+test('custom meal retry does not duplicate the library record after log failure',async()=>{
+  run("mealTab='custom';openModal('meal-modal')");
+  win.document.getElementById('c-meal-name').value='Test lunch';win.document.getElementById('c-cal').value='500';
+  let failed=true;
+  win.API.records.write=jest.fn(async(table,_user,_payload,opts)=>{if(table==='meal_logs'&&failed)throw new Error();return {id:opts.id};});
+  run('renderNutrition=async()=>{};fetchRemainingMacros=async()=>{};');
+  await run('submitMeal()');expect(win.document.getElementById('meal-modal').classList.contains('open')).toBe(true);
+  failed=false;await run('submitMeal()');
+  expect(win.API.records.write.mock.calls.filter(c=>c[0]==='meals')).toHaveLength(1);
+  expect(win.document.getElementById('meal-modal').classList.contains('open')).toBe(false);
+});
+test.each([
+  ['saveDebt()', 'debt-modal', {'d-name':'Card','d-bal':'100','d-pay':'20','d-rate':'5','d-due':'10'}],
+  ['saveSub()', 'sub-modal', {'s-name':'Music','s-cost':'10','s-due':'15'}],
+  ['saveBill()', 'bill-modal', {'bill-name':'Power','bill-amount':'50','bill-due-day':'20'}]
+])('unconfirmed %s retains the draft',async(action,modal,fields)=>{
+  for(const [id,value] of Object.entries(fields))win.document.getElementById(id).value=value;
+  run(`openModal('${modal}')`);result={data:null,error:null};await run(action);
+  expect(win.document.getElementById(modal).classList.contains('open')).toBe(true);
+  expect(win.document.getElementById('toast').textContent).toContain('could not be confirmed');
+});
+test('a rejected workout plan switch leaves the committed profile unchanged',async()=>{
+  run("CONTENT.workouts={plans:{other:{name:'Other'}}}");result={data:null,error:{message:'denied'}};
+  await run("switchWorkoutPlan('other')");expect(run('PROFILE.assigned_workout_plan')).toBe('custom');
+});
+test('late weight confirmation after sign-out cannot clear the next session input',async()=>{
+  let finish;win.API.records.write=jest.fn(()=>new Promise(resolve=>{finish=resolve;}));
+  win.document.getElementById('wt-in').value='200';const pending=run('logWeight()');
+  authCallback('SIGNED_OUT',null);run("PROFILE={id:'user-b'}");win.document.getElementById('wt-in').value='180';
+  finish({id:'weight-a'});await pending;expect(win.document.getElementById('wt-in').value).toBe('180');
+});
+test('nutrition uses profile targets without requiring an assigned meal catalog',async()=>{
+  run('PROFILE.calorie_target=2200;PROFILE.protein_target=160;CONTENT={};');
+  result={data:[{id:'meal-a',meal_name:'Lunch',calories:500,protein_g:40,carbs_g:50,fat_g:10}],error:null};
+  await run('renderNutrition()');
+  expect(win.document.getElementById('nut-targets').textContent).toContain('2,200');
+  expect(win.document.getElementById('nut-targets').textContent).toContain('160g');
+  expect(win.document.getElementById('meal-entries').textContent).toContain('Lunch');
+});
+test('failed nutrition and finance reads show unavailable instead of zeros',async()=>{
+  result={data:null,error:{message:'offline'}};
+  await run('renderNutrition();updateFinancialBoxes()');
+  expect(win.document.getElementById('nut-targets').textContent).toContain('unavailable');
+  expect(win.document.getElementById('fin-free-cash').textContent).toBe('Unavailable');
+});
+test('empty shelf replaces stale books and clears the current book',async()=>{
+  run("CONTENT.books={lists:{'self-improvement-first':{books:[{id:'old',title:'Old book'}]}}};bookState.curBookId='old';");
+  result={data:[],error:null};await run('renderBooks()');
+  expect(win.document.getElementById('book-list').textContent).toContain('No books');expect(run('bookState.curBookId')).toBeNull();
+  expect(run("CONTENT.books.lists['self-improvement-first'].books.length")).toBe(0);
+});
+test('zero-row reading updates never report success',async()=>{
+  result={data:null,error:null};await run("setBookStatus('book-a','Read')");
+  expect(win.document.getElementById('toast').textContent).toContain('could not be confirmed');
+});
+test('record updates and deletes scope ownership and require a returned row',async()=>{
+  const calls=[];
+  const query=new Proxy({}, {get:(_,key)=>key==='then'?Promise.resolve({data:null,error:null}).then.bind(Promise.resolve({data:null,error:null})):(...args)=>{calls.push([key,...args]);return query;}});
+  client.from.mockReturnValue(query);
+  await expect(win.API.records.write('debt_tracker','user-a',{balance:1},{match:{id:'debt-a'}})).rejects.toThrow();
+  expect(calls).toContainEqual(['eq','user_id','user-a']);expect(calls).toContainEqual(['eq','id','debt-a']);expect(calls).toContainEqual(['single']);
+});
+test('retry recovers a confirmed insert but does not overwrite a changed record',async()=>{
+  client.from.mockReturnValueOnce(chain({data:null,error:{code:'23505'}})).mockReturnValueOnce(chain({data:{id:'meal-a',user_id:'user-a',meal_name:'Lunch'},error:null}));
+  expect(await win.API.records.write('meal_logs','user-a',{meal_name:'Lunch'},{id:'meal-a'})).toMatchObject({id:'meal-a'});
+  client.from.mockReturnValueOnce(chain({data:null,error:{code:'23505'}})).mockReturnValueOnce(chain({data:{id:'meal-a',user_id:'user-a',meal_name:'Changed'},error:null}));
+  await expect(win.API.records.write('meal_logs','user-a',{meal_name:'Lunch'},{id:'meal-a'})).rejects.toThrow();
+});
+
+test('habit failure leaves the saved checkbox state unchanged',async()=>{
+  run("habitCache={walk:false};document.getElementById('h-habits-list').innerHTML='<div id=hc-walk><span id=hb-walk></span></div>';");
+  win.API.habits.upsert=jest.fn(async()=>{throw new Error('offline');});
+  await run("toggleHabit('walk')");
+  expect(run('habitCache.walk')).toBe(false);expect(win.document.getElementById('hc-walk').classList.contains('done')).toBe(false);
+});
+test('take-home pay accepts zero but retains committed values on failure',async()=>{
+  run('PROFILE.take_home_pay=5000;updateFinancialBoxes=async()=>{};');
+  result={data:null,error:{message:'offline'}};await run('saveTakeHome(0)');expect(run('PROFILE.take_home_pay')).toBe(5000);
+  result={data:{id:'user-a',take_home_pay:0},error:null};await run('saveTakeHome(0)');expect(run('PROFILE.take_home_pay')).toBe(0);
+});
+test.each([['renderMonth()','cal-month'],['renderWeek()','cal-week'],['renderDay()','cal-day'],['renderDebtList()','debt-list'],['renderSubList()','sub-list'],['renderBillsList()','bill-list']])('failed %s renders an explicit failure',async(action,id)=>{
+  result={data:null,error:{message:'offline'}};await run(action);expect(win.document.getElementById(id).textContent).toContain('Could not load');
+});
+const importText=(details='')=>`BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:fixture\nSUMMARY:<img src=x> workout\nDTSTART:20260929T090000Z\nDTEND:20260929T100000Z\n${details}\nEND:VEVENT\nEND:VCALENDAR`;
+function importFixture(details=''){
+  Object.defineProperty(win,'crypto',{value:require('crypto').webcrypto});
+  win.fileInput={files:[{size:100,text:async()=>importText(details)}],value:'file.ics'};
+  win.API.calendarImport.list=jest.fn(async()=>[]);win.API.calendarImport.insert=jest.fn(async()=>{});
+  run('renderCal=async()=>{};renderHome=async()=>{};');
+}
+test('calendar preview is read-only, escapes titles, and needs details acknowledgment',async()=>{
+  importFixture('DESCRIPTION:Private instructions');await run('CalendarImport.read(fileInput)');
+  expect(win.API.calendarImport.insert).not.toHaveBeenCalled();expect(win.document.querySelector('#ics-preview img')).toBeNull();
+  expect(win.document.getElementById('ics-preview').textContent).toContain('<img src=x>');
+  await run('CalendarImport.save()');expect(win.API.calendarImport.insert).not.toHaveBeenCalled();
+  win.document.getElementById('ics-details-confirm').checked=true;await run('CalendarImport.save()');
+  expect(win.API.calendarImport.insert).toHaveBeenCalledTimes(1);expect(win.document.getElementById('ics-status').textContent).toContain('Imported 1');
+});
+test('repeating a calendar preview reuses IDs and skips confirmed records',async()=>{
+  importFixture();await run('CalendarImport.read(fileInput)');await run('CalendarImport.save()');
+  const rows=win.API.calendarImport.insert.mock.calls[0][1];
+  win.API.calendarImport.list.mockResolvedValue(rows);await run('CalendarImport.read(fileInput)');
+  expect(win.document.getElementById('ics-status').textContent).toContain('1 already present');
+  expect(win.document.getElementById('ics-confirm').disabled).toBe(true);
+});
+test('calendar write failure requires a new preview and never claims completion',async()=>{
+  importFixture();win.API.calendarImport.insert.mockRejectedValue(new Error('private'));await run('CalendarImport.read(fileInput)');await run('CalendarImport.save()');
+  expect(win.document.getElementById('ics-status').textContent).toContain('import stopped');
+  expect(win.document.getElementById('ics-status').textContent).not.toContain('private');
+  await run('CalendarImport.save()');expect(win.API.calendarImport.insert).toHaveBeenCalledTimes(1);
+});
+test('sign-out invalidates an outstanding calendar preview',async()=>{
+  importFixture();let finish;win.API.calendarImport.list.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  const pending=run('CalendarImport.read(fileInput)');
+  while(!finish)await new Promise(resolve=>setImmediate(resolve));
+  authCallback('SIGNED_OUT',null);finish([]);await pending;await run('CalendarImport.save()');
+  expect(win.API.calendarImport.insert).not.toHaveBeenCalled();expect(win.document.getElementById('ics-preview').textContent).toBe('');
+});
 
 test('custom workout markup stays text in the actual workout renderer', () => {
   win.payload = '<img src=x onerror="alert(1)">';

@@ -177,6 +177,60 @@ window.API = {
     }
   },
 
+  calendarImport: {
+    async list(userId){
+      const rows=[];
+      for(let offset=0;offset<20000;offset+=500){
+        const {data,error}=await sb.from('calendar_events').select('id,title,event_date,event_time,end_date,end_time,all_day')
+          .eq('user_id',userId).order('id').range(offset,offset+499);
+        if(error||!Array.isArray(data))throw new Error('Calendar could not be loaded. Retry the preview.');
+        rows.push(...data);if(data.length<500)return rows;
+      }
+      throw new Error('This calendar is too large for file import.');
+    },
+    async insert(userId,rows){
+      const {data,error}=await sb.from('calendar_events').insert(rows.map(row=>({...row,user_id:userId}))).select('id');
+      if(error||!Array.isArray(data)||data.length!==rows.length||rows.some(row=>!data.some(saved=>saved.id===row.id)))throw new Error('Import unconfirmed');
+    }
+  },
+
+  records: {
+    ownerColumn(table) {
+      if(['recipes','books','meals'].includes(table))return 'created_by';
+      if(table==='profiles')return 'id';
+      if(['weight_logs','meal_logs','debt_tracker','subscription_tracker','bills_tracker',
+        'user_reading_list','user_workout_plans','calendar_events','milestone_status','roadmap_status'].includes(table))return 'user_id';
+      throw new Error('Unsupported record type');
+    },
+    async write(table,userId,payload,{match=null,id=null,remove=false,conflict=null}={}) {
+      if(!userId)throw new Error('Sign in first');
+      const owner=this.ownerColumn(table);
+      const values={...payload,[owner]:userId};
+      let query;
+      if(match){
+        if(!Object.keys(match).length)throw new Error('A record is required');
+        query=remove?sb.from(table).delete():sb.from(table).update(values);
+        for(const [column,value] of Object.entries(match))query=query.eq(column,value);
+        query=query.eq(owner,userId);
+      }else if(conflict){
+        query=sb.from(table).upsert(values,{onConflict:conflict});
+      }else{
+        if(!id)throw new Error('A retry identifier is required');
+        values.id=id;
+        query=sb.from(table).insert(values);
+      }
+      const {data,error}=await query.select().single();
+      if(!match && !conflict && error?.code==='23505'){
+        const recovered=await sb.from(table).select('*').eq('id',id).eq(owner,userId).single();
+        // A lost response can be retried without replacing a subsequently edited record.
+        const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b) || (typeof a==='number'&&Number(b)===a);
+        if(!recovered.error && recovered.data && Object.entries(values).every(([k,v])=>equal(v,recovered.data[k])))return recovered.data;
+      }
+      if(error || !data || Array.isArray(data))throw new Error('Write was not confirmed');
+      return data;
+    }
+  },
+
   nutrition: {
     /**
      * Insert a nutrition log entry and return the inserted entry.

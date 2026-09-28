@@ -32,7 +32,11 @@ Privileged administration, OAuth token exchange, scheduled provider sync, and AI
 2. API queries include the current user ID; database RLS must independently enforce that scope.
 3. Pure services calculate ratings, streaks, nutrition totals, and the command brief.
 4. UI renderers escape stored or remote text before placing it into HTML.
-5. Private recipe/habit caches are per-user session memory. Local storage still holds authoritative local-only goals, custom definitions, and purchase decisions; those require an explicit database migration with data preservation.
+5. Private recipe/habit caches are per-user session memory. Goals, custom definitions, purchase decisions, and focus windows use revisioned account documents through `PersonalData`; legacy device records require an explicit migration preview. Brief display preferences remain local.
+
+`DataOperations` coordinates session-bound writes with stable draft IDs, duplicate-click protection, and confirmed stages for multi-write retries. `API.records` scopes the owner and requires a returned row. These checks improve client behavior; RLS and real database constraints remain authoritative. Custom meal/book workflows are multiple transactions and can partially succeed.
+
+`CalendarImportService` parses bounded explicit-event ICS input and validates dates/timezones before `calendar-import.js` previews pending, duplicate, and conflicting events. Import requires separate confirmation and, when details exist, titles/times-only acknowledgment. Stable per-owner IDs and confirmed batches support retry after partial failures. No provider token or new database schema is involved.
 
 Profile updates are made from a signed-in, user-scoped editor. The browser validates presentation and range rules, while Supabase RLS remains the authority that prevents one user from updating another profile.
 
@@ -46,7 +50,7 @@ Brief preferences and the last browser-reminder date are device-local UI state, 
 
 - `app.js` remains a large legacy staged module with several historical overrides. New functionality should move toward small, tested modules rather than adding another override.
 - Some older API calls still live in `app.js`; migrate them into `api.js` as touched.
-- The database schema and RLS policies are not yet versioned in this repository. Export reviewed migrations before treating deployments as reproducible.
+- Reviewed migrations 001–008 and isolated SQL tests are versioned. They are not a complete production schema snapshot; verify new writes against the real schema before release.
 - The static client cannot securely create users, reset arbitrary passwords, hold OAuth refresh tokens, or protect a shared invite code.
 - Unit coverage is strongest for pure services; auth, RLS, deployment, and browser flows still need integration tests.
 
@@ -56,6 +60,6 @@ The client currently references profiles, tasks, calendar events, habits, nutrit
 
 ## Graphify
 
-The September 4 review changed authentication, caching, rendering, and briefing behavior. The existing graph is an orientation aid and is not a current line-level index; verify against source until it is rebuilt.
+The September 28 code graph was rebuilt locally using Graphify 0.9.71. Older semantic/document annotations were preserved; they are not a fresh document extraction. SQL extraction was skipped because the optional SQL parser is absent. See `HANDOFF.md` and the September 28 memory for source-verified updates and remaining limits.
 
 `graphify-out/graph.json` is the machine-readable knowledge graph, `GRAPH_REPORT.md` is the structural report, and `graph.html` is the interactive view. Rebuild the graph after architectural changes so repository analysis stays aligned with the code.
