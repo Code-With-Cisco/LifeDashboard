@@ -346,7 +346,7 @@
         </div>
       </div>
       <!-- 3-column: Debts | Bills | Subscriptions -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
+      <div class="financial-lists">
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <div class="sh" style="margin-bottom:0">DEBTS</div>
@@ -977,13 +977,17 @@
 <div class="modal-bg" id="ics-modal">
   <div class="modal">
     <div class="modal-title">&#x1F4C5; IMPORT CALENDAR</div>
-    <div style="margin-bottom:14px;font-size:12px;color:var(--t2)">Select an .ics file exported from Google Calendar, Outlook, Apple Calendar, or any calendar app.</div>
+    <div class="profile-note">Preview individual events from an .ics file before adding them. Existing events are preserved. Recurring calendars must be exported as individual occurrences first.</div>
     <label style="display:block;border:2px dashed var(--b1);border-radius:var(--r);padding:28px;text-align:center;cursor:pointer;color:var(--t2);font-size:13px" onmouseover="this.style.borderColor='var(--red)'" onmouseout="this.style.borderColor='var(--b1)'">
       &#x1F4C2; Click to choose .ics file
-      <input type="file" accept=".ics,.ICS" style="display:none" onchange="importICS(this);closeModal('ics-modal')">
+      <input id="ics-file" type="file" accept=".ics,.ICS" style="display:none" onchange="CalendarImport.read(this)">
     </label>
+    <p id="ics-status" class="profile-note" role="status" aria-live="polite"></p>
+    <div id="ics-details-warning" hidden><label class="profile-note"><input id="ics-details-confirm" type="checkbox"> Save titles and times only. This file also contains details (such as descriptions or locations) that Dashboard cannot store yet. Keep the original calendar for those instructions.</label></div>
+    <div id="ics-preview" style="max-height:280px;overflow:auto"></div>
     <div class="modal-footer" style="margin-top:14px">
-      <button class="btn btn-o" onclick="closeModal('ics-modal')">Cancel</button>
+      <button id="ics-confirm" class="btn btn-r" onclick="CalendarImport.save()" disabled>Import previewed events</button>
+      <button class="btn btn-o" onclick="CalendarImport.reset();closeModal('ics-modal')">Close / stop import</button>
     </div>
   </div>
 </div>
@@ -1016,6 +1020,9 @@
 <script src="services/MfaService.js"></script>
 <script src="mfa.js"></script>
 <script src="planning.js"></script>
+<script src="data-operations.js"></script>
+<script src="services/CalendarImportService.js"></script>
+<script src="calendar-import.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

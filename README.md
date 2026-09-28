@@ -1,5 +1,7 @@
 # LifeDashboard
 
+**September 28 office checkpoint:** local, unpublished reliability changes are documented in [HANDOFF.md](HANDOFF.md). Read it before continuing on another workstation; the production verification below applies to earlier releases.
+
 A private personal command center for habits, nutrition, recipes, workouts, finances, reading, goals, tasks, and calendar events. The home page produces a deterministic daily command brief: what is due, what is on the calendar, habit progress, and the best next actions. Each user can tune the ranking rule, focus count, and included sources without handing personal data to an AI service.
 
 After sign-in and any required account-security checks, users go directly to the dashboard. There is no introductory questionnaire. Existing profile values and assigned plans are preserved.
@@ -49,6 +51,7 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 |---|---|
 | Application shell and UI behavior | `index.html`, `styles.css`, `app.js` |
 | Supabase access and orchestration | `api.js`, `main.js` |
+| Confirmed writes and calendar import | `data-operations.js`, `calendar-import.js`, `services/CalendarImportService.js` |
 | Local state, logging, utilities | `state.js`, `logs.js`, `utils.js`, `render.js` |
 | Pure domain logic | `services/` |
 | Unit tests | `test/` |
@@ -66,5 +69,7 @@ The September 8 live database and browser checks are recorded in [REVIEW.md](REV
 Brief preferences are stored per user in this browser. The optional morning notification contains only a generic prompt and works while LifeDashboard is open; reliable background delivery belongs in the future server-side broker.
 
 ## Current direction
+
+The current readiness pass gives all existing sections equal priority: confirmed saves, recoverable drafts, session isolation, visible read failures, usable empty states, and mobile access. Calendar files are previewed before import, with duplicate/conflict checks and timezone conversion. Only explicit event titles, dates, and times are supported; recurrence and full event details remain outside this importer. This is not provider synchronization.
 
 The next architectural step is a small server-side connector broker for OAuth, scheduled sync, account invitations, and password administration. It should feed a minimal normalized summary into the dashboard. AI narration can be added after that boundary is in place; action-taking should always remain separately authorized and auditable.
