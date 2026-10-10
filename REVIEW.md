@@ -2,6 +2,8 @@
 
 ## October 10 publication and next readiness pass
 
+The follow-up complete dependency audit exposed development-only alerts missed by the production audit. Compatible `brace-expansion` updates and a scoped coverage-config YAML-parser override remove those paths without downgrading Jest. Clean install, 320 tests across 25 suites with coverage (including actual YAML inheritance), the build and the complete audit passed; zero dependency vulnerabilities remain in the current audit. Tests/Pages audit all dependencies at moderate severity. `212961b` also passed all three remote checks. Supabase sign-in and live acceptance remain pending.
+
 `abc529b` was pushed under the owner's configured Cisco identity with no assistant trailers. Tests, CodeQL and Pages succeeded for that exact commit; the production dependency audit found zero vulnerabilities. Graphify contributor metadata uses Cisco, and the unrelated Word document remains unpublished.
 
 The follow-up repairs Tasks, weight history, the reading shelf (including cached data/current selection) and workout-history read ordering. Missing query results report failure; late missing-table errors are ignored after account switching. All 319 tests in 24 suites, the 34-file synthetic-config build, syntax and whitespace checks passed. Real Auth/API/browser acceptance remains pending: the separate test project's dashboard requires fresh owner sign-in. No database or Auth mutation was performed. See [HANDOFF.md](HANDOFF.md).

@@ -28,5 +28,10 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.115.0"
+  },
+  "overrides": {
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "4.3.2"
+    }
   }
 }
