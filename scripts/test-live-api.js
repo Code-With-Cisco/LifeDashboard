@@ -113,6 +113,9 @@ async function main() {
     check(enabled.status === 200 && enabled.body.length === 1, 'Other account remains usable');
   } else if (phase === 'signout') {
     for (const who of ['a', 'b']) {
+      const login = await request('/auth/v1/token?grant_type=password', {method: 'POST', body: {email: fixtures[who].email, password: fixtures[who].password}});
+      check(login.status === 200 && login.body.user.id === fixtures[who].id, who + ': fresh sign-out session');
+      fixtures[who].accessToken = login.body.access_token; fixtures[who].refreshToken = login.body.refresh_token; save();
       const out = await request('/auth/v1/logout?scope=global', {as: who, method: 'POST'});
       check(out.status === 204, who + ': sign-out');
       const refresh = await request('/auth/v1/token?grant_type=refresh_token', {method: 'POST', body: {refresh_token: fixtures[who].refreshToken}});

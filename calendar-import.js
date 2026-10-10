@@ -8,6 +8,13 @@
       if(el('ics-file'))el('ics-file').disabled=false;
       if(el('ics-confirm'))el('ics-confirm').disabled=true;
     }
+    const windowKey=()=>JSON.stringify([el('ics-from')?.value||'',el('ics-to')?.value||'']);
+    function open(){
+      reset();const owner=session();if(!owner)return;
+      const day=new Intl.DateTimeFormat('en-CA',{timeZone:owner.zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      el('ics-from').value=day;el('ics-to').value=new Date(Date.parse(day+'T12:00:00Z')+90*86400000).toISOString().slice(0,10);
+      status('Choose a file. Recurrence is saved as individual occurrences in the chosen window.');
+    }
     const status=message=>{el('ics-status').textContent=message;};
     function current(owner,v){const now=session();return version===v&&now?.userId===owner.userId&&now?.epoch===owner.epoch&&now?.zone===owner.zone;}
     async function identity(userId,key){
@@ -24,12 +31,15 @@
       try{
         if(file.size>CalendarImportService.MAX_BYTES)throw new Error('Choose a calendar smaller than 2 MB.');
         const text=await file.text();if(!current(owner,v))return;
-        const parsed=CalendarImportService.parse(text,owner.zone);
+        const from=el('ics-from')?.value,to=el('ics-to')?.value;
+        const selectedWindow=from||to?{from,to}:undefined;
+        const key=windowKey();
+        const parsed=CalendarImportService.parse(text,owner.zone,selectedWindow);
         const rows=await Promise.all(parsed.events.map(async event=>({...event.row,id:await identity(owner.userId,event.identity)})));
         if(!current(owner,v))return;
         const existing=await list(owner.userId);if(!current(owner,v))return;
         const plan=CalendarImportService.classify(rows,existing);
-        preview={...plan,owner,v,hasDetails:parsed.hasDetails};
+        preview={...plan,owner,v,hasDetails:parsed.hasDetails,windowKey:key};
         el('ics-details-warning').hidden=!parsed.hasDetails;
         status(`${plan.pending.length} new events; ${plan.duplicates} already present; ${plan.conflicts.length} changed events need review. Times use ${owner.zone}.`);
         const listEl=el('ics-preview');
@@ -37,6 +47,11 @@
           const row=document.createElement('div');row.className='profile-note';
           row.textContent=`${event.event_date} ${event.all_day?'All day':event.event_time} — ${event.title}${event.end_date?' → '+event.end_date:''}${event.end_time?' until '+event.end_time:''}`;
           listEl.append(row);
+          if(event.source_details){
+            const details=document.createElement('details'),label=document.createElement('summary'),body=document.createElement('pre');
+            label.textContent='Included details';body.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere';
+            body.textContent=JSON.stringify(event.source_details,null,2);details.append(label,body);listEl.append(details);
+          }
         }
         el('ics-confirm').disabled=!plan.pending.length||!!plan.conflicts.length;
         if(plan.conflicts.length)status('Some events have changed since import. Review those events in Schedule; importing will not overwrite them.');
@@ -45,7 +60,7 @@
     }
     async function save(){
       const draft=preview;if(!draft||busy||!draft.pending.length||draft.conflicts.length)return;
-      if(!current(draft.owner,draft.v)){reset();status('Session or timezone changed. Choose the file again.');return;}
+      if(!current(draft.owner,draft.v)||draft.windowKey!==windowKey()){reset();status('Session, timezone or date window changed. Choose the file again.');return;}
       if(draft.hasDetails&&!el('ics-details-confirm').checked){status('Review and acknowledge the information this import can save.');return;}
       busy=true;el('ics-confirm').disabled=true;el('ics-file').disabled=true;
       let saved=0;
@@ -66,7 +81,7 @@
         if(current(draft.owner,draft.v)){busy=false;el('ics-file').disabled=false;}
       }
     }
-    return {read,save,reset};
+    return {read,save,reset,open};
   }
   root.CalendarImportUI={create};
 })(window);

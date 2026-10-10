@@ -1,5 +1,7 @@
 # LifeDashboard
 
+**Current release:** [October 10 readiness](RELEASE_READINESS.md) is ready for owner testing. Start with [TESTING.md](TESTING.md). Verification passed 336 tests across 28 suites, real database/API/MFA checks and the 36-file build. Recurring ICS snapshots and calendar instructions are supported; live provider connections remain disabled until private setup and acceptance. Encrypted off-device recovery awaits the specifically prompted upload approval. Earlier checkpoints below are historical.
+
 **September 28 office checkpoint:** local, unpublished reliability changes are documented in [HANDOFF.md](HANDOFF.md). Read it before continuing on another workstation; the production verification below applies to earlier releases.
 
 A private personal command center for habits, nutrition, recipes, workouts, finances, reading, goals, tasks, and calendar events. The home page produces a deterministic daily command brief: what is due, what is on the calendar, habit progress, and the best next actions. Each user can tune the ranking rule, focus count, and included sources without handing personal data to an AI service.
@@ -60,7 +62,7 @@ The build creates `dist/` from an explicit public-file allowlist. GitHub Pages d
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and current constraints, [SECURITY.md](SECURITY.md) for the security model, and [ROADMAP.md](ROADMAP.md) for the current Jarvis platform choices. [INTEGRATIONS.md](INTEGRATIONS.md) retains earlier integration notes.
 
-The current audit and unresolved priorities are in [REVIEW.md](REVIEW.md). Migrations 001–008 are applied. Current validation includes 185 local tests, live SQL isolation and MFA checks, 55 planning Auth/Data API assertions and two failed sign-ins after fixture removal. Chrome verified the planning UI with synthetic records; earlier releases verified personal-record migration and MFA sign-in against the live API. The [database runbook](database/README.md) records reproducible checks, the verified private logical-backup restore, and remaining off-device recovery work.
+The current implementation and verification are in [RELEASE_READINESS.md](RELEASE_READINESS.md). Migrations 001–010 are present in production and Test. The [database runbook](database/README.md) records reproducible checks, private recovery scope and provider activation gates.
 
 The brief shows saved goal directions, refresh time, and warnings when a source fails. Private recipe/habit caches and diagnostic event codes are held only for the current session. Use **Data & backups → Preview device migration** to move supported browser records into protected account storage. Review values and explicitly select replacements; original device records are preserved.
 
@@ -70,8 +72,8 @@ Brief preferences are stored per user in this browser. The optional morning noti
 
 ## Current direction
 
-The October 10 readiness work protects overlapping section loads and fixes Home event date badges. Latest verification passed 323 tests in 25 suites and the 34-file allowlisted build. The full dependency audit previously returned zero vulnerabilities. LifeDashboard-Test passed 47 real Auth/Data API assertions plus bounded Chrome persistence, account-switching and mobile section checks; approved fixture cleanup was independently verified. Full section CRUD/rejection/retry, session expiry/MFA and recovery acceptance remains open. Connectors remain disabled by default. See [HANDOFF.md](HANDOFF.md) for checkpoints and pending work.
+The October 10 readiness work protects overlapping section loads, confirms writes and repairs calendar/roadmap behavior. Latest verification passed 336 tests in 28 suites, the 36-file build and a full dependency audit with zero vulnerabilities. Real Test API checks covered 14 relational domains, ownership isolation, rejection/retry, MFA and encrypted personal-record restore. Disposable account cleanup was independently verified. Use [TESTING.md](TESTING.md) for hands-on acceptance; connectors remain disabled by default.
 
-The current readiness pass gives all existing sections equal priority: confirmed saves, recoverable drafts, session isolation, visible read failures, usable empty states, and mobile access. Calendar files are previewed before import, with duplicate/conflict checks and timezone conversion. Only explicit event titles, dates, and times are supported; recurrence and full event details remain outside this importer. This is not provider synchronization.
+All existing sections receive equal readiness priority: confirmed saves, recoverable drafts, session isolation, visible read failures, usable empty states, and mobile access. Calendar files are previewed before import, with duplicate/conflict checks and timezone conversion. Supported recurrence expands into snapshots within a bounded date window; descriptions, locations and inert source details are retained. It does not synchronize with the source calendar.
 
-The next architectural step is a small server-side connector broker for OAuth, scheduled sync, account invitations, and password administration. It should feed a minimal normalized summary into the dashboard. AI narration can be added after that boundary is in place; action-taking should always remain separately authorized and auditable.
+The private OAuth/sync broker and optional narration are setup-ready. Live activation requires private provider credentials and the checks in [CONNECTOR_SETUP.md](database/CONNECTOR_SETUP.md). Invitations, privileged password administration and broader roadmap features remain deferred; action-taking requires separate authorization and audit.

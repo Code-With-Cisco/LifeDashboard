@@ -31,6 +31,7 @@ test('production artifact contains the locked SDK, exact connection policy and n
   expect(html).toContain("connect-src 'self' https://test.supabase.co wss://test.supabase.co;");
   expect(html).not.toContain('cdn.jsdelivr.net');
   expect(fs.readFileSync(path.join(dist, 'vendor/supabase.js'))).toEqual(fs.readFileSync(path.join(root, 'node_modules/@supabase/supabase-js/dist/umd/supabase.js')));
+  expect(fs.readFileSync(path.join(dist,'vendor/ical.js'))).toEqual(fs.readFileSync(path.join(root,'node_modules/ical.js/dist/ical.es5.min.cjs')));
   for (const privatePath of ['.git', '.env', '.claude', 'test', 'graphify-out', 'package.json', 'scripts', 'supabase', 'database']) {
     expect(fs.existsSync(path.join(dist, privatePath))).toBe(false);
   }

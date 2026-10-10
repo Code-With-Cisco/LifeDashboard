@@ -181,7 +181,7 @@ window.API = {
     async list(userId){
       const rows=[];
       for(let offset=0;offset<20000;offset+=500){
-        const {data,error}=await sb.from('calendar_events').select('id,title,event_date,event_time,end_date,end_time,all_day')
+        const {data,error}=await sb.from('calendar_events').select('id,title,event_date,event_time,end_date,end_time,all_day,source_details')
           .eq('user_id',userId).order('id').range(offset,offset+499);
         if(error||!Array.isArray(data))throw new Error('Calendar could not be loaded. Retry the preview.');
         rows.push(...data);if(data.length<500)return rows;
@@ -223,7 +223,10 @@ window.API = {
       if(!match && !conflict && error?.code==='23505'){
         const recovered=await sb.from(table).select('*').eq('id',id).eq(owner,userId).single();
         // A lost response can be retried without replacing a subsequently edited record.
-        const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b) || (typeof a==='number'&&Number(b)===a);
+        const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'
+          ?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+        const equal=(a,b)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b)) ||
+          (typeof a==='number'&&typeof b==='string'&&/^-?\d+(?:\.\d+)?$/.test(b)&&Number(b)===a);
         if(!recovered.error && recovered.data && Object.entries(values).every(([k,v])=>equal(v,recovered.data[k])))return recovered.data;
       }
       if(error || !data || Array.isArray(data))throw new Error('Write was not confirmed');

@@ -1,5 +1,7 @@
 # LifeDashboard review — September 10, 2026
 
+**Current checkpoint:** [October 10 release readiness](RELEASE_READINESS.md) records the completed implementation, real database/API checks, recovery limits and owner acceptance items. It supersedes pending-work statements in the historical audit below.
+
 ## October 10 live acceptance
 
 LifeDashboard-Test is Healthy and actual counts confirmed an empty starting state, 27 RLS tables and 26 restrictive MFA policies. Approved disposable-account testing passed 47 real Auth/Data API assertions: 41 baseline isolation/save checks, four sign-out/refresh checks and two removed-account login checks. Chrome verified task reload persistence/account switching, bill/custom-meal/event/goal/habit saves and reload persistence, plus all twelve section shells at 390px without horizontal document overflow. Cleanup independently confirmed zero rows in Auth and all exercised application tables. No production operation or migration occurred; credentials stayed outside Git.

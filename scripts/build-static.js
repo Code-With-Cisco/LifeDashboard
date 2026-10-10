@@ -48,4 +48,4 @@ fs.writeFileSync(
   'utf8'
 );
 
-console.log(`Built ${files.length + 3} public files, including the locked SDK, in ${output}`);
+console.log(`Built ${files.length + 5} public files, including the locked SDK, in ${output}`);

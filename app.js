@@ -356,7 +356,7 @@ function clearPrivateSession(){
   _latestBriefInput=null;
   PROFILE=null;CONTENT={};habitCache={};currentPage='home';
   State.clearPrivateCaches();Logger.clear();
-  debtEditId=null;subEditId=null;evEditId=null;
+  debtEditId=null;subEditId=null;evEditId=null;evSourceDetails={};
   _editingHabit=null;_editingGoal=null;
   bookState.curBookId=null;bookState.curBookPages=0;
   workoutState.existingSessionId=null;
@@ -1341,7 +1341,14 @@ async function renderDay(){
     return`<div class="ev-chip" ${attrs} style="margin-bottom:6px;${eventId?'cursor:pointer':''}"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.allDay?'All day':e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${calendarTitle(e)}</span></div>`;
   }).join('');
 }
+let evSourceDetails={};
 function openEventModal(dateStr,editId,eventData){
+  evSourceDetails=eventData?.source_details?JSON.parse(JSON.stringify(eventData.source_details)):{};
+  document.getElementById('ev-description').value=evSourceDetails.description||'';
+  document.getElementById('ev-location').value=evSourceDetails.location||'';
+  const extras={timing:evSourceDetails.timing||[],properties:evSourceDetails.properties||[],alarms:evSourceDetails.alarms||[]};
+  document.getElementById('ev-source-extras').hidden=!extras.properties.length&&!extras.alarms.length;
+  document.getElementById('ev-source-details').textContent=JSON.stringify(extras,null,2);
   evEditId=editId||null;
   const isEdit=!!editId;
   document.getElementById('ev-modal-title').textContent=isEdit?'EDIT EVENT':'ADD EVENT';
@@ -1375,7 +1382,10 @@ async function saveEvent(){
   const startTime=allDay?null:document.getElementById('ev-time').value||null;
   if(endDate&&endDate<startDate){toast('End date must not precede start date.');return;}
   if(endTime&&(!startTime||((!endDate||endDate===startDate)&&endTime<=startTime))){toast('End time must follow the start time.');return;}
+  const sourceDetails={...evSourceDetails,description:document.getElementById('ev-description').value,location:document.getElementById('ev-location').value};
+  if(new TextEncoder().encode(JSON.stringify(sourceDetails,null,1)).length>32768){toast('Event details must fit within 32 KB.');return;}
   const ev={
+    source_details:sourceDetails,
     user_id:PROFILE.id,
     event_date:startDate,
     end_date:endDate&&endDate>startDate?endDate:null,
@@ -1614,7 +1624,11 @@ async function renderRoadmap(){
   const rsMap={};(rs||[]).forEach(r=>rsMap[r.step_number]=r.status);
   el.innerHTML=rdmData.steps.map(s=>`<div class="card" style="margin-bottom:7px;border-left:3px solid var(--${s.col})"><div style="display:flex;gap:12px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--${s.col});line-height:1;flex-shrink:0">${s.num}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:3px"><div style="font-size:13px;font-weight:600">${s.action}</div><div style="display:flex;gap:6px;align-items:center"><span class="badge b-d">${s.timing}</span><select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:120px" onchange="saveRoadmap(${s.num},this.value)"><option${rsMap[s.num]==='Not Started'?' selected':''}>Not Started</option><option${rsMap[s.num]==='In Progress'?' selected':''}>In Progress</option><option${rsMap[s.num]==='Complete'?' selected':''}>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">${s.why}</div></div></div></div>`).join('');
 }
-async function saveRoadmap(num,val){await sb.from('roadmap_status').upsert({user_id:PROFILE.id,step_number:num,status:val});}
+async function saveRoadmap(num,val){
+  if(!Number.isInteger(num)||num<1||!['Not Started','In Progress','Complete'].includes(val)){toast('Choose a valid roadmap step and status.');return false;}
+  return Writes.run('roadmap-'+num,{step_number:num,status:val},ctx=>API.records.write('roadmap_status',ctx.userId,
+    {step_number:num,status:val},{conflict:'user_id,step_number'}),()=>{renderRoadmap();toast('Roadmap status saved.');});
+}
 
 // GOALS
 // App-level config — fixed goal reference list used for the Goals overview panel.

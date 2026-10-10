@@ -5,8 +5,12 @@ import {github} from './github.mjs';
 import {narrator} from './narrator.mjs';
 import {broker, BrokerError} from './broker.mjs';
 import {handler} from './handler.mjs';
+import {configurationIssues} from './configuration.mjs';
 
 const env=(name:string)=>Deno.env.get(name)||'';
+const issues=configurationIssues(Object.fromEntries(['DASHBOARD_ORIGIN','CONNECTOR_ENCRYPTION_KEY','CONNECTOR_SYNC_KEY',
+  'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','GOOGLE_REDIRECT_URI','GITHUB_CLIENT_ID','GITHUB_CLIENT_SECRET','GITHUB_REDIRECT_URI','GITHUB_APP_ID'].map(name=>[name,env(name)])));
+if(issues.length)throw new Error('Connector setup incomplete: '+issues.join('; '));
 const apiKey=(dictionary:string,legacy:string)=>{
   const fallback=env(legacy);if(fallback)return fallback;
   const values=JSON.parse(env(dictionary)||'{}');

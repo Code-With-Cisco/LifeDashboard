@@ -1,5 +1,7 @@
 # Workstation handoff — September 28, 2026
 
+**Current checkpoint:** [October 10 release readiness](RELEASE_READINESS.md) supersedes the remaining-work and migration status in historical notes below. Owner testing: [TESTING.md](TESTING.md). Preserve owner attribution and unrelated work.
+
 ## Live acceptance and calendar correction — October 10, 2026
 
 Owner sign-in restored access to **LifeDashboard-Test**. Its overview is Healthy; email sign-in and email confirmation are enabled, anonymous sign-in is disabled. Actual SQL counts initially showed zero Auth users/profiles/connector rows, 27 public tables with RLS and 26 restrictive MFA policies. The Auth UI's estimated user count was stale; use actual counts.

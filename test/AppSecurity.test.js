@@ -33,6 +33,7 @@ beforeEach(() => {
     rpc: jest.fn(async (_name, payload) => ({data: payload.p_session_id, error: null})),
   };
   win.supabase = {createClient: () => client};
+  run(read('node_modules/ical.js/dist/ical.es5.min.cjs'));
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
     'services/HabitService.js', 'services/NutritionService.js', 'services/PlanningService.js', 'services/BriefingService.js',
@@ -775,6 +776,41 @@ test.each(['2026-03-07','2026-10-31','2026-12-30'])('home upcoming event badges 
   await run('renderHome()');
   const chips=[...win.document.querySelectorAll('#home-events .ev-chip')].map(el=>el.textContent);
   expect(chips).toEqual(['TodaySame day','In 4dFourth day']);
+});
+test('retry confirms reordered JSON but rejects null in place of saved zero',async()=>{
+  client.from.mockReturnValueOnce(chain({data:null,error:{code:'23505'}})).mockReturnValueOnce(chain({data:{id:'event-a',user_id:'user-a',source_details:{location:'Gym',description:'Same'}},error:null}));
+  expect(await win.API.records.write('calendar_events','user-a',{source_details:{description:'Same',location:'Gym'}},{id:'event-a'})).toMatchObject({id:'event-a'});
+  client.from.mockReturnValueOnce(chain({data:null,error:{code:'23505'}})).mockReturnValueOnce(chain({data:{id:'bill-a',user_id:'user-a',amount:null},error:null}));
+  await expect(win.API.records.write('bills_tracker','user-a',{amount:0},{id:'bill-a'})).rejects.toThrow();
+});
+test('changing the import window invalidates the reviewed preview',async()=>{
+  importFixture();await run('CalendarImport.read(fileInput)');
+  win.document.getElementById('ics-from').value='2026-10-01';
+  await run('CalendarImport.save()');
+  expect(win.API.calendarImport.insert).not.toHaveBeenCalled();
+  expect(win.document.getElementById('ics-status').textContent).toContain('date window changed');
+});
+test('calendar instructions and inert source metadata survive a rejected edit',async()=>{
+  win.eventFixture={id:'event-a',title:'Training',event_date:'2026-10-10',event_time:'09:00',source_details:{description:'Original',location:'Gym',properties:[['url',{},'uri','javascript:alert(1)']],alarms:[['valarm',[],[]]]}};
+  run("openEventModal(null,'event-a',eventFixture);writeRecord=async(key,table,payload)=>{window.savedEvent=payload;return false;};");
+  win.document.getElementById('ev-description').value='Updated <script>';
+  await run('saveEvent()');
+  expect(win.savedEvent.source_details).toMatchObject({description:'Updated <script>',location:'Gym',properties:win.eventFixture.source_details.properties,alarms:win.eventFixture.source_details.alarms});
+  expect(win.document.querySelector('#ev-source-details a')).toBeNull();
+  expect(win.document.getElementById('ev-description').value).toBe('Updated <script>');
+});
+
+test('roadmap status uses its owner/step conflict key and reports rejected saves',async()=>{
+  let saved;client.from.mockImplementation(table=>({upsert:(payload,options)=>{
+    saved={table,payload,options};return {select:()=>({single:async()=>result})};
+  }}));
+  result={data:null,error:{message:'PRIVATE'}};expect(await run('saveRoadmap(1,"Complete")')).toBe(false);
+  expect(win.document.body.textContent).toContain('Save could not be confirmed');
+  expect(saved).toEqual({table:'roadmap_status',payload:{user_id:'user-a',step_number:1,status:'Complete'},options:{onConflict:'user_id,step_number'}});
+  result={data:{id:'row',user_id:'user-a',step_number:1,status:'Complete'},error:null};
+  run('renderRoadmap=()=>{}');expect(await run('saveRoadmap(1,"Complete")')).toBe(true);
+  expect(win.document.body.textContent).toContain('Roadmap status saved');
+  client.from.mockClear();expect(await run('saveRoadmap(0,"Forbidden")')).toBe(false);expect(client.from).not.toHaveBeenCalled();
 });
 
 test('a failed workout save keeps entries and retries the same session without direct deletes', async () => {

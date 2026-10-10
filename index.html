@@ -14,6 +14,7 @@
 <script src="services/SecurityService.js"></script>
 <script src="config.js"></script>
 <script src="vendor/supabase.js"></script>
+<script src="vendor/ical.js"></script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -254,7 +255,7 @@
         </div>
         <button class="btn btn-o btn-sm" onclick="Planning.openWindows()">Focus windows</button>
         <button class="btn btn-r btn-sm" onclick="openEventModal()">+ Event</button>
-        <button class="btn btn-o btn-sm" onclick="openModal('ics-modal')" title="Import .ics calendar file">&#x1F4C5; Import .ics</button>
+        <button class="btn btn-o btn-sm" onclick="CalendarImport.open();openModal('ics-modal')" title="Import .ics calendar file">&#x1F4C5; Import .ics</button>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div style="display:flex;gap:6px"><button class="btn btn-o btn-sm" onclick="calNav(-1)">←</button><button class="btn btn-o btn-sm" onclick="calNav(0)">Today</button></div>
@@ -620,7 +621,10 @@
   <div class="modal">
     <div class="modal-title" id="ev-modal-title">ADD EVENT</div>
     <input type="hidden" id="ev-id">
-    <div style="margin-bottom:10px"><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Title</div><input class="inp" id="ev-title" placeholder="e.g. Dentist appointment"></div>
+    <div style="margin-bottom:10px"><label for="ev-title">Title</label><input class="inp" id="ev-title" maxlength="500" placeholder="e.g. Dentist appointment"></div>
+    <label for="ev-description">Description / instructions</label><textarea class="inp" id="ev-description" rows="4" maxlength="24000"></textarea>
+    <label for="ev-location">Location</label><input class="inp" id="ev-location" maxlength="2000">
+    <details id="ev-source-extras" hidden><summary>Imported source details (reference only)</summary><pre id="ev-source-details" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px"></pre></details>
     <div class="g2" style="gap:8px;margin-bottom:10px">
       <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Start Date</div><input class="inp" id="ev-date" type="date"></div>
       <div><div style="font-size:11px;color:var(--t3);margin-bottom:4px">Start Time (optional)</div><input class="inp" id="ev-time" type="time"></div>
@@ -980,13 +984,15 @@
 <div class="modal-bg" id="ics-modal">
   <div class="modal">
     <div class="modal-title">&#x1F4C5; IMPORT CALENDAR</div>
-    <div class="profile-note">Preview individual events from an .ics file before adding them. Existing events are preserved. Recurring calendars must be exported as individual occurrences first.</div>
+    <div class="profile-note">Preview individual events from an .ics file before adding them. Existing events are preserved. Review the date window and included details before saving.</div>
     <label style="display:block;border:2px dashed var(--b1);border-radius:var(--r);padding:28px;text-align:center;cursor:pointer;color:var(--t2);font-size:13px" onmouseover="this.style.borderColor='var(--red)'" onmouseout="this.style.borderColor='var(--b1)'">
       &#x1F4C2; Click to choose .ics file
       <input id="ics-file" type="file" accept=".ics,.ICS" style="display:none" onchange="CalendarImport.read(this)">
     </label>
+    <div class="form-row" style="display:flex;gap:12px;margin:12px 0"><label>From <input class="inp" type="date" id="ics-from"></label><label>Through <input class="inp" type="date" id="ics-to"></label></div>
+    <p class="profile-note">Import a snapshot within these dates (at most 366 days). Daily, weekly, monthly and yearly recurrence is expanded with exclusions and individual exceptions. Reimport to review changes; this does not keep a source calendar synchronized.</p>
     <p id="ics-status" class="profile-note" role="status" aria-live="polite"></p>
-    <div id="ics-details-warning" hidden><label class="profile-note"><input id="ics-details-confirm" type="checkbox"> Save titles and times only. This file also contains details (such as descriptions or locations) that Dashboard cannot store yet. Keep the original calendar for those instructions.</label></div>
+    <div id="ics-details-warning" hidden><label class="profile-note"><input id="ics-details-confirm" type="checkbox"> Save the previewed events and their details to my private Dashboard calendar. Attendees, organizer information, links, attachment references and reminder metadata may be included. Reminders are stored for reference; Dashboard does not deliver them.</label></div>
     <div id="ics-preview" style="max-height:280px;overflow:auto"></div>
     <div class="modal-footer" style="margin-top:14px">
       <button id="ics-confirm" class="btn btn-r" onclick="CalendarImport.save()" disabled>Import previewed events</button>

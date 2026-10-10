@@ -27,7 +27,8 @@
     "jest-environment-jsdom": "^30.5.1"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.115.0"
+    "@supabase/supabase-js": "2.115.0",
+    "ical.js": "2.2.1"
   },
   "overrides": {
     "@istanbuljs/load-nyc-config": {

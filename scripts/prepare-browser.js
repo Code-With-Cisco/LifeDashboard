@@ -10,6 +10,9 @@ function prepareBrowser(destination) {
   const source = path.join(root, 'node_modules/@supabase/supabase-js');
   fs.copyFileSync(path.join(source, 'dist/umd/supabase.js'), path.join(output, 'supabase.js'));
   fs.copyFileSync(path.join(source, 'LICENSE'), path.join(output, 'supabase-LICENSE'));
+  const ical=path.join(root,'node_modules/ical.js');
+  fs.copyFileSync(path.join(ical,'dist/ical.es5.min.cjs'),path.join(output,'ical.js'));
+  fs.copyFileSync(path.join(ical,'LICENSE'),path.join(output,'ical-LICENSE'));
 }
 
 if (require.main === module) prepareBrowser();

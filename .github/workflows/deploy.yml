@@ -35,6 +35,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          CONNECTORS_ENABLED: ${{ vars.CONNECTORS_ENABLED == 'true' && 'true' || 'false' }}
         run: npm run build
 
       - uses: actions/configure-pages@v6
