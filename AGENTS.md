@@ -1,6 +1,7 @@
 # Repository working agreements
 
 - Use the repository owner's configured Git identity. Never add assistant authors, co-author trailers, generated-by text, sign-offs, or assistant signatures to commits, PRs, or project artifacts.
+- After Graphify saves or reflections, use the configured Git user name for contributor metadata in memories and map nodes, and remove generated-by text before publishing those artifacts.
 - Review existing changes before editing. Preserve user data and unrelated work.
 - Check the source when using the Graphify map; it may predate the latest changes.
 - Do not add another staged override. Improve the active implementation and move coherent logic toward tested modules.
