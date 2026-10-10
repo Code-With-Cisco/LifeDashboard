@@ -763,6 +763,20 @@ test('calendar brief selects the actual database time column and uses its alias'
   expect(win.document.getElementById('home-command-brief').textContent).toContain('Morning appointment');
 });
 
+test.each(['2026-03-07','2026-10-31','2026-12-30'])('home upcoming event badges use the profile date and include five calendar days (%s)', async today => {
+  run(`todayStr=()=>${JSON.stringify(today)};`);
+  const date = offset => new Date(Date.parse(today+'T12:00:00Z')+offset*86400000).toISOString().slice(0,10);
+  client.from.mockImplementation(table=>chain({data:table==='calendar_events' ? [
+    {title:'Same day',event_date:date(0)},
+    {title:'Fourth day',event_date:date(4)},
+    {title:'Outside window',event_date:date(5)},
+    {title:'Yesterday',event_date:date(-1)},
+  ]:[],error:null}));
+  await run('renderHome()');
+  const chips=[...win.document.querySelectorAll('#home-events .ev-chip')].map(el=>el.textContent);
+  expect(chips).toEqual(['TodaySame day','In 4dFourth day']);
+});
+
 test('a failed workout save keeps entries and retries the same session without direct deletes', async () => {
   run("CONTENT={workouts:{plans:{custom:{days:[{focus:'Push',exercises:[{name:'Press',sets:1,reps:8}]}]}}}};");
   result={data:null,error:null};

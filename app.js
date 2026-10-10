@@ -829,8 +829,8 @@ async function renderHome(){
     const allBills=[...(ub_d||[]).filter(d=>d.due_day).map(d=>({l:d.debt_name,d:d.due_day,c:'r'})),...(ub_s||[]).filter(s=>s.renewal_day).map(s=>({l:s.sub_name,d:s.renewal_day,c:'b'}))];
     const upcoming=allBills.filter(b=>b.d>=dayNum&&b.d<=dayNum+4).map(b=>({...b,badge:b.d===dayNum?'Today':'In '+(b.d-dayNum)+'d'}));
     (evs||[]).forEach(e=>{
-      const diff=Math.round((new Date(e.event_date+'T12:00:00')-new Date(new Date().toDateString()))/86400000);
-      if(diff>=0&&diff<=3)upcoming.push({l:e.title,badge:diff===0?'Today':'In '+diff+'d',c:e.event_type||'b'});
+      const diff=(Date.parse(e.event_date+'T12:00:00Z')-Date.parse(today+'T12:00:00Z'))/86400000;
+      if(Number.isInteger(diff)&&diff>=0&&diff<=4)upcoming.push({l:e.title,badge:diff===0?'Today':'In '+diff+'d',c:e.event_type||'b'});
     });
     evEl.innerHTML=upcoming.length
       ?upcoming.map(e=>`<div class="ev-chip"><span class="badge b-${['r','b','g','a','p','d'].includes(e.c)?e.c:'d'}" style="flex-shrink:0">${escapeHtml(e.badge)}</span><span style="font-size:13px">${escapeHtml(e.l)}</span></div>`).join('')

@@ -1,5 +1,11 @@
 # LifeDashboard review — September 10, 2026
 
+## October 10 live acceptance
+
+LifeDashboard-Test is Healthy and actual counts confirmed an empty starting state, 27 RLS tables and 26 restrictive MFA policies. Approved disposable-account testing passed 47 real Auth/Data API assertions: 41 baseline isolation/save checks, four sign-out/refresh checks and two removed-account login checks. Chrome verified task reload persistence/account switching, bill/custom-meal/event/goal/habit saves and reload persistence, plus all twelve section shells at 390px without horizontal document overflow. Cleanup independently confirmed zero rows in Auth and all exercised application tables. No production operation or migration occurred; credentials stayed outside Git.
+
+The live browser exposed a Home date badge error. The active renderer now compares calendar dates against the profile date without mixing local noon and machine midnight, and includes the full five-day window. Three boundary regressions reproduce the old failure; all 323 tests across 25 suites and the 34-file build pass. Chrome confirms the corrected Today badge. Full section CRUD/rejection/retry, expiry/MFA and recovery acceptance remains open; see [HANDOFF.md](HANDOFF.md).
+
 ## October 10 publication and next readiness pass
 
 The follow-up complete dependency audit exposed development-only alerts missed by the production audit. Compatible `brace-expansion` updates and a scoped coverage-config YAML-parser override remove those paths without downgrading Jest. Clean install, 320 tests across 25 suites with coverage (including actual YAML inheritance), the build and the complete audit passed; zero dependency vulnerabilities remain in the current audit. Tests/Pages audit all dependencies at moderate severity. `212961b` also passed all three remote checks. Supabase sign-in and live acceptance remain pending.

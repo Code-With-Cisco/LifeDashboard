@@ -1,5 +1,19 @@
 # Workstation handoff — September 28, 2026
 
+## Live acceptance and calendar correction — October 10, 2026
+
+Owner sign-in restored access to **LifeDashboard-Test**. Its overview is Healthy; email sign-in and email confirmation are enabled, anonymous sign-in is disabled. Actual SQL counts initially showed zero Auth users/profiles/connector rows, 27 public tables with RLS and 26 restrictive MFA policies. The Auth UI's estimated user count was stale; use actual counts.
+
+With explicit owner approval, two disposable accounts were created only in the separate test project. The public-key Auth/Data API harness passed **41 baseline checks**, covering own saves, cross-user read/write denial, ownership reassignment, self-promotion/template publishing denial, atomic workout retry, zero values and preservation after an invalid workout. Four global sign-out/refresh checks and two removed-account sign-in checks passed: **47 live assertions total**. Private credentials/tokens and schema material remained outside Git; no privileged API key was retrieved.
+
+A loopback preview of the allowlisted build used that real backend. Chrome verified task creation and persistence after full reload, account switching without the first account's task, and bill/custom-meal/event/goal/habit saves and reload persistence. All twelve section shells were opened at 390px without document horizontal overflow; populated Finance card bounds fit. This is bounded live acceptance, not full CRUD/rejection/retry/expiry coverage across all domains.
+
+Live acceptance found Home labeling today's event “In 1d.” The active renderer now compares date-only values to the profile's current date in UTC and includes offsets 0–4, matching its five-day message. Three regressions cover clock-change proximity and month/year boundaries. **323 tests across 25 suites** and the 34-file build passed; the corrected Today badge was verified in Chrome.
+
+Approved cleanup checked exact fixture IDs/emails and live foreign keys, removed private fixture meals before account cascades, and deleted only the two accounts. An independent query confirmed zero users, profiles, meals, tasks, bills, meal logs, events, habits, documents, workout sessions and sets. No production database/settings changes or migrations occurred. Ongoing commit/push authorization and Cisco attribution remain in effect; preserve the unrelated untracked Word document.
+
+Next: complete populated edit/delete and rejected-save/retry checks for remaining sections, session expiry/MFA and backup recovery. Full ICS details/recurrence, safe legacy roadmap writes, independent off-device recovery and live connector activation remain open. Connectors stay disabled. The structural Graphify map still predates current code; verify source.
+
 ## Publication and continued readiness — October 10, 2026
 
 Dependency follow-up: GitHub reported development alerts after publication. The complete audit found vulnerable `brace-expansion` versions and an unpatched `sprintf-js` dependency through coverage configuration. The lockfile now resolves `brace-expansion` 2.1.7/5.0.12. A scoped `@istanbuljs/load-nyc-config` override uses `js-yaml` 4.3.2 with `argparse` 2.0.1, removing `sprintf-js`; the caller uses the supported `load` API. A real YAML-inheritance integration test verifies compatibility. Clean `npm ci`, **320 tests across 25 suites with coverage**, the 34-file build and a complete dependency audit passed with zero vulnerabilities. Tests and Pages now audit development dependencies at moderate severity too. Remove/reassess the scoped override when upstream updates its dependency. Coverage output is ignored and excluded from the public artifact. Tests, CodeQL and Pages also succeeded for `212961b`.

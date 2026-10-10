@@ -1,5 +1,7 @@
 # A practical personal Jarvis
 
+October 10 live acceptance: the separate Healthy test backend passed 47 disposable-account Auth/API assertions and bounded Chrome persistence/account-switching checks. Bills, custom meals, events, goals and habit completions persisted after reload; all twelve section shells fit at 390px. A live Home event-date badge error was fixed and verified with 323 tests plus the build. Fixture cleanup independently returned every exercised table to zero. Full domain edit/delete, rejection/retry, session expiry/MFA and recovery acceptance remains pending. See [HANDOFF.md](HANDOFF.md).
+
 The target experience is a short, reliable answer to: **What matters today, why does it matter, and what should I do next?** The current dashboard has the tracking surfaces and a rules-based starting point. A conversational layer becomes useful once it can trust the underlying records.
 
 ## Daily experience
