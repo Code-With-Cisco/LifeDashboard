@@ -1,5 +1,13 @@
 # Workstation handoff — September 28, 2026
 
+## Publication and continued readiness — October 10, 2026
+
+The owner authorized ongoing commits and pushes in this session, retaining the owner's identity for all attribution. `abc529b` was pushed to `main` with Cisco as both author and committer and no assistant trailers. Tests, CodeQL and Pages all succeeded for that exact commit. The production dependency audit returned zero vulnerabilities. Graphify memory contributor metadata now uses Cisco. The unrelated `FOG-Imaging-PRD.docx` remains untracked and unpublished.
+
+The subsequent readiness audit repaired overlapping Tasks, weight-history, reading-shelf and workout-history loads with the existing `SectionReadService`. The shelf guard protects both its cached `CONTENT.books` and current-reading selection. Late missing-table errors cannot change Tasks after account switching. Missing query results in Tasks, the shelf and workout history show failures rather than empty records. New regressions cover superseded success/server failure/network rejection, account switching, cache state and recovery.
+
+Latest follow-up validation: **319 tests across 24 suites passed**, the 34-file synthetic-config build passed with connectors disabled, and syntax/whitespace checks passed. These are local checks; no new database or live Auth operation occurred. The separate test project's Supabase dashboard redirected to sign-in, so fresh owner sign-in is required before health/settings inspection and private disposable-account acceptance. No credentials were retrieved. The sign-in tab is kept open for the owner. Continue with real Auth/API and persistent browser testing after access is restored; do not substitute local mocks for that acceptance.
+
 ## Continuation checkpoint — October 10, 2026
 
 Finance lists, billing calendar, roadmap reads and summary totals now use `SectionReadService` to reject superseded/account-changed responses. Failed or malformed summary queries mark amounts, counts and progress unavailable instead of inventing zero records; successful empty reads clear stale debt progress. `renderFinancial` starts independent reads together, so an older sequential refresh cannot initiate new reads after a newer refresh. The obsolete Finance renderer wrappers and two obsolete totals implementations were removed. The debt list no longer overwrites summary progress using a fixed $800 baseline. Existing saved baseline data and unrelated work remain intact; roadmap writes still need real-schema review.

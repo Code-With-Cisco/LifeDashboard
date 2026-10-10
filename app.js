@@ -848,7 +848,8 @@ async function logWeight(){
 }
 async function renderWeightLog(){
   if(!PROFILE)return;
-  const logs=await readSection(sb.from('weight_logs').select('log_date,weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(5),'wt-log');
+  const current=SectionReads.begin('weight-log');
+  const logs=await readSection(sb.from('weight_logs').select('log_date,weight_lbs').eq('user_id',PROFILE.id).order('log_date',{ascending:false}).limit(5),'wt-log',current);
   if(!logs)return;
   const el=document.getElementById('wt-log');if(!el)return;
   el.innerHTML=(logs||[]).map((l,i)=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b1);font-size:12px"><span style="color:var(--t3)">${l.log_date}</span><span style="font-family:DM Mono,monospace;color:${i===0?'var(--grn)':'var(--t1)'};font-weight:${i===0?600:400}">${l.weight_lbs} lbs</span></div>`).join('')
@@ -2687,13 +2688,14 @@ function _refreshDashTodosIfVisible(){
 
 // Task list
 async function renderTodo(){
-  if(!PROFILE)return;const epoch=_authEpoch;
+  if(!PROFILE)return;const current=SectionReads.begin('todo-list');
   const el=document.getElementById('todo-list');if(!el)return;
   el.innerHTML='<div style="color:var(--t3);font-size:13px;padding:20px;text-align:center">Loading...</div>';
   let items=[];
   try{
     const{data,error}=await sb.from('todo_items').select('*')
       .eq('user_id',PROFILE.id).order('created_at',{ascending:false});
+    if(!current())return;
     if(error){
       if(error.code==='42P01'){
         el.innerHTML='<div style="background:var(--amb-ll);border:1px solid rgba(245,166,35,.3);border-radius:var(--r2);padding:16px;font-size:12px;color:var(--amb);line-height:1.7">Tasks are unavailable. Please contact the administrator and retry after the service is restored.</div>';
@@ -2701,10 +2703,10 @@ async function renderTodo(){
       }
       throw error;
     }
-    if(epoch!==_authEpoch)return;
-    items=data||[];
+    if(!Array.isArray(data))throw new Error('Tasks unavailable');
+    items=data;
   }catch(e){
-    if(epoch!==_authEpoch)return;
+    if(!current())return;
     el.innerHTML='<div style="color:var(--red);font-size:13px">Error loading tasks.</div>';
     console.error('todo error:',e);return;
   }
@@ -3606,7 +3608,7 @@ loadBooksFromDB=async function(){
     .order('month_plan',{nullsLast:true})
     .order('created_at');
   if(epoch!==_authEpoch)return null;
-  if(error)throw new Error('Reading list unavailable');
+  if(error||!Array.isArray(userList))throw new Error('Reading list unavailable');
   const booksArr=(userList||[]).map((ul,idx)=>({
     id:ul.book_id,             // UUID — used for all DB operations
     _url_id:ul.id,             // user_reading_list row UUID
@@ -3724,9 +3726,9 @@ async function addToShelf(bookId){
 // ── FETCH + SORT BOOKS (data only, no DOM) ────────────────────────
 /** Loads books from DB, merges into CONTENT, applies localStorage sort order.
  * @returns {Array} sorted book array, or empty array on failure */
-async function fetchAndSortBooks(){
+async function fetchAndSortBooks(current=()=>true){
   const epoch=_authEpoch;const fresh=await loadBooksFromDB();
-  if(epoch!==_authEpoch||!PROFILE||!fresh)return null;
+  if(epoch!==_authEpoch||!PROFILE||!fresh||!current())return null;
   CONTENT.books=fresh;
   const listId=PROFILE.assigned_reading_list||'self-improvement-first';
   const listData=CONTENT.books?.lists?.[listId];
@@ -3799,9 +3801,9 @@ function buildBookCardHtml(bk,idx){
 
 // ── UPDATED renderBooks (orchestrator: fetch → sort → render) ─────
 renderBooks=async function(){
-  if(!PROFILE)return;const epoch=_authEpoch;
-  let bks;try{bks=await fetchAndSortBooks();}catch(_){if(epoch===_authEpoch){document.getElementById('book-list').textContent='Reading list unavailable. Please retry.';document.getElementById('cur-book-wrap').style.display='none';}return;}
-  if(epoch!==_authEpoch||!bks)return;
+  if(!PROFILE)return;const current=SectionReads.begin('reading-shelf');
+  let bks;try{bks=await fetchAndSortBooks(current);}catch(_){if(current()){document.getElementById('book-list').textContent='Reading list unavailable. Please retry.';document.getElementById('cur-book-wrap').style.display='none';}return;}
+  if(!current()||!bks)return;
   if(!bks.length){
     bookState.curBookId=null;bookState.curBookPages=0;
     document.getElementById('cur-book-wrap').style.display='none';
@@ -4028,7 +4030,7 @@ saveLog=async function(){
 // ── WORKOUT HISTORY ───────────────────────────────────────────────
 async function renderWorkoutHistory(){
   const el=document.getElementById('wk-history');if(!el||!PROFILE)return;
-  const epoch=_authEpoch,userId=PROFILE.id;
+  const current=SectionReads.begin('workout-history'),userId=PROFILE.id;
   let response;
   try{response=await sb.from('workout_sessions')
     .select('id,session_date,day_name,duration_minutes,notes,workout_exercise_logs(exercise_name,set_number,weight_lbs,reps_completed)')
@@ -4036,9 +4038,9 @@ async function renderWorkoutHistory(){
     .order('session_date',{ascending:false})
     .order('created_at',{ascending:false})
     .limit(8);}catch{response={error:true};}
-  if(epoch!==_authEpoch||PROFILE?.id!==userId)return;
+  if(!current())return;
   const{data:sessions,error}=response;
-  if(error){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">Error loading history.</div>';return;}
+  if(error||!Array.isArray(sessions)){el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:10px">Error loading history.</div>';return;}
   if(!sessions?.length){
     el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:12px 0;text-align:center">No sessions logged yet. Hit <strong>Log Session</strong> on any day to start tracking.</div>';
     return;

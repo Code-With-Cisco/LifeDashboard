@@ -1,5 +1,11 @@
 # LifeDashboard review — September 10, 2026
 
+## October 10 publication and next readiness pass
+
+`abc529b` was pushed under the owner's configured Cisco identity with no assistant trailers. Tests, CodeQL and Pages succeeded for that exact commit; the production dependency audit found zero vulnerabilities. Graphify contributor metadata uses Cisco, and the unrelated Word document remains unpublished.
+
+The follow-up repairs Tasks, weight history, the reading shelf (including cached data/current selection) and workout-history read ordering. Missing query results report failure; late missing-table errors are ignored after account switching. All 319 tests in 24 suites, the 34-file synthetic-config build, syntax and whitespace checks passed. Real Auth/API/browser acceptance remains pending: the separate test project's dashboard requires fresh owner sign-in. No database or Auth mutation was performed. See [HANDOFF.md](HANDOFF.md).
+
 ## October 10 continuation checkpoint
 
 Finance lists, grouped billing-calendar reads, roadmap reads and totals reject stale/account-changed responses through the existing tested read service. Missing summary results now show unavailable amounts/counts/progress; empty debt reads clear stale progress. Independent Finance reads start together. Obsolete renderer/totals overrides and the debt list's fixed-balance progress overwrite were removed.

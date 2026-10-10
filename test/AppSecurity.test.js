@@ -44,6 +44,48 @@ beforeEach(() => {
 
 afterEach(() => dom.window.close());
 
+const shelfRow=(title,id='current')=>({id:'row-'+id,book_id:id,status:'Reading',current_page:10,
+  books:{title,author:'Author',page_count:100,genres:[]}});
+
+test.each([
+  ['renderTodo','todo-list',{title:'Current task',status:'Urgent'},{title:'Old task',status:'Urgent'}],
+  ['renderWeightLog','wt-log',{log_date:'2026-10-10',weight_lbs:180},{log_date:'2026-10-09',weight_lbs:200}],
+  ['renderBooks','book-list',shelfRow('Current book'),shelfRow('Old book','old')],
+  ['renderWorkoutHistory','wk-history',{day_name:'Current session',session_date:'2026-10-10'},{day_name:'Old session',session_date:'2026-10-09'}],
+])('%s ignores superseded success, server failure and network rejection',async(renderer,id,current,old)=>{
+  for(const outcome of ['success','failure','rejection']){
+    let finish,reject;client.from.mockImplementationOnce(()=>chain(new Promise((resolve,fail)=>{finish=resolve;reject=fail;})));
+    const pending=run(renderer+'()');result={data:[current],error:null};await run(renderer+'()');
+    const expected=win.document.getElementById(id).innerHTML;
+    if(outcome==='rejection')reject(new Error('PRIVATE'));
+    else finish(outcome==='failure'?{data:null,error:{code:'42P01',message:'PRIVATE'}}:{data:[old],error:null});
+    await pending;expect(win.document.getElementById(id).innerHTML).toBe(expected);
+    if(renderer==='renderBooks'){
+      expect(run('CONTENT.books.lists["self-improvement-first"].books[0].title')).toBe('Current book');
+      expect(run('bookState.curBookId')).toBe('current');
+      expect(win.document.getElementById('cur-book-title').textContent).toBe('Current book');
+    }
+  }
+});
+
+test.each([
+  ['renderTodo','todo-list',/Error loading/],['renderBooks','book-list',/unavailable/],
+  ['renderWorkoutHistory','wk-history',/Error loading/],['renderWeightLog','wt-log',/Could not load/],
+])('%s reports missing query data then recovers to an empty state',async(renderer,id,message)=>{
+  result={data:null,error:null};await run(renderer+'()');
+  expect(win.document.getElementById(id).textContent).toMatch(message);
+  result={data:[],error:null};await run(renderer+'()');
+  expect(win.document.getElementById(id).textContent).toMatch(/No tasks|No books|No sessions|No entries/);
+});
+
+test.each(['renderTodo','renderWeightLog','renderBooks','renderWorkoutHistory'])('%s ignores a late missing-table failure after account switching',async renderer=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run(renderer+'()');run("PROFILE={id:'user-b'};_authEpoch++;");
+  const expected=win.document.getElementById('app').innerHTML;
+  finish({data:null,error:{code:'42P01',message:'PRIVATE'}});await pending;
+  expect(win.document.getElementById('app').innerHTML).toBe(expected);
+});
+
 test.each([
   ['renderDebtList','debt-list',{debt_name:'Current debt',balance:10}, {debt_name:'Old debt',balance:20}],
   ['renderSubList','sub-list',{sub_name:'Current sub',monthly_cost:10}, {sub_name:'Old sub',monthly_cost:20}],

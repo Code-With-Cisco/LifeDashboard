@@ -70,6 +70,8 @@ Brief preferences are stored per user in this browser. The optional morning noti
 
 ## Current direction
 
+The latest October 10 follow-up passed 319 tests and the 34-file build. Tasks, weight history, the reading shelf and workout history now reject superseded reads; the shelf's cached data and current-book selection are protected as well. Release `abc529b` passed GitHub Tests, CodeQL and Pages. Real Auth/API and persistent browser acceptance is next, once owner access to the separate test project's dashboard is restored.
+
 The October 10 checkpoint passed 307 tests across 24 suites and the 34-file allowlisted build. Finance reads now reject superseded/account-changed responses, report unavailable totals and recover from empty results. Obsolete Finance overrides were removed. Persistent Auth/API/browser acceptance is the next verification step; connectors remain disabled by default. See [HANDOFF.md](HANDOFF.md) for the current checkpoint.
 
 The October 1 checkpoint passed 292 tests across 24 suites and a 34-file allowlisted build. Nutrition, Habits, library searches and habit history now reject superseded reads and report failures. All eight SQL suites passed against the prepared separate test project in a rollback-only transaction with preserved records and confirmed fixture cleanup. Connectors remain disabled by default; test-project Auth/API health, disposable login fixtures, browser persistence acceptance, live connector setup and release remain pending. See [HANDOFF.md](HANDOFF.md) for current release gates; earlier counts describe historical releases.

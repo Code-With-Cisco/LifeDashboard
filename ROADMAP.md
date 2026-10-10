@@ -12,6 +12,8 @@ Voice is an interface to that same brief and action system. Start with push-to-t
 
 ## Delivery order
 
+October 10 publication/follow-up: `abc529b` passed Tests, CodeQL and Pages under the owner's identity. The next readiness pass guards Tasks, weight history, reading-shelf cache/selection and workout history, with 319 local tests and the build passing. Real Auth/API/browser acceptance needs renewed owner sign-in to the separate test project's Supabase dashboard. Existing feature gaps below remain open.
+
 October 10 continuation: Finance reads now reject superseded/account-changed results, report unavailable summary data and recover correctly after empty reads. Obsolete Finance overrides and a conflicting fixed-balance progress writer were removed. Verification passed 307 local tests and the 34-file synthetic-config build. Persistent Auth/API/browser acceptance remains next; no database or release operation occurred. See [HANDOFF.md](HANDOFF.md).
 
 October 1 continuation: the prepared separate test backend has passed all eight application SQL suites in a rollback-only live transaction, including cross-user and MFA checks, with preserved records and no remaining fixtures. Local changes fix overlapping Nutrition/Habits/library/history loads and make habit history use current definitions and the profile day. Verification passed 292 local tests and a 34-file synthetic-config build. Test-project Auth/API health and disposable login fixtures are next for persistent browser acceptance; no release or production change occurred. Connectors stay disabled by default. See [HANDOFF.md](HANDOFF.md).
