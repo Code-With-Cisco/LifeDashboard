@@ -2,7 +2,7 @@
 type: "query"
 date: "2026-09-04T00:08:14.826176+00:00"
 question: "How should the daily Jarvis-style brief evolve?"
-contributor: "graphify"
+contributor: "Cisco"
 outcome: "useful"
 source_nodes: ["Daily Home Brief", "BriefingService.js", "Architecture", "Goals and To-Do Management", "Multi-View Schedule Management"]
 ---

@@ -20,8 +20,7 @@ async function main() {
     assert(/^security-api-\d{8}-[ab]@example\.invalid$/.test(fixtures[who]?.email), 'Only disposable .invalid test accounts are allowed');
     assert(fixtures[who].password?.length >= 24, 'Use a randomly generated test password');
   }
-  const config = vm.runInNewContext(fs.readFileSync(path.join(root, 'config.js'), 'utf8') +
-    '\n;typeof CONFIG!=="undefined"?CONFIG:window.CONFIG;', {window: {}}, {timeout: 1000});
+  const config = require('./live-test-config')(fixtures);
   assert(/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(config.supabaseUrl), 'Expected a Supabase project URL');
   if (config.supabaseKey.startsWith('eyJ')) {
     assert.equal(JSON.parse(Buffer.from(config.supabaseKey.split('.')[1], 'base64url')).role, 'anon', 'Only a public anon key is allowed');

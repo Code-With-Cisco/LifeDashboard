@@ -14,7 +14,7 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('SUPABASE_URL and SUPABASE_KEY (anon/publishable key) are required.');
 }
 
-const publicConfig = validatePublicConfig({supabaseUrl, supabaseKey, allowSelfSignup: false});
+const publicConfig = validatePublicConfig({supabaseUrl, supabaseKey, allowSelfSignup: false, connectorsEnabled:process.env.CONNECTORS_ENABLED==='true'});
 
 fs.rmSync(output, {recursive: true, force: true});
 fs.mkdirSync(path.join(output, 'services'), {recursive: true});
@@ -23,10 +23,12 @@ prepareBrowser(path.join(output, 'vendor'));
 const files = [
   '.nojekyll', 'index.html', 'styles.css', 'logs.js', 'state.js', 'utils.js',
   'api.js', 'render.js', 'main.js', 'app.js', 'data-operations.js', 'personal-data.js', 'planning.js', 'services/PlanningService.js', 'mfa.js', 'services/MfaService.js',
+  'connections.js', 'services/ConnectorService.js', 'services/ObsidianService.js',
   'services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js', 'services/BriefingService.js',
   'services/RecipeService.js', 'services/HabitService.js', 'services/NutritionService.js',
   'services/PersonalDataService.js', 'services/BackupService.js',
   'services/CalendarImportService.js', 'calendar-import.js',
+  'services/SectionReadService.js',
 ];
 
 for (const relative of files) {

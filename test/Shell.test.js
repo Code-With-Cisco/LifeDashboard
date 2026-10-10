@@ -34,8 +34,14 @@ describe('application shell', () => {
   });
 
   test('mobile layout stacks the app and exposes the navigation drawer', () => {
-    expect(css).toMatch(/#app\.show\{flex-direction:column\}/);
-    expect(css).toMatch(/#nav\.mobile-open\{display:flex/);
-    expect(css).toMatch(/\.dash-main-grid\{grid-template-columns:1fr\}/);
+    const style=document.createElement('style');style.textContent=css;document.head.append(style);
+    try {
+      const mobile=[...style.sheet.cssRules].find(rule=>rule.conditionText==='(max-width:768px)');
+      expect(mobile).toBeDefined();
+      const property=(selector,name)=>[...mobile.cssRules].filter(rule=>rule.selectorText?.split(',').map(s=>s.trim()).includes(selector)).at(-1)?.style.getPropertyValue(name);
+      expect(property('#app.show','flex-direction')).toBe('column');
+      expect(property('#nav.mobile-open','display')).toBe('flex');
+      for(const selector of ['.dash-main-grid','.financial-lists','.brief-grid'])expect(property(selector,'grid-template-columns')).toBe('1fr');
+    } finally {style.remove();}
   });
 });

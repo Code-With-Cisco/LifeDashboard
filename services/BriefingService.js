@@ -93,11 +93,12 @@
       title: item.title || 'Untitled task',
       reason: taskReason(item, today) + (item.fitReason ? ' · '+item.fitReason : ''),
       id: item.id || null,
+      ...(item.sourceUrl?{sourceUrl:item.sourceUrl}:{}),
       ...(fit ? {goalTitle:item.goalTitle,nextAction:item.nextAction,goalMissing:!!item.goal_id&&!item.goalTitle} : {}),
     }));
 
     if (preferences.includeCalendar && focus.length < preferences.focusLimit && events.length) {
-      focus.push({kind: 'event', title: events[0].title || 'Calendar event', reason: 'On today\'s calendar'});
+      focus.push({kind: 'event', title: events[0].title || 'Calendar event', reason: 'On today\'s calendar',...(events[0].sourceUrl?{sourceUrl:events[0].sourceUrl}:{})});
     }
     if (preferences.includeWorkout && focus.length < preferences.focusLimit && data.workout && !data.workout.rest) {
       focus.push({kind: 'workout', title: data.workout.focus || 'Complete today\'s workout', reason: 'Planned training'});

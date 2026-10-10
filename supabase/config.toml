@@ -1,0 +1,4 @@
+[functions.dashboard-connectors]
+# The handler validates every user JWT with Auth and checks the DB account/MFA
+# guard. Disabling the legacy gateway supports asymmetric Auth signing keys.
+verify_jwt = false

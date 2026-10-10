@@ -223,3 +223,12 @@ html,body{height:100%;background:var(--bg);color:var(--t1);font-family:"DM Sans"
 .planning-deferred{margin:12px 0}
 .focus-window-row{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:6px;margin:10px 0}
 @media(max-width:520px){.focus-window-row{grid-template-columns:1fr 1fr}.focus-window-row select{grid-column:1 / -1}}
+.connection-modal{max-width:760px;max-height:90vh;overflow-y:auto}
+.connection-card{padding:14px;margin:12px 0;border:1px solid var(--b1);border-radius:var(--r2)}
+.connection-card p{font-size:13px;overflow-wrap:anywhere}
+.connection-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.connection-option{display:flex;gap:10px;align-items:center;margin:10px 0;overflow-wrap:anywhere}
+.connection-option input{width:auto}
+.connection-modal textarea,.connection-modal input:not([type=checkbox]){width:100%;box-sizing:border-box;margin:6px 0 12px}
+.connection-modal details{margin:14px 0}.connection-modal h3{font-size:15px;margin:18px 0 10px}
+.connection-modal summary{cursor:pointer}.connection-modal ul{max-height:220px;overflow:auto}

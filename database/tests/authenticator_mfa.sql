@@ -21,7 +21,8 @@ SET LOCAL ROLE authenticated;
 DO $$ DECLARE t record; n bigint; BEGIN
  IF public.mfa_session_allowed() OR public.get_my_role() IS NOT NULL THEN RAISE EXCEPTION 'FAIL: aal1 accepted'; END IF;
  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' LOOP
-  EXECUTE format('SELECT count(*) FROM public.%I',t.tablename) INTO n;
+  BEGIN EXECUTE format('SELECT count(*) FROM public.%I',t.tablename) INTO n;
+  EXCEPTION WHEN insufficient_privilege THEN n:=0; END;
   IF n<>0 THEN RAISE EXCEPTION 'FAIL: aal1 read from %',t.tablename; END IF;
  END LOOP;
  UPDATE public.profiles SET display_name='blocked' WHERE id=auth.uid();

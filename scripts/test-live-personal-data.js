@@ -12,7 +12,7 @@ async function main(){
   assert(/^[0-9a-f-]{36}$/.test(f[who]?.id)&&f[who].password?.length>=24,'Expected precreated disposable IDs and random passwords');
  }
  assert.notEqual(f.a.id,f.b.id);
- const config=vm.runInNewContext(fs.readFileSync(path.join(root,'config.js'),'utf8')+'\n;typeof CONFIG!=="undefined"?CONFIG:window.CONFIG;',{window:{}},{timeout:1000});
+ const config=require('./live-test-config')(f);
  assert.equal(config.supabaseUrl,f.projectUrl,'Fixture must target the configured project');
  assert(/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(config.supabaseUrl));
  if(config.supabaseKey.startsWith('eyJ'))assert.equal(JSON.parse(Buffer.from(config.supabaseKey.split('.')[1],'base64url')).role,'anon');

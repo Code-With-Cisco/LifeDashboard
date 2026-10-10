@@ -2,7 +2,7 @@
 type: "query"
 date: "2026-09-04T00:08:14.526483+00:00"
 question: "Where are the main security boundaries and risks?"
-contributor: "graphify"
+contributor: "Cisco"
 outcome: "useful"
 source_nodes: ["Security", "Security model", "escapeHtml()", "Supabase User Data Tables", "Runtime Config Generation"]
 ---

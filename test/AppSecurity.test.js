@@ -36,13 +36,252 @@ beforeEach(() => {
   for (const file of ['services/SecurityService.js', 'services/ProfileService.js', 'services/WorkoutService.js',
     'logs.js', 'state.js', 'utils.js', 'api.js', 'render.js', 'main.js', 'services/RecipeService.js',
     'services/HabitService.js', 'services/NutritionService.js', 'services/PlanningService.js', 'services/BriefingService.js',
-    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','planning.js','data-operations.js','services/CalendarImportService.js','calendar-import.js','app.js']) {
+    'services/PersonalDataService.js', 'services/BackupService.js', 'personal-data.js', 'services/MfaService.js','mfa.js','planning.js','data-operations.js','services/SectionReadService.js','services/CalendarImportService.js','calendar-import.js','services/ConnectorService.js','services/ObsidianService.js','connections.js','app.js']) {
     run(read(file));
   }
   run("PROFILE={id:'user-a',timezone:'America/New_York',assigned_workout_plan:'custom'};");
 });
 
 afterEach(() => dom.window.close());
+
+test.each([
+  ['renderDebtList','debt-list',{debt_name:'Current debt',balance:10}, {debt_name:'Old debt',balance:20}],
+  ['renderSubList','sub-list',{sub_name:'Current sub',monthly_cost:10}, {sub_name:'Old sub',monthly_cost:20}],
+  ['renderBillsList','bill-list',{bill_name:'Current bill',amount:10}, {bill_name:'Old bill',amount:20}],
+])('%s keeps the newer read after an old success or failure',async(renderer,id,current,old)=>{
+  for(const failed of [false,true]){
+    let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+    const pending=run(renderer+'()');result={data:[current],error:null};await run(renderer+'()');
+    const expected=win.document.getElementById(id).innerHTML;
+    finish(failed?{data:null,error:{message:'PRIVATE'}}:{data:[old],error:null});await pending;
+    expect(win.document.getElementById(id).innerHTML).toBe(expected);
+    expect(win.document.getElementById(id).textContent).toContain('Current');
+  }
+});
+
+test.each([false,true])('billing calendar ignores superseded grouped reads (failure=%s)',async failed=>{
+  const finishes=[];for(let i=0;i<3;i++)client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>finishes.push(resolve))));
+  const pending=run('renderFinCal()');
+  result={data:[{bill_name:'Current bill',due_day:1}],error:null};await run('renderFinCal()');
+  const expected=win.document.getElementById('fin-cal').innerHTML;
+  finishes.forEach(finish=>finish(failed?{data:null,error:{message:'PRIVATE'}}:{data:[{bill_name:'Old bill',due_day:1}],error:null}));await pending;
+  expect(win.document.getElementById('fin-cal').innerHTML).toBe(expected);
+  expect(win.document.getElementById('fin-cal').textContent).toContain('Current bill');
+});
+
+test.each([false,true])('financial totals ignore a superseded response (failure=%s)',async failed=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('updateFinancialBoxes()');result={data:[{balance:100,monthly_payment:10,monthly_cost:20,amount:30}],error:null};
+  await run('updateFinancialBoxes()');const expected=win.document.getElementById('fin-free-cash').textContent;
+  finish(failed?{data:null,error:{message:'PRIVATE'}}:{data:[{balance:9999,monthly_payment:9999}],error:null});await pending;
+  expect(win.document.getElementById('fin-free-cash').textContent).toBe(expected);
+  expect(win.document.getElementById('fin-total-debt').textContent).toBe('$100.00');
+});
+
+test('financial totals reject missing data and network errors, then recover with empty records',async()=>{
+  result={data:[{balance:100}],error:null};await run('updateFinancialBoxes()');
+  for(const rejected of [false,true]){
+    client.from.mockImplementationOnce(()=>chain(rejected?Promise.reject(new Error('PRIVATE')):{data:null,error:null}));await run('updateFinancialBoxes()');
+    expect(win.document.getElementById('fin-total-debt').textContent).toBe('Unavailable');
+    expect(win.document.getElementById('fin-debt-ct').textContent).toBe('Unavailable');
+    expect(win.document.getElementById('cc-bar').style.width).toBe('0%');
+  }
+  result={data:[],error:null};await run('updateFinancialBoxes()');
+  expect(win.document.getElementById('fin-total-debt').textContent).toBe('$0.00');
+  expect(win.document.getElementById('fin-debt-ct').textContent).toBe('0 accounts');
+  expect(win.document.getElementById('cc-pct').textContent).toBe('0%');
+});
+
+test.each(['renderDebtList','renderSubList','renderBillsList','renderFinCal','updateFinancialBoxes'])('%s ignores responses after an account switch',async renderer=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run(renderer+'()');run("PROFILE={id:'user-b'};_authEpoch++;");
+  const expected=win.document.getElementById('page-financial').innerHTML;
+  finish({data:[{debt_name:'Old private debt',balance:9999}],error:null});await pending;
+  expect(win.document.getElementById('page-financial').innerHTML).toBe(expected);
+});
+
+test('a slow debt list cannot overwrite the current financial progress',async()=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderFinancial()');
+  // The total reader has a saved baseline of 100 and a current balance of 25.
+  run("State.set('debt_start_user-a',100);");
+  result={data:[{balance:25}],error:null};await run('updateFinancialBoxes()');
+  expect(win.document.getElementById('cc-pct').textContent).toBe('75%');
+  finish({data:[{debt_name:'Slow debt',balance:25}],error:null});await pending;
+  expect(win.document.getElementById('cc-pct').textContent).toBe('75%');
+});
+
+test('roadmap ignores a response after its configuration is removed',async()=>{
+  run("CONTENT.schedule={financial_roadmap:{'debt-payoff':{steps:[{num:1,action:'Old step',why:'Old reason',col:'red',timing:'Soon'}]}}};");
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderRoadmap()');run('CONTENT.schedule=null;');await run('renderRoadmap()');
+  finish({data:[{step_number:1,status:'Complete'}],error:null});await pending;
+  expect(win.document.getElementById('roadmap-list').textContent).toContain('No financial roadmap');
+  expect(win.document.getElementById('roadmap-list').textContent).not.toContain('Old step');
+});
+
+test.each([false,true])('nutrition ignores a superseded response (failure=%s)',async failed=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderNutrition()');
+  result={data:[{id:'current',meal_name:'Current lunch',calories:100}],error:null};
+  await run('renderNutrition()');
+  finish(failed?{data:null,error:{message:'private'}}:{data:[{meal_name:'Old lunch'}],error:null});await pending;
+  expect(win.document.getElementById('meal-entries').textContent).toContain('Current lunch');
+  expect(win.document.getElementById('meal-entries').textContent).not.toMatch(/Old lunch|unavailable/);
+});
+
+test('nutrition catches network rejection and rejects invalid data without inventing zero totals',async()=>{
+  client.from.mockImplementationOnce(()=>chain(Promise.reject(new Error('PRIVATE'))));
+  await run('renderNutrition()');
+  expect(win.document.getElementById('nut-targets').textContent).toContain('unavailable');
+  result={data:null,error:null};await run('renderNutrition()');
+  expect(win.document.getElementById('meal-entries').textContent).toContain('unavailable');
+  result={data:[],error:null};await run('renderNutrition()');
+  expect(win.document.getElementById('meal-entries').textContent).toContain('No meals');
+});
+
+test('habit reload cannot replace a newer completion with an older same-day response',async()=>{
+  run("getUserHabitSecs=()=>[{cat:'custom',label:'Custom',col:'g',habits:[{id:'custom-a',label:'Current habit'}]}];renderStreakBar=async()=>{};");
+  let finish;win.API.habits.getLogs=jest.fn().mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;})).mockResolvedValue([{habit_id:'custom-a',completed:true}]);
+  const pending=run('renderHabits()');await run('renderHabits()');finish([]);await pending;
+  expect(win.document.getElementById('hc-custom-a').getAttribute('aria-checked')).toBe('true');
+  expect(run("habitCache['custom-a']")).toBe(true);
+});
+
+test.each([false,true])('library searches ignore a superseded response (failure=%s)',async failed=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  win.document.getElementById('lib-search').value='Old';const pending=run('renderLibrary()');
+  win.document.getElementById('lib-search').value='Current';
+  client.from.mockImplementationOnce(()=>chain({data:[{id:'current',title:'Current book',author:'Author',genres:[]}],error:null}));
+  client.from.mockImplementationOnce(()=>chain({data:[],error:null}));await run('renderLibrary()');
+  finish(failed?{data:null,error:{message:'private'}}:{data:[{title:'Old book',author:'Author'}],error:null});await pending;
+  expect(win.document.getElementById('lib-list').textContent).toContain('Current book');
+  expect(win.document.getElementById('lib-list').textContent).not.toMatch(/Old book|Could not load/);
+});
+
+test('habit history uses the profile day and current habits in one read',async()=>{
+  run("todayStr=()=> '2026-10-01';getUserHabitSecs=()=>[{habits:[{id:'custom-a'},{id:'custom-b'}]}];");
+  result={data:[{habit_id:'custom-a',completed:true,log_date:'2026-10-01'},{habit_id:'custom-b',completed:true,log_date:'2026-10-01'},{habit_id:'removed',completed:true,log_date:'2026-10-01'}],error:null};
+  client.from.mockClear();await run('renderStreakBar()');expect(client.from).toHaveBeenCalledTimes(1);
+  const days=win.document.getElementById('h-streak').children;
+  expect(days).toHaveLength(7);
+  expect(days[0].title).toContain('2026-09-25');
+  expect(days[6].title).toBe('2 of 2 current habits completed on 2026-10-01');
+  expect(days[6].innerHTML).toContain('height:100%');
+});
+
+test('habit history reports failure and ignores responses after sign-out',async()=>{
+  result={data:null,error:{message:'PRIVATE'}};await run('renderStreakBar()');
+  expect(win.document.getElementById('h-streak').textContent).toContain('Could not load');
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderStreakBar()');authCallback('SIGNED_OUT',null);
+  const cleared=win.document.getElementById('h-streak').innerHTML;
+  finish({data:[],error:null});await pending;
+  expect(win.document.getElementById('h-streak').innerHTML).toBe(cleared);
+});
+
+test.each(['renderNutrition','renderLibrary','renderHabits'])('%s ignores a response after sign-out',async renderer=>{
+  let finish;
+  if(renderer==='renderHabits')win.API.habits.getLogs=()=>new Promise(resolve=>{finish=resolve;});
+  else client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run(renderer+'()');authCallback('SIGNED_OUT',null);
+  const cleared=win.document.getElementById('app').innerHTML;
+  finish(renderer==='renderHabits'?[]:{data:[],error:null});await pending;
+  expect(win.document.getElementById('app').innerHTML).toBe(cleared);
+});
+
+test.each([['renderMonth','cal-month'],['renderWeek','cal-week'],['renderDay','cal-day']])('%s keeps a failed calendar read visible',async(renderer,id)=>{
+  result={data:null,error:{message:'PRIVATE'}};
+  await run(renderer+'()');
+  expect(win.document.getElementById(id).textContent).toContain('Could not load');
+  expect(win.document.getElementById('calendar-source-status').textContent).toContain('unavailable');
+  client.from.mockImplementation(()=>chain(Promise.reject(new Error('offline'))));
+  await run(renderer+'()');
+  expect(win.document.getElementById(id).textContent).toContain('Could not load');
+});
+
+test.each([['renderMonth','cal-month'],['renderWeek','cal-week'],['renderDay','cal-day']])('%s ignores a calendar read completed after sign-out',async(renderer,id)=>{
+  let finish;client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run(renderer+'()');authCallback('SIGNED_OUT',null);
+  const cleared=win.document.getElementById(id).innerHTML;
+  finish({data:[{title:'Private old event',event_date:'2026-09-28',event_time:'09:00'}],error:null});await pending;
+  expect(win.document.getElementById(id).innerHTML).toBe(cleared);
+});
+
+test.each([true,false])('a superseded calendar read cannot overwrite the newest view (failure=%s)',async(failed)=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  run("calDate=new Date('2026-09-28T12:00:00')");const pending=run('renderDay()');
+  result={data:[{title:'Current event',event_date:'2026-09-29',event_time:'09:00'}],error:null};
+  await run("calDate=new Date('2026-09-29T12:00:00');renderDay()");
+  finish(failed?{data:null,error:{message:'denied'}}:{data:[{title:'Old event',event_time:'09:00'}],error:null});await pending;
+  const text=win.document.getElementById('cal-day').textContent;
+  expect(text).toContain('Current event');expect(text).not.toMatch(/Old event|Could not load/);
+});
+
+test('calendar merges local and connected events and displays stale-source warnings',async()=>{
+  run("calDate=new Date('2026-09-28T12:00:00');Connections.refresh=async()=>({events:[{id:'google:event',title:'Connected event',event_date:'2026-09-28',start_time:'10:00',sourceUrl:'https://calendar.google.com/calendar/event'}],unavailableSources:['Calendar']})");
+  result={data:[{id:'local-event',title:'Local event',event_time:'09:00'}],error:null};
+  await run('renderDay()');const el=win.document.getElementById('cal-day');
+  expect(el.textContent).toContain('Local event');expect(el.textContent).toContain('Connected event');
+  expect(el.querySelector('a').href).toBe('https://calendar.google.com/calendar/event');
+  expect(win.document.getElementById('calendar-source-status').textContent).toContain('stale');
+});
+
+test('recipe fallback is visibly stale and clears the warning after a successful refresh',async()=>{
+  win.API.recipes.list=jest.fn(async()=>[{id:'recipe-a',profile_id:'basics',name:'Saved recipe',created_by:'user-a'}]);
+  await run('retryRecipes()');
+  win.API.recipes.list.mockRejectedValue(new Error('offline'));await run('retryRecipes()');
+  expect(win.document.getElementById('spice-panels').textContent).toContain('Saved recipe');
+  expect(win.document.getElementById('recipe-freshness').textContent).toContain('Updates are unavailable');
+  win.API.recipes.list.mockResolvedValue([]);await run('retryRecipes()');
+  expect(win.document.getElementById('recipe-freshness').textContent).toBe('');
+  expect(win.document.getElementById('spice-panels').textContent).not.toContain('Saved recipe');
+});
+
+test('dashboard shows saved goals and profile targets instead of fixed weight milestones',async()=>{
+  result={data:[{user_id:'user-a',document_key:'goals',revision:1,payload:[{sec:'Projects',goals:[{id:'goal-a',g:'<img src=x> Finish project',freq:'Monthly',p:'High'}]}]}],error:null};
+  await win.PersonalData.initialize(client,'user-a');result={data:[],error:null};
+  await run('PROFILE.calorie_target=2200;PROFILE.protein_target=120;renderDash()');
+  const goals=win.document.getElementById('dashboard-goals');
+  expect(goals.textContent).toContain('<img src=x> Finish project');expect(goals.querySelector('img')).toBeNull();
+  expect(goals.textContent).not.toContain('165 lbs');
+  expect(client.from.mock.calls.map(([table])=>table)).not.toContain('milestone_status');
+  expect(win.document.getElementById('d-cal-tgt').textContent).toBe('2,200');
+  expect(win.document.getElementById('d-pro-tgt').textContent).toBe('120g');
+});
+
+test('dashboard distinguishes unavailable goals from an empty saved goal list',async()=>{
+  run('renderDashboardGoals()');expect(win.document.getElementById('dashboard-goals').textContent).toContain('Goals are unavailable');
+  await win.PersonalData.initialize(client,'user-a');run('renderDashboardGoals()');
+  expect(win.document.getElementById('dashboard-goals').textContent).toContain('No goals yet');
+});
+
+test('dashboard task panel rejects late private responses and renders failed reads explicitly',async()=>{
+  result={data:null,error:{message:'PRIVATE'}};await run('renderDashTodos()');
+  expect(win.document.getElementById('dash-todos-list').textContent).toContain('could not be loaded');
+  let finish;client.from.mockImplementation(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderDashTodos()');authCallback('SIGNED_OUT',null);
+  const cleared=win.document.getElementById('dash-todos-list').innerHTML;
+  finish({data:[{id:'old',title:'Private task',status:'Urgent',due_date:'2026-09-28'}],error:null});await pending;
+  expect(win.document.getElementById('dash-todos-list').innerHTML).toBe(cleared);
+});
+
+test('dashboard tasks rank Urgent first and ignore an older refresh',async()=>{
+  let finish;client.from.mockImplementationOnce(()=>chain(new Promise(resolve=>{finish=resolve;})));
+  const pending=run('renderDashTodos()');
+  result={data:[{id:'b',title:'Important task',status:'Important',due_date:'2026-09-28'},{id:'a',title:'Urgent task',status:'Urgent',due_date:'2026-09-28'}],error:null};
+  await run('renderDashTodos()');finish({data:[],error:null});await pending;
+  const text=win.document.getElementById('dash-todos-list').textContent;
+  expect(text.indexOf('Urgent task')).toBeLessThan(text.indexOf('Important task'));
+  expect(text).not.toContain('No tasks due');
+});
+
+test('dashboard includes saved custom habits and clears them when definitions change',async()=>{
+  result={data:[{user_id:'user-a',document_key:'habit_definitions',revision:1,payload:[{cat:'custom',label:'Custom',habits:[{id:'practice',label:'<img src=x> Practice'}]}]}],error:null};
+  await win.PersonalData.initialize(client,'user-a');result={data:[],error:null};await run('renderDash()');
+  const panel=win.document.getElementById('dash-week');expect(panel.textContent).toContain('<img src=x> Practice');expect(panel.querySelector('img')).toBeNull();
+  await win.PersonalData.initialize(client,'user-a');await run('renderDash()');expect(panel.textContent).not.toContain('Practice');
+});
 
 test('empty recipes offer the first add action and clear a previous catalog',async()=>{
   run("CONTENT.spice={profiles:[{id:'basics',label:'Basics',recipes:[{id:'old',name:'Old recipe'}]}]};renderSpice();");

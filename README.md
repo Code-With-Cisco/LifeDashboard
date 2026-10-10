@@ -70,6 +70,10 @@ Brief preferences are stored per user in this browser. The optional morning noti
 
 ## Current direction
 
+The October 10 checkpoint passed 307 tests across 24 suites and the 34-file allowlisted build. Finance reads now reject superseded/account-changed responses, report unavailable totals and recover from empty results. Obsolete Finance overrides were removed. Persistent Auth/API/browser acceptance is the next verification step; connectors remain disabled by default. See [HANDOFF.md](HANDOFF.md) for the current checkpoint.
+
+The October 1 checkpoint passed 292 tests across 24 suites and a 34-file allowlisted build. Nutrition, Habits, library searches and habit history now reject superseded reads and report failures. All eight SQL suites passed against the prepared separate test project in a rollback-only transaction with preserved records and confirmed fixture cleanup. Connectors remain disabled by default; test-project Auth/API health, disposable login fixtures, browser persistence acceptance, live connector setup and release remain pending. See [HANDOFF.md](HANDOFF.md) for current release gates; earlier counts describe historical releases.
+
 The current readiness pass gives all existing sections equal priority: confirmed saves, recoverable drafts, session isolation, visible read failures, usable empty states, and mobile access. Calendar files are previewed before import, with duplicate/conflict checks and timezone conversion. Only explicit event titles, dates, and times are supported; recurrence and full event details remain outside this importer. This is not provider synchronization.
 
 The next architectural step is a small server-side connector broker for OAuth, scheduled sync, account invitations, and password administration. It should feed a minimal normalized summary into the dashboard. AI narration can be added after that boundary is in place; action-taking should always remain separately authorized and auditable.

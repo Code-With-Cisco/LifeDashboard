@@ -22,6 +22,14 @@ No migration deletes or rewrites existing personal rows. Migration 002 changes d
 
 ## Local verification
 
+### Prepared test-project acceptance (October 1)
+
+LifeDashboard-Test (`cbgoykmmlopwniufmxvw`) contains 27 application tables. All eight existing SQL suites passed there with synthetic rows inside a rollback-only transaction, including ownership, cross-user denial, restricted accounts, MFA, workouts, planning and broker-only connector storage. Existing-record fingerprints matched, and a subsequent read confirmed zero Auth users/profiles/connector rows and 26 restrictive MFA policies. This session applied no migration and changed no production state. The overview reported Unhealthy even though SQL requests succeeded; real Auth/API health is still unverified.
+
+`node scripts/prepare-test-acceptance.js` generates the same bounded transaction and never connects. It has no commit mode, rejects all command arguments, and requires the prepared 27-table schema plus empty Auth/profile tables. Each suite rolls back its own fixtures, fingerprints stay in a session-private temporary table, and the outer transaction ends with `ROLLBACK`. Manually select the separate test project before execution. If any query fails, explicitly roll back before continuing. Keep generated SQL, real-schema exports, credentials and raw inventory output outside Git and `dist`. PGlite also checks this generator's rollback and rejection of populated projects; it remains a partial synthetic environment.
+
+Manual Auth/API harnesses may select the test backend with `projectUrl` and a **public** `supabaseKey` in their private fixture JSON. If the key is omitted, the ignored application's `config.js` must match that exact fixture project. Privileged credentials and mismatched JWT project references are rejected before requests. Disposable login fixtures still need preparation; SQL-created rollback fixtures do not establish real login, API persistence, browser account switching or session expiry.
+
 ### Task planning (008)
 
 Migration `20260926_008_task_planning.sql` is **applied**. The September 26 read-only inspection confirmed the real task/calendar columns, document constraints, grants, owner policies and all 26 restrictive MFA policies. The additive migration adds optional task goal IDs, estimates and next actions, optional calendar end times, and the `focus_windows` document key. It changes no grants, policies, functions or existing values. Goal IDs resolve only inside the signed-in user's goals document; removing a goal leaves an unavailable link rather than deleting tasks.

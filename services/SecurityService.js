@@ -47,7 +47,7 @@
       } catch (_) { publicKey = false; }
     }
     if (!publicKey) throw new Error('Only a Supabase publishable or anon key may be used in the browser.');
-    return {supabaseUrl: url.origin, supabaseKey: key, allowSelfSignup: input.allowSelfSignup === true};
+    return {supabaseUrl: url.origin, supabaseKey: key, allowSelfSignup: input.allowSelfSignup === true, connectorsEnabled: input.connectorsEnabled === true};
   }
 
   function redactText(value) {

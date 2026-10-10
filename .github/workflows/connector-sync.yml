@@ -1,0 +1,33 @@
+name: Sync selected connections
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+permissions: {}
+concurrency:
+  group: connector-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: vars.CONNECTORS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request bounded private sync
+        env:
+          PROJECT_URL: ${{ secrets.SUPABASE_URL }}
+          SYNC_KEY: ${{ secrets.CONNECTOR_SYNC_KEY }}
+        run: |
+          node <<'NODE'
+          const url = new URL(process.env.PROJECT_URL);
+          if (url.protocol !== 'https:' || !url.hostname.endsWith('.supabase.co')) throw new Error('Invalid project');
+          if (!process.env.SYNC_KEY || process.env.SYNC_KEY.length < 32) throw new Error('Sync secret missing');
+          fetch(url.origin + '/functions/v1/dashboard-connectors', {
+            method: 'POST', headers: {'x-sync-key': process.env.SYNC_KEY}, signal: AbortSignal.timeout(240000)
+          }).then(async response => {
+            if (!response.ok) throw new Error('Sync unavailable');
+            const result = await response.json();
+            console.log(JSON.stringify({synced: result.synced, skipped: result.skipped, failed: result.failed}));
+            if (result.failed) process.exitCode = 1;
+          }).catch(() => {console.error('Connection sync needs attention'); process.exitCode = 1;});
+          NODE

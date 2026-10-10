@@ -17,7 +17,7 @@ async function main() {
  const file=path.resolve(input),relative=path.relative(root,file);
  assert(relative.startsWith('..'+path.sep)||path.isAbsolute(relative),'Fixtures must stay outside the repository');
  const fixtures=JSON.parse(fs.readFileSync(file,'utf8'));
- const config=vm.runInNewContext(fs.readFileSync(path.join(root,'config.js'),'utf8')+';typeof CONFIG!=="undefined"?CONFIG:window.CONFIG;',{window:{}});
+ const config=require('./live-test-config')(fixtures);
  assert.equal(config.supabaseUrl,fixtures.projectUrl);
  for(const who of ['a','b'])assert(/^personal-api-\d{8}-[ab]@example\.invalid$/.test(fixtures[who].email));
  const clients=[];let count=0;

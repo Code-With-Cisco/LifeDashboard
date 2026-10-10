@@ -1,0 +1,20 @@
+'use strict';
+const {PGlite}=require('@electric-sql/pglite'),fs=require('fs'),assert=require('assert/strict');
+const {transaction}=require('./prepare-connectors');
+const read=p=>fs.readFileSync(p,'utf8');
+(async()=>{const db=new PGlite();try{
+ await db.exec(read('test/fixtures/security-schema.sql'));await db.exec(read('test/fixtures/mfa-schema.sql'));
+ await db.exec('GRANT USAGE ON SCHEMA public TO service_role; ALTER TABLE public.calendar_events ADD COLUMN title text NOT NULL, ADD COLUMN event_date date NOT NULL, ADD COLUMN event_time time, ADD COLUMN end_date date, ADD COLUMN all_day boolean DEFAULT false;');
+ for(const file of fs.readdirSync('database/migrations').filter(f=>/_00[1-8]_/.test(f)).sort())await db.exec(read('database/migrations/'+file));
+ await db.exec(transaction());assert.equal((await db.query("SELECT to_regclass('public.connector_state') AS t")).rows[0].t,null);
+ await db.exec(transaction({commit:true}));assert.equal((await db.query('SELECT count(*)::int AS n FROM public.connector_state')).rows[0].n,0);
+ const acceptance=(await db.exec(require('./prepare-test-acceptance').transaction())).flatMap(r=>r.rows||[]);
+ assert.match(acceptance.find(r=>r.acceptance_result)?.acceptance_result,/^PASS: all 8/);
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM auth.users')).rows[0].n,0);
+ assert.equal((await db.query("SELECT to_regclass('pg_temp.acceptance_baseline') AS t")).rows[0].t,null);
+ await db.exec("INSERT INTO auth.users(id) VALUES('00000000-0000-4000-8000-0000000000ff');");
+ await assert.rejects(db.exec(require('./prepare-test-acceptance').transaction()),/empty test project/);await db.exec('ROLLBACK');
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM auth.users')).rows[0].n,1);
+ await assert.rejects(db.exec(transaction()),/already exists/);await db.exec('ROLLBACK');
+ console.log('PASS: connector migration, all 8 rollback-only acceptance suites, populated-project rejection and record preservation');
+}finally{await db.close();}})().catch(e=>{console.error(e.message);process.exitCode=1;});

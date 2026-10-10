@@ -113,7 +113,9 @@ const Planning=PlanningUI.create(sb,{
   profile:()=>PROFILE,goals:()=>getUserGoalData(),open:openModal,close:closeModal,toast,confirm:confirmDialog,
   refresh:()=>{renderHome();if(currentPage==='todo')renderTodo();if(currentPage==='dash')renderDashTodos();if(currentPage==='schedule')renderCal();}
 });
+const Connections=ConnectionsUI.create(sb,{profile:()=>PROFILE,enabled:()=>publicConfig.connectorsEnabled,open:openModal,toast,confirm:confirmDialog,refresh:()=>renderHome()});
 const CACHE_TTL=86400000;
+const SectionReads=SectionReadService.create(()=>PROFILE?{userId:PROFILE.id,epoch:_authEpoch}:null);
 const Writes=DataOperations.create({
   session:()=>PROFILE?{userId:PROFILE.id,epoch:_authEpoch}:null,
   notify:message=>toast(message),uuid:()=>crypto.randomUUID()
@@ -132,15 +134,15 @@ function getNutritionTargets(){
     ...(PROFILE?.calorie_target!=null?{calories:PROFILE.calorie_target}:{}),
     ...(PROFILE?.protein_target!=null?{protein_g:PROFILE.protein_target}:{})};
 }
-async function readSection(query,elementId){
+async function readSection(query,elementId,isCurrent=()=>true){
   const epoch=_authEpoch;
   try{
     const {data,error}=await query;
-    if(epoch!==_authEpoch)return null;
+    if(epoch!==_authEpoch||!isCurrent())return null;
     if(error||!Array.isArray(data))throw new Error();
     return data;
   }catch(_){
-    if(epoch===_authEpoch){const el=document.getElementById(elementId);if(el)el.textContent='Could not load this section. Please retry.';}
+    if(epoch===_authEpoch&&isCurrent()){const el=document.getElementById(elementId);if(el)el.textContent='Could not load this section. Please retry.';}
     return null;
   }
 }
@@ -349,6 +351,7 @@ function clearPrivateSession(){
   Planning.reset();
   Writes.reset();
   CalendarImport.reset();
+  Connections.reset();
   if(_briefReminderTimer){clearTimeout(_briefReminderTimer);_briefReminderTimer=null;}
   _latestBriefInput=null;
   PROFILE=null;CONTENT={};habitCache={};currentPage='home';
@@ -681,6 +684,7 @@ function refreshDailyBrief(){
   scheduleMorningBrief(preferences);
 }
 function renderDailyBrief(brief){
+  Connections.setBrief(brief);
   const el=document.getElementById('home-command-brief');if(!el||!brief)return;
   const kindLabel={task:'TASK',event:'CALENDAR',workout:'TRAINING'};
   const ruleLabel={balanced:'Balanced ranking',deadlines:'Deadlines first',priorities:'Priority status first'};
@@ -689,7 +693,7 @@ function renderDailyBrief(brief){
       <div class="brief-rank">${index+1}</div>
       <div style="min-width:0;flex:1">
         <div class="brief-kind">${kindLabel[item.kind]||'FOCUS'} · ${escapeHtml(item.reason)}</div>
-        <button class="brief-source" onclick="${item.kind==='task'&&safeIdentifier(item.id)?`Planning.edit('${safeIdentifier(item.id)}')`:item.kind==='event'?"goto('schedule')":item.kind==='task'?"goto('todo')":"goto('workout')"}">${escapeHtml(item.title)}</button>
+        ${item.sourceUrl?`<a class="brief-source" href="${escapeHtml(ConnectorService.sourceLink(item.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>`:`<button class="brief-source" onclick="${item.kind==='task'&&safeIdentifier(item.id)?`Planning.edit('${safeIdentifier(item.id)}')`:item.kind==='event'?"goto('schedule')":item.kind==='task'?"goto('todo')":"goto('workout')"}">${escapeHtml(item.title)}</button>`}
         ${item.nextAction?`<div class="profile-note">Next: ${escapeHtml(item.nextAction)}</div>`:''}
         ${item.goalTitle?`<div class="profile-note">Goal: ${escapeHtml(item.goalTitle)}</div>`:item.goalMissing?'<div class="profile-note">Linked goal unavailable</div>':''}
       </div>
@@ -703,7 +707,7 @@ function renderDailyBrief(brief){
     <div class="brief-summary">${escapeHtml(brief.summary)}</div>
     ${brief.planning?`<div class="planning-summary"><strong>${brief.planning.availability.known?brief.planning.availability.minutes+' minutes available · '+brief.planning.plannedMinutes+' minutes suggested':'Focus time not confirmed'}</strong><button class="btn btn-o btn-xs" onclick="Planning.openWindows()">Edit focus windows</button><div class="profile-note">Suggestions use your profile timezone and saved calendar. Nothing is automatically scheduled.</div></div>`:''}
     <div class="brief-grid">${focusHtml}</div>
-    ${brief.planning?.deferred.length?`<details class="planning-deferred"><summary>${brief.planning.deferred.length} tasks to review</summary>${brief.planning.deferred.map(t=>`<div class="brief-focus"><div><button class="brief-source" onclick="Planning.edit('${safeIdentifier(t.id)}')">${escapeHtml(t.title)}</button><div class="profile-note">${escapeHtml(t.fitReason)}${t.due_date?' · Due '+escapeHtml(t.due_date):''}</div></div></div>`).join('')}</details>`:''}
+    ${brief.planning?.deferred.length?`<details class="planning-deferred"><summary>${brief.planning.deferred.length} tasks to review</summary>${brief.planning.deferred.map(t=>`<div class="brief-focus"><div>${t.sourceUrl?`<a class="brief-source" href="${escapeHtml(ConnectorService.sourceLink(t.sourceUrl))}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.title)}</a>`:`<button class="brief-source" onclick="Planning.edit('${safeIdentifier(t.id)}')">${escapeHtml(t.title)}</button>`}<div class="profile-note">${escapeHtml(t.fitReason)}${t.due_date?' · Due '+escapeHtml(t.due_date):''}</div></div></div>`).join('')}</details>`:''}
     ${alertsHtml}
     ${directionsHtml}
     ${refreshed?`<div class="brief-delivery">Updated ${escapeHtml(refreshed)} · <button class="btn btn-o btn-xs" onclick="renderHome()">Refresh brief</button></div>`:''}
@@ -783,13 +787,16 @@ async function renderHome(){
     sb.from('subscription_tracker').select('sub_name,renewal_day').eq('user_id',userId),
     sb.from('calendar_events').select('id,title,event_date,end_date,start_time:event_time,end_time,all_day,is_recurring,event_type').eq('user_id',userId),
     sb.from('todo_items').select('id,title,status,due_date,push_back_count,completed,goal_id,estimate_minutes,next_action').eq('user_id',userId).neq('status','Done'),
+    Connections.refresh(),
   ]);
   if(epoch!==_authEpoch||request!==_homeRequest)return;
-  const labels=['Weight','Habits','Debt payments','Subscriptions','Calendar','Tasks'];
+  const labels=['Weight','Habits','Debt payments','Subscriptions','Calendar','Tasks','Connections'];
   const unavailableSources=results.flatMap((result,index)=>result.status==='rejected'||result.value.error?[labels[index]]:[]);
   if(!PersonalData.isReady())unavailableSources.push('Planning');
   for(const index of [4,5])if(results[index].status==='fulfilled'&&results[index].value.data?.length>=1000&&!unavailableSources.includes(labels[index]))unavailableSources.push(labels[index]);
   const [wts,history,ub_d,ub_s,evs,briefTodos]=results.map(result=>result.status==='fulfilled'&&!result.value.error?result.value.data||[]:[]);
+  const connected=results[6].status==='fulfilled'?results[6].value:{events:[],tasks:[],goals:[],unavailableSources:['Calendar','Connected tasks']};
+  evs.push(...connected.events);briefTodos.push(...connected.tasks);unavailableSources.push(...connected.unavailableSources);
   set('qs-wt',wts.length?wts[0].weight_lbs:'--');
   const habits=history.filter(h=>h.log_date===today);
   const completedHabits=habits.filter(h=>h.completed).length;
@@ -802,6 +809,7 @@ async function renderHome(){
   set('qs-str',unavailableSources.includes('Habits')?'--':streak);
   const savedGoals=getUserGoalData();
   const goals=Array.isArray(savedGoals)?savedGoals.flatMap(section=>Array.isArray(section?.goals)?section.goals:[]):[];
+  goals.push(...connected.goals);
   _latestBriefInput={
     today:todayStr(),todos:briefTodos||[],events:evs||[],habitCompleted:completedHabits,
     habitTotal:totalHabits,workout:todayWk||null,goals,unavailableSources,refreshedAt:new Date().toISOString()
@@ -857,11 +865,8 @@ async function renderWeightLog(){
 async function renderDash(){
   if(!PROFILE)return;
   const epoch=_authEpoch;
-  const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit'];
-  if(mPlan){
-    const c=document.getElementById('d-cal-tgt');if(c)c.textContent=mPlan.targets.calories+'/day';
-    const p=document.getElementById('d-pro-tgt');if(p)p.textContent=mPlan.targets.protein_g+'g/day';
-  }
+  loadDashStats();
+  renderDashboardGoals();
   await renderWeightLog();
   if(epoch!==_authEpoch||!PROFILE)return;
   const wkData=CONTENT.workouts?.plans?.[PROFILE.assigned_workout_plan||'shred-advanced'];
@@ -873,20 +878,19 @@ async function renderDash(){
   const hAll=await readSection(sb.from('habit_logs').select('log_date,habit_id,completed').eq('user_id',PROFILE.id).in('log_date',wdays.map(w=>w.k)),'dash-week');
   if(epoch!==_authEpoch||!PROFILE)return;
   const byDate={};(hAll||[]).forEach(h=>{if(!byDate[h.log_date])byDate[h.log_date]={};if(h.completed)byDate[h.log_date][h.habit_id]=true;});
-  const ALL_H=['wake','hydrate','mobility','workout','hiit','kneerehab','walk','logged','protein','calories','noprocessed','water','nolateeat','read','prep','screens','sleep'];
+  const habits=getUserHabitSecs().flatMap(section=>section.habits);
   const wdEl=document.getElementById('dash-week');if(!wdEl)return;
   const hdrs='<div style="display:flex;align-items:center;gap:3px;margin-bottom:3px"><div style="width:130px;flex-shrink:0"></div>'+wdays.map(({k,d})=>`<div style="width:26px;text-align:center;font-size:10px;font-weight:${k===todayStr()?700:400};color:${k===todayStr()?'var(--red)':'var(--t3)'}">${D7[d.getDay()]}</div>`).join('')+'</div>';
-  const rows=ALL_H.map(id=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+id+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'✓':''}</div>`;}).join('')+'</div>');
+  const rows=habits.map(({id,label})=>'<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><div style="font-size:11px;color:var(--t2);width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">'+escapeHtml(label)+'</div>'+wdays.map(({k})=>{const done=!!(byDate[k]&&byDate[k][id]);return`<div style="width:26px;height:24px;border-radius:4px;background:${done?'var(--grn)':'var(--s3)'};display:flex;align-items:center;justify-content:center;font-size:10px">${done?'✓':''}</div>`;}).join('')+'</div>');
   if(hAll)wdEl.innerHTML=hdrs+rows.join('');
-  const ms=await readSection(sb.from('milestone_status').select('*').eq('user_id',PROFILE.id),'milestone-grid');if(!ms)return;
-  const msMap={};(ms||[]).forEach(m=>msMap[m.milestone_name]=m.status);
-  const MILES=[{name:'Month 1',tgt:'~210 lbs',col:'r',desc:'Lock in routine. First 10 lbs.'},{name:'Month 2',tgt:'~200 lbs',col:'a',desc:'Break 200. Progressive overload.'},{name:'Month 3',tgt:'~190 lbs',col:'a',desc:'Visible definition.'},{name:'Month 4-6',tgt:'~165 lbs',col:'g',desc:'Final shred. Goal achieved.'}];
-  const mgEl=document.getElementById('milestone-grid');
-  if(mgEl)mgEl.innerHTML=MILES.map(m=>`<div class="card card-${m.col}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><div style="font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:1px">${m.name}</div><div class="mono" style="font-size:13px">${m.tgt}</div></div><div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px">${m.desc}</div><select class="inp sel" style="font-size:11px;padding:4px 22px 4px 8px" onchange="saveMilestone('${m.name}',this.value)"><option${msMap[m.name]==='Not Started'?' selected':''}>Not Started</option><option${msMap[m.name]==='In Progress'?' selected':''}>In Progress</option><option${msMap[m.name]==='Complete'?' selected':''}>Complete</option></select></div>`).join('');
+  await renderDashTodos();
 }
-async function saveMilestone(name,val){
-  const{error}=await sb.from('milestone_status').upsert({user_id:PROFILE.id,milestone_name:name,status:val});
-  if(error){toast('Error saving milestone: '+error.message);console.error('[milestone] upsert failed:',error);}
+function renderDashboardGoals(){
+  const el=document.getElementById('dashboard-goals');if(!el)return;
+  if(!PersonalData.isReady()){el.innerHTML='<p>Goals are unavailable. Reload your personal records to try again.</p><button class="btn btn-o" onclick="PersonalData.open()">Data &amp; backups</button>';return;}
+  const sections=getUserGoalData().filter(section=>section.goals.length);
+  el.innerHTML=sections.length?sections.map(section=>`<div class="card"><div class="sh">${escapeHtml(section.sec)}</div>${section.goals.map(goal=>`<p>${escapeHtml(goal.g)} <span class="badge b-d">${escapeHtml(goal.freq)} · ${escapeHtml(goal.p)}</span></p>`).join('')}</div>`).join(''):'<p>No goals yet. Set your own priorities in Goals.</p>';
+  el.innerHTML+='<button class="btn btn-o" onclick="goto(\'goals\')">Open Goals</button>';
 }
 
 // HABITS
@@ -948,15 +952,22 @@ function renderCatProg(){
   }).join('');
 }
 async function renderStreakBar(){
+  if(!PROFILE)return;
   const el=document.getElementById('h-streak');if(!el)return;
+  const current=SectionReads.begin('habit-history'),userId=PROFILE.id,today=todayStr();
+  const dates=Array.from({length:7},(_,i)=>{
+    const d=new Date(today+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-6+i);
+    return {date:d.toISOString().slice(0,10),label:D7[d.getUTCDay()]};
+  });
+  const logs=await readSection(sb.from('habit_logs').select('habit_id,completed,log_date').eq('user_id',userId).gte('log_date',dates[0].date).lte('log_date',today),'h-streak',current);
+  if(!logs||!current())return;
+  const habitIds=new Set(getUserHabitSecs().flatMap(sec=>sec.habits.map(h=>h.id)));
   const bars=[];
-  for(let i=6;i>=0;i--){
-    const d=new Date();d.setDate(d.getDate()-i);const k=d.toISOString().split('T')[0];
-    const{data:dh}=await sb.from('habit_logs').select('completed').eq('user_id',PROFILE.id).eq('log_date',k);
-    const done=(dh||[]).filter(h=>h.completed).length;const pct=Math.round(done/17*100);
-    const col=pct>=80?'var(--grn)':pct>=50?'var(--amb)':pct>0?'var(--red)':'var(--s3)';
-    const isToday=k===todayStr();
-    bars.push(`<div style="flex:1;text-align:center"><div style="font-size:10px;color:var(--t3);margin-bottom:4px">${D7[d.getDay()]}</div><div style="height:54px;background:var(--s3);border-radius:6px;position:relative;overflow:hidden${isToday?';border:1px solid var(--red)':''}"><div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:${col};border-radius:4px;transition:height .3s"></div></div><div style="font-size:10px;color:var(--t3);margin-top:3px">${done}</div></div>`);
+  for(const {date,label} of dates){
+    const done=new Set(logs.filter(h=>h.log_date===date&&h.completed&&habitIds.has(h.habit_id)).map(h=>h.habit_id)).size;
+    const pct=HabitService.completionPct(done,habitIds.size),col=HabitService.barColor(pct);
+    const isToday=date===today;
+    bars.push(`<div style="flex:1;text-align:center" title="${done} of ${habitIds.size} current habits completed on ${date}"><div style="font-size:10px;color:var(--t3);margin-bottom:4px">${label}</div><div style="height:54px;background:var(--s3);border-radius:6px;position:relative;overflow:hidden${isToday?';border:1px solid var(--red)':''}"><div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:${col};border-radius:4px;transition:height .3s"></div></div><div style="font-size:10px;color:var(--t3);margin-top:3px">${done}</div></div>`);
   }
   el.innerHTML=bars.join('');el.style.cssText='display:flex;gap:4px';
 }
@@ -1195,6 +1206,22 @@ async function renderCal(){
   else if(calView==='week')await renderWeek();
   else await renderDay();
 }
+let calendarReadVersion=0;
+async function calendarRange(start,end,elementId){
+  const user=PROFILE?.id,epoch=_authEpoch;
+  if(!user)return null;
+  const version=++calendarReadVersion,current=()=>version===calendarReadVersion&&epoch===_authEpoch&&PROFILE?.id===user;
+  const [local,connected]=await Promise.all([readSection(sb.from('calendar_events').select('*').eq('user_id',user).or(`event_date.gte.${start},end_date.gte.${start}`).lte('event_date',end),elementId,current),Connections.refresh()]);
+  if(!current())return null;
+  const note=document.getElementById('calendar-source-status');
+  if(note)note.textContent=!local||connected.unavailableSources.includes('Calendar')?'Some calendar sources are unavailable or stale. Refresh before relying on this schedule.':publicConfig.connectorsEnabled?'Google Calendar shows the most recently synced 32-day horizon. Edit imported events at their source.':'';
+  if(!local)return null;
+  return [...local,...connected.events.filter(e=>e.event_date<=end&&(e.end_date||e.event_date)>=start).map(e=>({...e,event_time:e.start_time}))];
+}
+function calendarTitle(event){
+  const link=ConnectorService.sourceLink(event.sourceUrl);
+  return link?`<a href="${escapeAttr(link)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHtml(event.title)} · Google</a>`:escapeHtml(event.title);
+}
 async function renderMonth(){
   if(!PROFILE)return;
   const el=document.getElementById('cal-month');if(!el)return;
@@ -1204,15 +1231,13 @@ async function renderMonth(){
   const mS=y+'-'+String(m+1).padStart(2,'0')+'-01';
   const mE=y+'-'+String(m+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
   // Fetch events that START in this month OR span into this month
-  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
-    .or(`event_date.gte.${mS},end_date.gte.${mS}`)
-    .lte('event_date',mE),'cal-month');if(!uEvs)return;
+  const uEvs=await calendarRange(mS,mE,'cal-month');if(!uEvs)return;
   const ebd={};
   (uEvs||[]).forEach(e=>{
     // Add event to every day it spans
-    const start=new Date(e.event_date+'T12:00:00');
+    const start=new Date((e.event_date<mS?mS:e.event_date)+'T12:00:00');
     const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
-    const end=new Date(endStr+'T12:00:00');
+    const end=new Date((endStr>mE?mE:endStr)+'T12:00:00');
     for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
       const ds=d.toLocaleDateString('en-CA');
       if(ds>=mS&&ds<=mE){
@@ -1236,7 +1261,7 @@ async function renderMonth(){
       const isUserEv=!!eventId;
       const eventType=['r','g','a','b','p'].includes(e.event_type)?e.event_type:'b';
       const clickHandler=isUserEv?`event.stopPropagation();openUserEvent('${eventId}')`:'';
-      html+=`<div class="cal-ev ${eventType}" ${isUserEv?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="${clickHandler}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openUserEvent('${eventId}') }" style="cursor:pointer" title="Click to edit"`:''}>${escapeHtml(e.title)}</div>`;
+      html+=`<div class="cal-ev ${eventType}" ${isUserEv?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="${clickHandler}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openUserEvent('${eventId}') }" style="cursor:pointer" title="Click to edit"`:''}>${calendarTitle(e)}</div>`;
     });
     if(evs.length>3)html+=`<div style="font-size:9px;color:var(--t3)">+${evs.length-3} more</div>`;
     html+='</div>';
@@ -1254,15 +1279,13 @@ async function renderWeek(){
   const rangeEnd=dates[6].toLocaleDateString('en-CA');
   if(title)title.textContent='Week of '+fmtDs(dates[0])+' - '+fmtDs(dates[6]);
   const hours=Array.from({length:24},(_,i)=>i);
-  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
-    .or(`event_date.gte.${rangeStart},end_date.gte.${rangeStart}`)
-    .lte('event_date',rangeEnd),'cal-week');if(!uEvs)return;
+  const uEvs=await calendarRange(rangeStart,rangeEnd,'cal-week');if(!uEvs)return;
   const ebd={};
   (uEvs||[]).forEach(e=>{
     // Add event to every day it spans
-    const start=new Date(e.event_date+'T12:00:00');
+    const start=new Date((e.event_date<rangeStart?rangeStart:e.event_date)+'T12:00:00');
     const endStr=e.end_date&&e.end_date>e.event_date?e.end_date:e.event_date;
-    const end=new Date(endStr+'T12:00:00');
+    const end=new Date((endStr>rangeEnd?rangeEnd:endStr)+'T12:00:00');
     for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
       const ds=d.toLocaleDateString('en-CA');
       if(ds>=rangeStart&&ds<=rangeEnd){
@@ -1282,7 +1305,7 @@ async function renderWeek(){
     const k=d.toISOString().split('T')[0];const isT=k===todayStr();
     const allDay=(ebd[k]||[]).filter(e=>e.all_day||!e.event_time);
     html+=`<div style="min-height:34px;background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};border-radius:4px;padding:2px;overflow:hidden">${allDay.map(e=>{
-      const eventId=safeIdentifier(e.id);const label=escapeHtml(e.title);
+      const eventId=safeIdentifier(e.id);const label=calendarTitle(e);
       return eventId?`<div role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}" style="font-size:9px;padding:2px 4px;border-radius:3px;background:var(--blu-l);cursor:pointer">${label}</div>`:`<div style="font-size:9px">${label}</div>`;
     }).join('')}</div>`;
   });
@@ -1296,7 +1319,7 @@ async function renderWeek(){
       const cols={r:'var(--red-l)',g:'var(--grn-l)',a:'var(--amb-l)',b:'var(--blu-l)'};
       html+=`<div style="background:${isT?'var(--red-ll)':'var(--s2)'};border:1px solid ${isT?'rgba(232,64,64,.2)':'var(--b1)'};height:40px;border-radius:4px;overflow:hidden;position:relative">${evs.map(e=>{
         const eventId=safeIdentifier(e.id);const attrs=eventId?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}"`:'';
-        return`<div ${attrs} style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'};${eventId?'cursor:pointer':''}">${escapeHtml(e.title)}</div>`;
+        return`<div ${attrs} style="position:absolute;inset:1px;border-radius:3px;padding:2px 4px;font-size:9px;overflow:hidden;background:${cols[e.event_type||'b']||'var(--s3)'};${eventId?'cursor:pointer':''}">${calendarTitle(e)}</div>`;
       }).join('')}</div>`;
     });
   });
@@ -1309,14 +1332,12 @@ async function renderDay(){
   const ds=calDate.toLocaleDateString('en-CA');
   if(title)title.textContent=D7L[calDate.getDay()]+', '+fmtD(calDate);
   const schedItems=focusWindowEvents(calDate.getDay());
-  const uEvs=await readSection(sb.from('calendar_events').select('*').eq('user_id',PROFILE.id)
-    .or(`event_date.eq.${ds},end_date.gte.${ds}`)
-    .lte('event_date',ds),'cal-day');if(!uEvs)return;
-  const all=[...schedItems,...(uEvs||[]).map(e=>({id:e.id,time:e.event_time,title:e.title,type:e.event_type,allDay:e.all_day}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const uEvs=await calendarRange(ds,ds,'cal-day');if(!uEvs)return;
+  const all=[...schedItems,...(uEvs||[]).map(e=>({id:e.id,time:e.event_time,title:e.title,type:e.event_type,allDay:e.all_day,sourceUrl:e.sourceUrl}))].sort((a,b)=>(a.time||'').localeCompare(b.time||''));
   const cM={r:'var(--red)',g:'var(--grn)',a:'var(--amb)',b:'var(--blu)',p:'var(--pur)',d:'var(--b2)'};
   el.innerHTML=all.map(e=>{
     const eventId=safeIdentifier(e.id);const attrs=eventId?`role="button" tabindex="0" aria-label="Edit event: ${escapeAttr(e.title)}" onclick="openUserEvent('${eventId}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openUserEvent('${eventId}')}"`:'';
-    return`<div class="ev-chip" ${attrs} style="margin-bottom:6px;${eventId?'cursor:pointer':''}"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.allDay?'All day':e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${escapeHtml(e.title)}</span></div>`;
+    return`<div class="ev-chip" ${attrs} style="margin-bottom:6px;${eventId?'cursor:pointer':''}"><span class="ev-time" style="color:${cM[e.type||e.event_type]||'var(--t3)'}">${escapeHtml(e.allDay?'All day':e.time||e.event_time||'')}</span><span style="font-size:13px;font-weight:${e.is_major?600:500}">${calendarTitle(e)}</span></div>`;
   }).join('');
 }
 function openEventModal(dateStr,editId,eventData){
@@ -1494,9 +1515,15 @@ function addBook(){
 }
 
 // FINANCIAL
-async function renderFinancial(){await renderDebtList();await renderSubList();await renderFinCal();await renderRoadmap();}
+async function renderFinancial(){
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('financial');
+  await Promise.all([renderDebtList,renderBillsList,renderSubList,renderFinCal,renderRoadmap,updateFinancialBoxes].map(async fn=>{
+    try{await fn();}catch(_){if(isCurrent())toast('Financial data could not be loaded.');}
+  }));
+}
 async function renderDebtList(){
-  const debts=await readSection(sb.from('debt_tracker').select('*').eq('user_id',PROFILE.id),'debt-list');if(!debts)return;
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('debt-list');
+  const debts=await readSection(sb.from('debt_tracker').select('*').eq('user_id',PROFILE.id),'debt-list',isCurrent);if(!debts)return;
   const el=document.getElementById('debt-list');if(!el)return;
   el.innerHTML=(debts||[]).map(d=>{
     const mo=d.interest_rate?d.balance*(d.interest_rate/100/12):0;
@@ -1504,10 +1531,6 @@ async function renderDebtList(){
     const debtId=safeIdentifier(d.id);
     return`<div class="fin-row"><div><div class="fin-name">${escapeHtml(d.debt_name)}</div><div class="fin-note">$${Number(d.monthly_payment||0).toFixed(2)}/mo - ${Number(d.interest_rate||0).toFixed(2)}% APR${typeof mos==='number'?' - ~'+mos+'mo payoff':''}</div></div><div style="display:flex;gap:5px;align-items:center"><div class="fin-amt" style="color:var(--red)">$${Number(d.balance||0).toLocaleString()}</div><button class="btn btn-o btn-xs" onclick="editDebt('${debtId}')" ${debtId?'':'disabled'}>Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeDebt('${debtId}')" ${debtId?'':'disabled'}>X</button></div></div>`;
   }).join('')||'<div style="color:var(--t3);font-size:12px">No debts tracked.</div>';
-  const cc=(debts||[]).find(d=>d.debt_name?.toLowerCase().includes('HIGHINTEREST_CC'))||{balance:800};
-  const pct=Math.round(Math.max(0,(800-cc.balance)/800*100));
-  const pe=document.getElementById('cc-pct');const pb=document.getElementById('cc-bar');const cb=document.getElementById('d-cc-bal');
-  if(pe)pe.textContent=pct+'%';if(pb)pb.style.width=pct+'%';if(cb)cb.textContent='$'+(cc.balance||0);
 }
 function openDebtModal(){debtEditId=null;document.getElementById('debt-modal-title').textContent='ADD DEBT';['d-name','d-bal','d-pay','d-rate','d-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});document.getElementById('debt-edit-id').value='';openModal('debt-modal');}
 async function editDebt(id){
@@ -1532,7 +1555,8 @@ async function removeDebt(id){
   return Writes.run('debt-delete-'+id,{id},ctx=>API.records.write('debt_tracker',ctx.userId,{}, {match:{id},remove:true}),()=>{renderDebtList();renderFinCal();updateFinancialBoxes();toast('Removed');});
 }
 async function renderSubList(){
-  const subs=await readSection(sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id),'sub-list');if(!subs)return;
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('sub-list');
+  const subs=await readSection(sb.from('subscription_tracker').select('*').eq('user_id',PROFILE.id),'sub-list',isCurrent);if(!subs)return;
   const el=document.getElementById('sub-list');if(!el)return;
   const ACOL={Keep:'g',Cancel:'r',Pause:'a',Review:'b'};
   el.innerHTML=(subs||[]).map(s=>{const subId=safeIdentifier(s.id);return`<div class="fin-row"><div><div class="fin-name">${escapeHtml(s.sub_name)}</div><div class="fin-note">Due day ${Number(s.renewal_day)||'--'}</div></div><div style="display:flex;gap:5px;align-items:center"><span class="badge b-${ACOL[s.action]||'d'}">${escapeHtml(s.action)}</span><div class="fin-amt">$${Number(s.monthly_cost||0).toFixed(2)}</div><button class="btn btn-o btn-xs" onclick="editSub('${subId}')" ${subId?'':'disabled'}>Edit</button><button class="btn btn-xs" style="background:var(--red-ll);color:var(--red);border:1px solid rgba(232,64,64,.2)" onclick="removeSub('${subId}')" ${subId?'':'disabled'}>X</button></div></div>`;}).join('')||'<div style="color:var(--t3);font-size:12px">No subscriptions.</div>';
@@ -1553,14 +1577,15 @@ async function removeSub(id){
 }
 async function renderFinCal(){
   if(!PROFILE)return;
+  const isCurrent=SectionReads.begin('fin-cal');
   const el=document.getElementById('fin-cal');if(!el)return;
   const now=new Date();const y=now.getFullYear();const m=now.getMonth();
   const hdr=document.getElementById('fin-cal-hdr');if(hdr)hdr.textContent=M12[m]+' '+y;
   const first=new Date(y,m,1);const last=new Date(y,m+1,0);
   const[debts,subs,bills2]=await Promise.all([
-    readSection(sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),'fin-cal'),
-    readSection(sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),'fin-cal'),
-    readSection(sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),'fin-cal'),
+    readSection(sb.from('debt_tracker').select('debt_name,due_day').eq('user_id',PROFILE.id),'fin-cal',isCurrent),
+    readSection(sb.from('subscription_tracker').select('sub_name,renewal_day,action').eq('user_id',PROFILE.id),'fin-cal',isCurrent),
+    readSection(sb.from('bills_tracker').select('bill_name,due_day').eq('user_id',PROFILE.id),'fin-cal',isCurrent),
   ]);
   if(!debts||!subs||!bills2)return;
   const bMap={};
@@ -1580,10 +1605,11 @@ async function renderFinCal(){
   el.innerHTML=html;
 }
 async function renderRoadmap(){
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('roadmap-list');
   const el=document.getElementById('roadmap-list');if(!el)return;
   const rdmData=CONTENT.schedule?.financial_roadmap?.['debt-payoff'];
   if(!rdmData){el.innerHTML='<p>No financial roadmap is configured. Use Goals to set your priorities.</p><button class="btn btn-o" onclick="goto(\'goals\')">Open Goals</button>';return;}
-  const rs=await readSection(sb.from('roadmap_status').select('*').eq('user_id',PROFILE.id),'roadmap-list');if(!rs)return;
+  const rs=await readSection(sb.from('roadmap_status').select('*').eq('user_id',PROFILE.id),'roadmap-list',isCurrent);if(!rs)return;
   const rsMap={};(rs||[]).forEach(r=>rsMap[r.step_number]=r.status);
   el.innerHTML=rdmData.steps.map(s=>`<div class="card" style="margin-bottom:7px;border-left:3px solid var(--${s.col})"><div style="display:flex;gap:12px;align-items:flex-start"><div style="font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--${s.col});line-height:1;flex-shrink:0">${s.num}</div><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:3px"><div style="font-size:13px;font-weight:600">${s.action}</div><div style="display:flex;gap:6px;align-items:center"><span class="badge b-d">${s.timing}</span><select class="inp sel" style="font-size:11px;padding:3px 22px 3px 7px;width:120px" onchange="saveRoadmap(${s.num},this.value)"><option${rsMap[s.num]==='Not Started'?' selected':''}>Not Started</option><option${rsMap[s.num]==='In Progress'?' selected':''}>In Progress</option><option${rsMap[s.num]==='Complete'?' selected':''}>Complete</option></select></div></div><div style="font-size:12px;color:var(--t2)">${s.why}</div></div></div></div>`).join('');
 }
@@ -1832,30 +1858,12 @@ async function saveStat(elId,key,unit,value){
 }
 function loadDashStats(){
   const tgt=PROFILE.target_weight??165;
-  const cal=PROFILE.calorie_target??1900;
-  const pro=PROFILE.protein_target??185;
+  const targets=getNutritionTargets(),cal=targets.calories,pro=targets.protein_g;
   const te=document.getElementById('d-tgt-wt'); if(te)te.textContent=tgt;
   const ce=document.getElementById('d-cal-tgt'); if(ce)ce.textContent=cal.toLocaleString();
   const pe=document.getElementById('d-pro-tgt'); if(pe)pe.textContent=pro+'g';
   const ne=document.getElementById('nut-tgt-cal'); if(ne)ne.textContent=cal+'/day';
   const npe=document.getElementById('nut-tgt-pro'); if(npe)npe.textContent=pro+'g/day';
-}
-
-// ── FINANCIAL DYNAMIC BOXES ─────────────────────────────────────
-async function updateFinancialBoxes(){
-  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
-  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
-  const totalDebt=(debts||[]).reduce((s,d)=>s+(d.balance||0),0);
-  const totalPay=(debts||[]).reduce((s,d)=>s+(d.monthly_payment||0),0);
-  const totalSubs=(subs||[]).reduce((s,s2)=>s+(s2.monthly_cost||0),0);
-  const totalMonthly=totalPay+totalSubs;
-  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  set('fin-total-debt','$'+totalDebt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
-  set('fin-debt-ct',(debts||[]).length+' account'+(debts?.length!==1?'s':''));
-  set('fin-monthly-pay','$'+totalPay.toFixed(2));
-  set('fin-monthly-subs','$'+totalSubs.toFixed(2));
-  set('fin-subs-ct',(subs||[]).length+' subscription'+(subs?.length!==1?'s':''));
-  set('fin-total-monthly','$'+totalMonthly.toFixed(2));
 }
 
 // ── HABITS ADD/EDIT/REMOVE ──────────────────────────────────────
@@ -2041,13 +2049,6 @@ adminCreateUser=async function(){
   toast('Secure invitations require a server-side function. Browser-created users are intentionally disabled.',6000);
 }
 
-// ── PATCH renderFinancial to call updateFinancialBoxes ───────────
-const _origRenderFinancial=renderFinancial;
-renderFinancial=async function(){
-  await _origRenderFinancial();
-  await updateFinancialBoxes();
-}
-
 // ── PATCH enterApp to load dash stats ───────────────────────────
 const _origEnterApp=enterApp;
 enterApp=async function(){
@@ -2113,26 +2114,6 @@ async function saveTakeHome(value){
   if(!Number.isFinite(v)||v<0){toast('Enter a nonnegative take-home amount.');return;}
   return writeRecord('take-home','profiles',{take_home_pay:v},{id:PROFILE.id},()=>{PROFILE.take_home_pay=v;updateFinancialBoxes();toast('Take-home pay saved.');});
 }
-
-updateFinancialBoxes=async function(){
-  const{data:debts}=await sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id);
-  const{data:subs}=await sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id);
-  const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
-  const totalPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
-  const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
-  const expenses=totalPay+totalSubs;
-  const takeHome=PROFILE.take_home_pay??3370;
-  const freeCash=takeHome-expenses;
-  const fmt=v=>'$'+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  set('fin-take-home',fmt(takeHome));
-  set('fin-expenses',fmt(expenses));
-  set('fin-free-cash',fmt(freeCash));
-  const fce=document.getElementById('fin-free-cash');
-  if(fce)fce.style.color=freeCash>=0?'var(--amb)':'var(--red)';
-  set('fin-total-debt',fmt(totalDebt));
-  set('fin-debt-ct',(debts||[]).length+' account'+((debts||[]).length!==1?'s':''));
-};
 
 // ── EDIT EXISTING HABITS ─────────────────────────────────────────
 let _editingHabit=null; // {si, hi}
@@ -2346,16 +2327,21 @@ openMealModal=function(){
 // ── NUTRITION PAGE — FRACTION-STYLE PROGRESS BOXES ──────────────
 renderNutrition=async function(){
   if(!PROFILE)return;
-  const epoch=_authEpoch,userId=PROFILE.id;
+  const current=SectionReads.begin('nutrition'),userId=PROFILE.id;
   const mPlan=CONTENT.meals?.plans?.[PROFILE.assigned_meal_plan||'high-protein-deficit']||{};
   const tgt=getNutritionTargets();
   // Fetch consumed meals first
-  const{data:meals2,error}=await sb.from('meal_logs').select('*').eq('user_id',userId).eq('log_date',todayStr()).order('created_at');
-  if(epoch!==_authEpoch)return;
-  if(error){
+  let meals2;
+  try{
+    const {data,error}=await sb.from('meal_logs').select('*').eq('user_id',userId).eq('log_date',todayStr()).order('created_at');
+    if(error||!Array.isArray(data))throw new Error();
+    meals2=data;
+  }catch(_){
+    if(!current())return;
     for(const id of ['nut-targets','nut-bars','nut-remaining','meal-entries']){const el=document.getElementById(id);if(el)el.textContent='Nutrition unavailable. Please retry.';}
     return;
   }
+  if(!current())return;
   const tot={cal:0,pro:0,car:0,fat:0};
   (meals2||[]).forEach(m=>{tot.cal+=m.calories||0;tot.pro+=m.protein_g||0;tot.car+=m.carbs_g||0;tot.fat+=m.fat_g||0;});
   // Fraction-style progress boxes
@@ -2440,24 +2426,6 @@ function getHabitLabel(id){
     read:'Read 30min',prep:'Prep Tomorrow',screens:'Screens Off 10PM',sleep:'Bed 11:30PM'};
   return FB[id]||(id.charAt(0).toUpperCase()+id.slice(1));
 }
-
-// ── PATCH renderDash to show proper habit labels in heatmap ──────
-const _origRenderDash=renderDash;
-renderDash=async function(){
-  const epoch=_authEpoch;
-  await _origRenderDash();
-  if(epoch!==_authEpoch||!PROFILE)return;
-  // Re-render the habit heatmap with clean labels
-  const wdEl=document.getElementById('dash-week');if(!wdEl)return;
-  // The heatmap was already rendered in _origRenderDash, but with raw IDs.
-  // Patch labels by reading the current DOM and replacing the label cells
-  const rows=wdEl.querySelectorAll('div[style*="width:130px"]');
-  rows.forEach(el=>{
-    const id=el.textContent.trim();
-    const label=getHabitLabel(id);
-    if(label!==id){el.textContent=label;el.title=id;}
-  });
-};
 
 // ── ADD TODO TO NAV ──────────────────────────────────────────────
 // Insert todo before admin in NAV_ITEMS
@@ -2850,8 +2818,12 @@ renderMonth=async function(){
 };
 
 // ── DASHBOARD — Today's Todos Panel ─────────────────────────────
+let dashboardTaskVersion=0;
 async function renderDashTodos(){
+  if(!PROFILE)return;
   const el=document.getElementById('dash-todos-list');if(!el)return;
+  const epoch=_authEpoch,user=PROFILE.id,version=++dashboardTaskVersion;
+  const current=()=>epoch===_authEpoch&&PROFILE?.id===user&&version===dashboardTaskVersion;
   const tz=(PROFILE&&PROFILE.timezone)||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/New_York';
   const todayLocal=new Date().toLocaleDateString('en-CA',{timeZone:tz});
 
@@ -2863,19 +2835,20 @@ async function renderDashTodos(){
       .neq('status','Done')
       .lte('due_date',todayLocal)
       .order('status');
+    if(!current())return;
     if(error&&error.code==='42P01'){
       el.innerHTML='<div style="font-size:11px;color:var(--t3)">Set up To Do List tab first.</div>';
       return;
     }
-    if(error)throw error;
-    items=data||[];
-  }catch(e){el.innerHTML='<div style="font-size:11px;color:var(--t3)">—</div>';return;}
+    if(error||!Array.isArray(data))throw new Error('Tasks unavailable');
+    items=data;
+  }catch(e){if(current())el.textContent='Tasks could not be loaded. Please retry.';return;}
 
   if(!items.length){
     el.innerHTML=`<div style="text-align:center;padding:24px 10px">
       <div style="font-size:24px;margin-bottom:8px">&#x1F389;</div>
-      <div style="font-size:13px;font-weight:600;color:var(--grn)">Nothing To Do.</div>
-      <div style="font-size:11px;color:var(--t3);margin-top:2px">All done — good work.</div>
+      <div style="font-size:13px;font-weight:600;color:var(--grn)">No tasks due today.</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px">Open To Do List for unscheduled and future tasks.</div>
     </div>`;
     return;
   }
@@ -2883,7 +2856,7 @@ async function renderDashTodos(){
   // Sort: Urgent → Important → In Progress → Not Started → On Hold → Not Urgent
   const ORDER={'Urgent':0,'Important':1,'In Progress':2,'Not Started':3,'On Hold':4,'Not Urgent':5};
   const STATUS_COL={'Urgent':'r','Important':'p','In Progress':'b','Not Started':'d','On Hold':'a','Not Urgent':'g'};
-  items.sort((a,b)=>(ORDER[a.status]||9)-(ORDER[b.status]||9));
+  items.sort((a,b)=>(ORDER[a.status]??9)-(ORDER[b.status]??9));
 
   el.innerHTML=items.map(item=>{
     const sc=STATUS_COL[item.status]||'d';
@@ -2907,24 +2880,6 @@ async function renderDashTodos(){
 
 async function dashMarkDone(id){await markTodoDone(id);}
 
-// Patch renderDash to also render the todo panel
-const _s2_origRenderDash=typeof renderDash==='function'?renderDash:null;
-renderDash=async function(){
-  const epoch=_authEpoch;
-  if(_s2_origRenderDash)await _s2_origRenderDash();
-  if(epoch!==_authEpoch||!PROFILE)return;
-  await renderDashTodos();
-  if(epoch!==_authEpoch||!PROFILE)return;
-  loadDashStats();
-};
-
-// Patch goto to render todos when switching to dash
-const _s2_origGoto=typeof goto==='function'?goto:null;
-goto=function(pid){
-  if(_s2_origGoto)_s2_origGoto(pid);
-  if(pid==='dash')setTimeout(renderDashTodos,100);
-};
-
 
 // ════════════════════════════════════════════════════════════════
 // STAGE 3 — Financial: Bills, 5-box header, updated calculations
@@ -2932,8 +2887,9 @@ goto=function(pid){
 
 // ── BILLS CRUD ───────────────────────────────────────────────────
 async function renderBillsList(){
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('bill-list');
   const bills=await readSection(sb.from('bills_tracker').select('*')
-    .eq('user_id',PROFILE.id).order('due_day',{ascending:true}),'bill-list');if(!bills)return;
+    .eq('user_id',PROFILE.id).order('due_day',{ascending:true}),'bill-list',isCurrent);if(!bills)return;
   const el=document.getElementById('bill-list');if(!el)return;
   if(!bills?.length){
     el.innerHTML='<div style="color:var(--t3);font-size:12px;padding:4px 0">No bills tracked.</div>';
@@ -2997,22 +2953,22 @@ async function removeBill(id){
   return Writes.run('bill-delete-'+id,{id},ctx=>API.records.write('bills_tracker',ctx.userId,{}, {match:{id},remove:true}),()=>{renderBillsList();updateFinancialBoxes();renderFinCal();toast('Bill removed');});
 }
 
-// ── UPDATED updateFinancialBoxes (5-box: includes bills) ─────────
-updateFinancialBoxes=async function(){
-  if(!PROFILE)return;const epoch=_authEpoch;
+// ── FINANCIAL TOTALS (includes bills) ────────────────────────────
+async function updateFinancialBoxes(){
+  if(!PROFILE)return;const isCurrent=SectionReads.begin('financial-boxes');
   const results=await Promise.allSettled([
     sb.from('debt_tracker').select('balance,monthly_payment').eq('user_id',PROFILE.id),
     sb.from('subscription_tracker').select('monthly_cost').eq('user_id',PROFILE.id),
     sb.from('bills_tracker').select('amount,due_day').eq('user_id',PROFILE.id),
   ]);
-  if(epoch!==_authEpoch)return;
-  if(results.some(r=>r.status==='rejected'||r.value.error)){
+  if(!isCurrent())return;
+  if(results.some(r=>r.status==='rejected'||r.value?.error||!Array.isArray(r.value?.data))){
     for(const id of ['fin-bills-total','fin-subs-total','fin-free-cash','fin-total-debt']){const el=document.getElementById(id);if(el)el.textContent='Unavailable';}
+    for(const id of ['fin-bills-ct','fin-subs-ct2','fin-debt-ct','cc-pct']){const el=document.getElementById(id);if(el)el.textContent='Unavailable';}
+    const bar=document.getElementById('cc-bar');if(bar)bar.style.width='0%';
     return;
   }
-  const debts=results[0].status==='fulfilled'?results[0].value.data||[]:[];
-  const subs=results[1].status==='fulfilled'?results[1].value.data||[]:[];
-  const bills=results[2].status==='fulfilled'?results[2].value.data||[]:[]; results.forEach((r,i)=>{if(r.status==='rejected')console.error('[fin] financial query '+(i+1)+' failed:',r.reason);});
+  const [debts,subs,bills]=results.map(r=>r.value.data);
   const totalDebt=(debts||[]).reduce((s,d)=>s+(+d.balance||0),0);
   const totalDebtPay=(debts||[]).reduce((s,d)=>s+(+d.monthly_payment||0),0);
   const totalSubs=(subs||[]).reduce((s,s2)=>s+(+s2.monthly_cost||0),0);
@@ -3040,25 +2996,13 @@ updateFinancialBoxes=async function(){
     const pct=Math.round(Math.max(0,Math.min(100,(1-topDebt.balance/startBal)*100)));
     const pctEl=document.getElementById('cc-pct');if(pctEl)pctEl.textContent=pct+'%';
     const barEl=document.getElementById('cc-bar');if(barEl)barEl.style.width=pct+'%';
-    const lblEl=document.getElementById('cc-progress-label');
     // Store starting balance on first load so progress is meaningful
     if(State.get(startKey)===null)State.set(startKey,+topDebt.balance);
+  }else{
+    const pctEl=document.getElementById('cc-pct');if(pctEl)pctEl.textContent='0%';
+    const barEl=document.getElementById('cc-bar');if(barEl)barEl.style.width='0%';
   }
-};
-
-// ── UPDATED renderFinancial to include bills ─────────────────────
-renderFinancial=async function(){
-  const epoch=_authEpoch;
-  const safe=async(fn,name)=>{if(epoch!==_authEpoch||!PROFILE)return;try{await fn();}catch(_){if(epoch===_authEpoch)toast('Financial data could not be loaded.');}};
-  await safe(renderDebtList,'renderDebtList');
-  await safe(renderBillsList,'renderBillsList');
-  await safe(renderSubList,'renderSubList');
-  await safe(renderFinCal,'renderFinCal');
-  await safe(renderRoadmap,'renderRoadmap');
-  await safe(updateFinancialBoxes,'updateFinancialBoxes');
-};
-
-// Bills are now fetched inside the base renderFinCal — no override needed.
+}
 
 // ════════════════════════════════════════════════════════════════
 // STAGE 4 — DB-powered content loading
@@ -3213,6 +3157,7 @@ function openAddHabitForSection(sectionIndex){
 renderHabits=async function(){
   if(!PROFILE)return;
   const userId=PROFILE.id, requestedDate=habitDate, epoch=_authEpoch;
+  const current=SectionReads.begin('habits');
   const d=new Date(habitDate+'T12:00:00');
   const lbl=document.getElementById('h-date-lbl');
   if(lbl)lbl.textContent=(typeof D7L!=='undefined'?D7L[d.getDay()].toUpperCase():'DAY')+', '+fmtD(d).toUpperCase();
@@ -3224,11 +3169,11 @@ renderHabits=async function(){
   let hData=null;
   try{
     const logs=await API.habits.getLogs(userId,requestedDate);
-    if(epoch!==_authEpoch||requestedDate!==habitDate)return;
+    if(!current()||requestedDate!==habitDate)return;
     hData=logs;State.cacheSet(userId,'habits_'+requestedDate,logs);
   }catch(e){
     Logger.error('habits','renderHabits.catch',e);
-    if(epoch!==_authEpoch||requestedDate!==habitDate)return;
+    if(!current()||requestedDate!==habitDate)return;
     const el=document.getElementById('h-habits-list');if(el)el.textContent='Habits could not be loaded. Please retry.';return;
   }
   habitCache={};(hData||[]).forEach(h=>{if(h.completed)habitCache[h.habit_id]=true;});
@@ -3726,18 +3671,19 @@ function setLibGenre(genre,btn){
 
 // ── RENDER LIBRARY BROWSER ───────────────────────────────────────
 async function renderLibrary(){
-  if(!PROFILE)return;const epoch=_authEpoch;
+  if(!PROFILE)return;const current=SectionReads.begin('library'),userId=PROFILE.id;
   const el=document.getElementById('lib-list');if(!el)return;
   el.innerHTML='<div style="color:var(--t3);text-align:center;padding:20px">Loading library...</div>';
   const search=(document.getElementById('lib-search')?.value||'').toLowerCase().trim();
+  const genre=bookState.genreFilter;
   // Fetch all template books
-  const allBooks=await readSection(sb.from('books').select('*').eq('is_template',true).order('title'),'lib-list');if(!allBooks||epoch!==_authEpoch)return;
+  const allBooks=await readSection(sb.from('books').select('*').eq('is_template',true).order('title'),'lib-list',current);if(!allBooks||!current())return;
   // Get user's shelf for "already added" check
-  const userList=await readSection(sb.from('user_reading_list').select('book_id').eq('user_id',PROFILE.id),'lib-list');if(!userList||epoch!==_authEpoch)return;
+  const userList=await readSection(sb.from('user_reading_list').select('book_id').eq('user_id',userId),'lib-list',current);if(!userList||!current())return;
   const onShelf=new Set((userList||[]).map(u=>u.book_id));
   // Apply filters
   let filtered=(allBooks||[]);
-  if(bookState.genreFilter)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(bookState.genreFilter)));
+  if(genre)filtered=filtered.filter(b=>(b.genres||[]).some(g=>g.toLowerCase().includes(genre)));
   if(search)filtered=filtered.filter(b=>b.title.toLowerCase().includes(search)||b.author.toLowerCase().includes(search)||(b.description||'').toLowerCase().includes(search));
   if(!filtered.length){el.innerHTML='<div style="color:var(--t3);text-align:center;padding:30px">No books match your filters.</div>';return;}
   const DIFF_COL={light:'grn',medium:'amb',dense:'red'};
@@ -4245,6 +4191,9 @@ renderSpice=function(){
   const tabsEl=document.getElementById('spice-tabs');
   const panelsEl=document.getElementById('spice-panels');
   if(!tabsEl||!panelsEl)return;
+  let freshness=document.getElementById('recipe-freshness');
+  if(!freshness){freshness=document.createElement('div');freshness.id='recipe-freshness';freshness.setAttribute('role','status');panelsEl.before(freshness);}
+  freshness.innerHTML=CONTENT.spice?.stale?'<p>Showing saved recipes from this session. Updates are unavailable.</p><button class="btn btn-o" onclick="retryRecipes()">Retry recipes</button>':'';
   if(!baseData?.length){
     tabsEl.innerHTML='';
     panelsEl.innerHTML=baseData
@@ -4427,6 +4376,7 @@ loadRecipesFromDB=async function(){
     return result;
   }catch(e){
     Logger.error('recipes','loadFromDB.catch',e);
-    return epoch===_authEpoch?State.cacheGet(userId,'recipes'):null;
+    const cached=epoch===_authEpoch&&PROFILE?.id===userId?State.cacheGet(userId,'recipes'):null;
+    return cached?{...cached,stale:true}:null;
   }
 };

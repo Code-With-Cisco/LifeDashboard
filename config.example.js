@@ -7,4 +7,6 @@ window.CONFIG = Object.freeze({
   // Public clients must not contain shared invite secrets. Provision accounts
   // through an authenticated server-side admin function instead.
   allowSelfSignup: false,
+  // Enable only after migration 009, private function deployment and live checks.
+  connectorsEnabled: false,
 });

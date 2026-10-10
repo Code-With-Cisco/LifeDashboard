@@ -1,5 +1,23 @@
 # LifeDashboard review — September 10, 2026
 
+## October 10 continuation checkpoint
+
+Finance lists, grouped billing-calendar reads, roadmap reads and totals reject stale/account-changed responses through the existing tested read service. Missing summary results now show unavailable amounts/counts/progress; empty debt reads clear stale progress. Independent Finance reads start together. Obsolete renderer/totals overrides and the debt list's fixed-balance progress overwrite were removed.
+
+Validation passed 307 tests across 24 suites, including local PGlite coverage and new ordering, account-switch, malformed-result and recovery regressions, plus the 34-file synthetic-config build with connectors disabled. Syntax/whitespace checks passed. Live Auth/API/browser acceptance remains pending; no database operation, staging, commit, push or deployment occurred. See [HANDOFF.md](HANDOFF.md) for next steps.
+
+## October 1 continuation checkpoint
+
+Nutrition, Habits, library searches and habit history now reject superseded/account-changed reads through a tested service. Nutrition catches network rejection and invalid results. Habit history uses one date-range query, the profile day and current habit definitions; failures remain visible. Local verification passed 292 tests in 24 suites and a 34-file synthetic-config build with connectors disabled.
+
+The separate test project's prepared 27-table schema was discovered and verified. All eight existing SQL suites passed in a rollback-only live transaction with preserved-record fingerprints; a subsequent read confirmed zero Auth users/profiles/connector rows and 26 restrictive MFA policies. No migration or production operation occurred. The overview reported Unhealthy despite successful SQL; Auth settings/health, disposable login fixtures and real Auth/API/browser persistence acceptance remain pending. Private schema files stay outside Git; [HANDOFF.md](HANDOFF.md) records their local location and current next steps. These SQL checks do not establish real login or persistent browser acceptance.
+
+## September 28 home integration checkpoint
+
+Office commits `1b048f5` and `1e1d49b` are present locally. Conflicts with the existing connector work are resolved and the four resolved files are staged. Both runtime sets are preserved, with connectors disabled by default. Calendar reads retain error visibility and reject old session/request responses. Recipes label stale cache fallback. Dashboard uses saved goals, custom habit labels, shared nutrition targets, and session/request-safe task rendering; fixed milestone UI/writes and redundant dashboard wrappers are removed without deleting stored records. Urgent task ordering is corrected.
+
+Validation: 267 tests across 22 suites, including PGlite SQL and connector tests; 33-file allowlisted build with synthetic public config; syntax and conflict-marker checks. No new browser/live acceptance, commit, push, deployment, or database mutation. LifeDashboard-Test has since been created and verified Healthy; schema preparation and test fixtures remain pending (see HANDOFF.md). Real schema/Auth/persistence acceptance, roadmap status write review, full calendar details/recurrence, and live connector setup remain pending. See [HANDOFF.md](HANDOFF.md) for the current checkpoint. Historical verification counts and release claims below apply only to their dated checkpoints.
+
 ## September 28 local readiness checkpoint
 
 All existing sections have equal priority. Local changes add confirmed owner-scoped saves, stable retry IDs, session cancellation, retained failed drafts, visible read failures, profile nutrition targets, and bounded previewed calendar import. Empty recipe catalogs now allow a first recipe; empty goals and missing roadmaps show an action. Financial lists stack at mobile widths. No production data, permissions, or schema was changed, and nothing was committed, pushed, or published.
