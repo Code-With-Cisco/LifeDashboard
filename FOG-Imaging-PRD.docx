@@ -1,0 +1,597 @@
+# FOG Device Deployment System — Product Requirements Document
+
+| Field | Value |
+| --- | --- |
+| Status | v0.1 — review draft; implementation and performance unverified |
+| Classification | Internal IT infrastructure service |
+| Requester / maintenance owner | Requesting IT Support technician |
+| Users | IT Support staff |
+| Final approver | Director of IT |
+| Author | Prepared with Codex from stakeholder interviews |
+| Prepared | September 30, 2026 |
+| Target | Operational before November 1, 2026; planning target, not a hard deadline |
+| Importance / urgency | Proposed: high / high ahead of December hiring |
+| Budget | Existing equipment and licenses; changes require a separate decision |
+
+## PRD Revision Log
+
+| Date | Version | Change | Reviewer |
+| --- | --- | --- | --- |
+| 2026-09-30 | 0.1 | Initial requirements, six-image design, completed encryption gate, separate technician testing clock | Director of IT — pending |
+
+“Must” identifies a required outcome. “Proposed” identifies a design or policy awaiting review. [TODO] identifies missing evidence or a decision. This document specifies requirements; it does not claim that FOG natively implements every automation or that tests have passed.
+
+## 1. Project Background
+
+IT Support currently prepares Windows 11 devices and distributes images using two Clonezilla USB drives and two external image drives. Image restoration alone takes approximately 3–4 hours per device. Volume is approximately 8–10 devices in slow months and over 30 in heavy months, with a largest observed batch of 14.
+
+Preparation currently includes Enterprise activation, Webroot, Office 2016 or Microsoft 365, Chrome, StarTech display drivers, Acrobat Reader, Zoom Workplace, Entra joining, naming, Teams, Resolve, updates, and approved cleanup. Images captured after identity-sensitive configuration have produced duplicate Entra devices, Resolve records overwriting one another, and BitLocker recovery-key confusion.
+
+The project will establish central network imaging and repeatable post-deployment configuration, using existing equipment. Each deployed device must acquire its own identity and encryption state. The desired outcome is faster deployment without trading away identity correctness, Secure Boot, or completed BitLocker encryption.
+
+> Methodology: link each operational problem to a measurable outcome; distinguish machine elapsed time from technician labor.
+
+## 2. Basic Requirement Overview
+
+| Element | Confirmed requirement |
+| --- | --- |
+| Primary owner | Requesting IT Support technician; also maintains the service |
+| Production approval | Director of IT |
+| New devices | Dell Inspiron DC15250, DC16250; Dell Slim ECS1250 |
+| Typical endpoints | Intel i5 / Core 5, 16 GB RAM, 512 GB M.2 storage; DDR4/DDR5 variants |
+| Server | Dell PowerEdge R720, two Intel Xeon CPUs, 32 GB ECC DDR3 |
+| Storage | Two WD Purple 6 TB drives in RAID 1; nominal mirrored capacity approximately 6 TB, not 12 TB |
+| OS / status | Ubuntu Server 26.04.1 LTS directly on server; initial updates underway; FOG not installed |
+| Network | Switch reported as 10 Gb; exact ports, server uplink, DHCP and topology unknown |
+| Connections | Laptops through USB Ethernet adapters; desktops through built-in Ethernet |
+| Image size | Current images approximately 130–150 GB; actual FOG sizes to be measured |
+| Identity | Entra join only; local Active Directory domain join is out of scope |
+| Security | Secure Boot enabled; standard employee accounts; completed BitLocker encryption with keys in Entra |
+
+Scenarios:
+1. IT Support prepares a batch for incoming employees at the office, chooses the correct model/Office image and approved names, starts deployment, and performs separately timed validation before handoff.
+2. IT Support receives an eligible former employee device, verifies the required backup on its external drive, authorizes data removal, and deploys a clean image for the next employee.
+3. Monthly, the maintenance owner refreshes and validates all six images, promotes them, and updates the rotating external backup.
+
+## 3. Business Analysis and System Research
+
+| Approach | Value | Limitation / decision |
+| --- | --- | --- |
+| Existing Clonezilla workflow | Known local recovery method | Two-device practical concurrency; 3–4-hour restore baseline |
+| FOG plus post-deployment automation | Central images, network deployment and repeatable setup | Needs network, Secure Boot, identity and performance validation |
+| Microsoft provisioning tools | Candidate supported Entra provisioning mechanism | Entitlement, tenant policy and permissions unverified; not a committed solution |
+| SharePoint / CSV integration | Potential future assignment lookup | Explicitly outside release one |
+
+Pain-point priority: (1) slow batch delivery, (2) identity and recovery-key correctness, (3) manual repetitive setup, (4) maintaining and recovering consistent images.
+
+No additional hardware or licenses are included. Labor includes setup, pilot testing, automation development, six monthly image refreshes and maintenance. [TODO O9: measure baseline hands-on effort and estimate implementation/maintenance hours.] Time waiting for a copy is not equivalent to technician labor saved. No monetary ROI is asserted.
+
+ROI method: monthly labor benefit = deployment count × measured hands-on minutes saved, less monthly maintenance minutes. Track elapsed-time improvement separately.
+
+## 4. Project Benefit Goals
+
+> Methodology: measurable acceptance gates, with performance hypotheses tested before a production commitment.
+
+| Goal | Target / status |
+| --- | --- |
+| Deployment elapsed time | Under 60 minutes; under 45 minutes stretch. Includes first boot, setup, updates, reboots and completed BitLocker encryption. Unvalidated target, not a guarantee. |
+| Batch capacity | Demonstrate representative batches up to 14 devices on existing equipment; both same-image and mixed-image workloads |
+| Identity correctness | Every accepted device has its own verified Entra and agent identities; no overwriting another device |
+| Security completion | Secure Boot on; approved volumes fully encrypted, protection on, matching recovery-key association verified in Entra |
+| Operational readiness | Six approved images, runbook, trained staff, restore-tested backups and Director approval before production rollout |
+
+### Measurement boundaries
+
+- **Preflight:** connection, backup/erasure authorization, image/name selection, and any first-time firmware certificate enrollment. Record separately.
+- **Deployment:** starts when the technician releases the approved deployment task; includes queueing, transfer, first boot, configuration, enrollment, required app/activation steps, updates/reboots and encryption completion. Ends only at Ready for validation.
+- **Technician validation:** sign-in and functional testing after deployment. Separate clock and separate target: **[TODO O9: stakeholder to set target]**.
+- **Employee sign-in:** employee-specific Microsoft 365 authentication excluded from deployment; applications must be installed and ready.
+- Required manual enrollment or remediation is not reclassified as testing to improve the deployment metric. Record such work, elapsed delay and unmet automation requirement.
+- Batch elapsed time runs from batch release until the last device is Ready for validation. Report per-device and whole-batch results, image mix, failures, retries and preflight time.
+- Stage durations may overlap; total elapsed time is measured independently, not by summing overlapping durations.
+
+### Performance feasibility
+
+Full encryption makes the 45-minute goal more demanding. Server link speed, spinning-disk reads, endpoint writes, USB adapters, updates and concurrent encryption are unknown. For illustration only, 14 separate transfers of 150 GB total 2.1 TB: theoretical wire time is about 280 minutes over a shared 1 Gb/s link or 28 minutes over 10 Gb/s, before overhead or setup. Actual compression and multicast alter this workload; six images may require separate groups. Switch port count does not establish unlimited capacity.
+
+Pilot results determine the committed threshold. Failure to meet the target requires an explicit scope, time or equipment decision, not a claim of success.
+
+### Acceptance evidence
+
+Test all six image variants, with at least one physical example of each model. Include available DDR4/DDR5 variants and adapter types; document untested variants. Expand from single-device runs to small groups, then representative up-to-14-device batches when equipment is available. A smaller test does not certify capacity for 14. Retain individual timings and failures; no fabricated percentile claims from small samples.
+
+## 5. Project Solution Overview
+
+| Module | Priority | Outcome |
+| --- | --- | --- |
+| Network boot and imaging | P0 | Correct approved image restored with Secure Boot enabled |
+| Six-image catalog | P0 | Model and Office choice visible to technician |
+| Post-deployment setup | P0 | Named, configured, updated, encrypted endpoint |
+| Automated Entra join investigation | P0 | Supported, licensed method demonstrated before architecture is finalized |
+| Unique identities / recovery verification | P0 | No copied enrollment, agent or recovery identities |
+| Name validation | P0 | 15-character limit and technician approval of adjustments |
+| Cross-system duplicate-name lookup | P1 | FOG plus authorized Entra lookup; capability subject to permissions |
+| Backups, logs, runbook and training | P0 | Maintainable and recoverable operation |
+| SharePoint / CSV integration | Future | Not required in initial release |
+
+FOG supplies image management and deployment; Windows automation supplies the validated post-deployment sequence. Use existing management interfaces and scripts where practical; this PRD does not require a new web application.
+
+The initial release must cover the complete deployment and validation process. Automated Entra joining is a required investigation and desired release capability. A manual fallback has not been accepted by the stakeholder and cannot silently replace it. Release disposition is an explicit decision if a supported method is unavailable with current entitlements.
+
+## 6. Project Scope
+
+Included: the R720 service; approved PXE/DHCP configuration; three model families; six Windows image variants; required applications; naming; Entra-only joining; full encryption completion; updates and cleanup; used-device preflight; deployment evidence; monthly image lifecycle; external backup; runbook and training.
+
+| System | Interaction | Owner |
+| --- | --- | --- |
+| Ubuntu / FOG / RAID | Hosting, images and deployment | Maintenance owner |
+| Office network | Boot services, addressing and traffic | Network administrator / Director; assignment TBD |
+| Entra | Device join, identity and recovery-key association | Tenant administrator; assignment TBD |
+| Webroot / Resolve | Per-device registration and checks | IT Support / console administrators |
+| Microsoft / vendor services | Activation, updates and downloads | IT Support; entitlement owner TBD |
+| External drives | Former-employee preservation and separate FOG backup | Maintenance owner |
+
+Out of scope: Active Directory domain joining, SharePoint/CSV integration, new purchases without a separate decision, universal cross-model image, remote-office/WAN deployment, unlimited concurrency, and automated installation of one-off paid Acrobat.
+
+Former-employee data remains on the existing separate backup workflow. Do not place personal data in standard deployment images.
+
+## 7. Project Risks
+
+Likelihood is unmeasured; these are investigation priorities.
+
+| Risk | Impact | Response / owner |
+| --- | --- | --- |
+| Enrollment method requires unavailable entitlements or incompatible tenant policies | Automation blocked | Tenant admin proves supported method before release; escalate alternative to stakeholder |
+| FOG release / Ubuntu / Secure Boot / USB adapter mismatch | Cannot image while preserving Secure Boot | Maintenance owner validates exact versions and hardware; do not disable Secure Boot as a workaround |
+| Disk/network/encryption bottleneck | 45–60-minute target missed | Instrument pilot, compare same/mixed-image groups, set evidence-based commitment |
+| Copied identity, activation or BitLocker state | Records overwritten or unusable recovery keys | Generalized, unjoined reference; vendor-supported agent staging; fresh device provisioning and checks |
+| Incorrect image, name or erasure target | Data loss / deployment error | Service Tag confirmation, image compatibility checks, verified backup and explicit task authorization |
+| Six monthly images or backup rotation incomplete | Stale or unrecoverable deployment | Version manifest, tests, checksums and restore exercise before retirement |
+| Office 2016 past support | Unsupported software exposure | Retain per stakeholder requirement; Director documents disposition; no migration assumed |
+| Scope growth / single maintainer | Missed readiness target or operational gap | Defer integrations, train another technician where possible, retain runbook |
+
+Constraints: existing equipment/licenses, Secure Boot stays on, standard employees, completed encryption, Entra-only identity. Assumptions requiring proof: adequate network access, compatible boot chain, suitable activation rights/methods, available pilot devices, and sufficient usable backup capacity. RAID 1 does not replace a backup.
+
+## 8. Terms and Abbreviations
+
+| Term | Meaning |
+| --- | --- |
+| FOG | Network imaging and deployment platform |
+| PXE | Network boot mechanism |
+| Multicast | Shared image stream for a compatible group receiving the same image |
+| Sysprep/generalize | Windows preparation to remove machine-specific setup state for image deployment |
+| Entra join | Device identity in Microsoft Entra ID; distinct from local AD join and Intune management |
+| Provisioning package | Windows configuration package; candidate enrollment vehicle after validation |
+| LPT | Company acronym in prefix; also laptop type suffix |
+| PC | Desktop suffix |
+| Ready for validation | Deployment configuration finished, including encryption; technician tests still pending |
+| Approved for handoff | Separate technician tests passed |
+| Service Tag | Dell hardware identifier, used to distinguish devices independently of shared adapters |
+
+## 9. References and Cited Documents
+
+Sources reviewed September 30, 2026. Online documentation changes; pin implementation versions during pilot.
+
+| Reference | Use |
+| --- | --- |
+| [FOG documentation](https://docs.fogproject.org/en/latest/) | Overall installation/deployment reference; site notes migration in progress |
+| [FOG Secure Boot](https://docs.fogproject.org/en/latest/installation/network-setup/secure-boot-netboot/) | Describes signed boot chain and per-machine certificate enrollment; release-specific validation required |
+| [FOG download](https://fogproject.org/download.php) | Resolve selected release; do not assume latest-doc features match installed version |
+| [Microsoft Entra join planning](https://learn.microsoft.com/en-us/entra/identity/devices/device-join-plan) | Joining approaches; do not distribute a joined reference image |
+| [Microsoft bulk enrollment](https://learn.microsoft.com/en-us/intune/device-enrollment/windows/create-bulk-package) | Documented Entra/Intune provisioning workflow and prerequisites |
+| [Install-ProvisioningPackage](https://learn.microsoft.com/en-us/powershell/module/provisioning/install-provisioningpackage?view=windowsserver2025-ps) | PowerShell package installation; not proof of entitlement |
+| [Intune licensing](https://learn.microsoft.com/intune/fundamentals/licensing/) | Tenant entitlement investigation |
+| [Computer naming](https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/naming-conventions-for-computer-domain-site-ou) | 15-character compatibility rule |
+| [Graph device list](https://learn.microsoft.com/en-us/graph/api/device-list?view=graph-rest-1.0) | Authorized directory lookup for names |
+| [BitLocker operations](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/operations-guide) | Encryption/protection and recovery operations |
+| [BitLocker configuration](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/configure) | Full-volume versus used-space-only policy |
+| [Office support lifecycle](https://learn.microsoft.com/en-us/deployoffice/endofsupport/resources) | Office 2016 end of support |
+| Stakeholder interviews in this chat | Hardware, workload, constraints and accepted scope |
+| Approved cleanup list / update script | [TODO O4: supply from work computer] |
+
+Microsoft's generic bulk-enrollment page and its Entra/Intune-specific guidance contain differing scope statements. Use the specific current workflow and tenant proof; do not infer a Business Standard-only unattended join capability from a generic provisioning example.
+
+## 10. Functional Requirements
+
+### 10.1 Product Framework
+
+> Methodology: define the deployment process, its evidence and failure states before choosing scripts or integrations. Diagrams show a logical design, not a claim of implemented features.
+
+#### Architecture
+
+```mermaid
+graph TB
+ subgraph UserLayer["User layer"]
+  Tech[IT Support]
+ end
+ subgraph AccessLayer["Access layer"]
+  Admin[Authorized management access]
+ end
+ subgraph ServiceLayer["Service layer"]
+  FOG[FOG<br/>Images and deployment tasks]
+  Prep[Validated Windows automation<br/>Naming and setup]
+  Gate[Readiness checks<br/>Stage results]
+ end
+ subgraph DataLayer["Data layer"]
+  Images[(Versioned images)]
+  Records[(Task records and logs)]
+  Backup[(External backup<br/>Current and previous generation)]
+ end
+ subgraph ExternalSystems["External systems"]
+  Network[Approved DHCP and boot network]
+  Entra[Entra identity and recovery keys]
+  Apps[Activation and agent services]
+  Device[Dell endpoints]
+ end
+ Tech --> Admin --> FOG
+ FOG --> Images
+ FOG --> Records
+ Network -.-> Device
+ FOG --> Device --> Prep --> Gate
+ Prep -.-> Entra
+ Prep -.-> Apps
+ Gate --> Records
+ Images --> Backup
+ Records --> Backup
+```
+
+| Boundary | Responsibility |
+| --- | --- |
+| FOG and boot network | Transfer approved images only to authorized target devices |
+| Windows automation | Resume across restarts, record results, use verified integration methods |
+| Entra / vendors | External identity, activation and recovery association; permissions required |
+| Backup | Recover images plus the configuration and metadata required to use them |
+
+#### Logical data model
+
+```mermaid
+erDiagram
+ DEVICE ||--o{ DEPLOYMENT : receives
+ IMAGE_VERSION ||--o{ DEPLOYMENT : supplies
+ DEPLOYMENT ||--o{ STAGE_RESULT : records
+ DEVICE ||--o{ NAME_RESERVATION : has
+ BACKUP_SET ||--o{ BACKUP_ITEM : contains
+ IMAGE_VERSION ||--o{ BACKUP_ITEM : copied_as
+ DEVICE {
+  string service_tag PK
+  string model
+  string entra_device_id
+ }
+ IMAGE_VERSION {
+  string image_version_id PK
+  string model
+  string office_variant
+  string checksum
+  string status
+ }
+ DEPLOYMENT {
+  string deployment_id PK
+  string service_tag FK
+  string image_version_id FK
+  string technician_id
+  string approved_name
+  string status
+ }
+ STAGE_RESULT {
+  string result_id PK
+  string deployment_id FK
+  string stage
+  string start_time
+  string end_time
+  string result
+ }
+ NAME_RESERVATION {
+  string normalized_name PK
+  string service_tag FK
+  string status
+ }
+ BACKUP_SET {
+  string backup_id PK
+  string generation
+  string verification_status
+ }
+ BACKUP_ITEM {
+  string backup_item_id PK
+  string backup_id FK
+  string image_version_id FK
+  string checksum
+ }
+```
+
+| Entity | Rule |
+| --- | --- |
+| Device | Service Tag anchors identity; a reused USB adapter's MAC address alone is insufficient |
+| Image version | Immutable approved version; model and Office variant explicit |
+| Deployment / stage result | Each attempt preserved; retries do not erase failed-attempt history |
+| Name reservation | Case-insensitive unique active name; release/reuse explicitly reviewed |
+| Backup set / item | Manifest identifies six image versions and matching recoverable configuration |
+
+These are logical records. Reuse native FOG data and a small protected supplementary record store as needed; no new database product is mandated.
+
+#### Deployment process
+
+```mermaid
+flowchart TD
+ A[Preflight and Service Tag check] --> B{Reused device?}
+ B -->|Yes| C[Verify employee backup<br/>Authorize approved erasure]
+ B -->|No| D[Select model and Office image]
+ C --> D
+ D --> E[Validate and reserve name<br/>Approve any adjustment]
+ E --> F[Start deployment clock<br/>Secure Boot network boot]
+ F --> G[Restore approved image]
+ G --> H[First boot and device-specific setup]
+ H --> I[Supported Entra join<br/>Apps, activation and updates]
+ I --> J[Complete encryption<br/>Verify recovery association]
+ J --> K{All required checks pass?}
+ K -->|Yes| L[Ready for validation<br/>Stop deployment clock]
+ K -->|No| X[Blocked<br/>Record fault and remediation]
+ X --> H
+ L --> M[Separate technician sign-in and tests]
+ M --> N{Tests pass?}
+ N -->|Yes| O[Approved for handoff]
+ N -->|No| X
+ style F fill:#dceeff
+ style L fill:#dff0d8
+ style O fill:#dff0d8
+ style X fill:#ffd9d9
+```
+
+| Stage group | Clock / owner |
+| --- | --- |
+| Preflight | Separate; technician |
+| Imaging through readiness | Deployment; automation plus any recorded interventions |
+| Sign-in and functional validation | Separate technician clock |
+| Remediation | Separately identified and included in total completion reporting |
+
+#### State machine
+
+```mermaid
+stateDiagram-v2
+ [*] --> Preflight
+ Preflight --> Approved: identity and prerequisites checked
+ Approved --> Deploying: technician starts
+ Deploying --> Configuring: image restored
+ Configuring --> Encrypting: setup and join complete
+ Encrypting --> ReadyForValidation: encryption and evidence pass
+ ReadyForValidation --> Validating: technician signs in
+ Validating --> Accepted: all tests pass
+ Deploying --> Blocked: transfer failure
+ Configuring --> Blocked: setup or identity failure
+ Encrypting --> Blocked: protection or escrow failure
+ Validating --> Blocked: functional test failure
+ Blocked --> Configuring: approved safe retry
+ Blocked --> Preflight: reimage required
+ Accepted --> [*]
+ note right of ReadyForValidation
+  Encryption underway is insufficient.
+  No handoff before separate validation.
+ end note
+```
+
+| Transition | Control |
+| --- | --- |
+| Preflight → Approved | Correct device, image, name, backup and erasure checks |
+| Blocked → retry | Owner identifies safe restart point; no blind rerun of identity creation |
+| Encrypting → Ready | Encryption complete, protection active, correct recovery association verified |
+| Validating → Accepted | Technician checklist and elapsed time recorded |
+
+#### Operator surfaces
+
+| Surface | Required actions |
+| --- | --- |
+| Image catalog | Filter model / Office / version / status; view approval and test evidence |
+| Deployment selection | Enter Service Tag, employee/name and image; confirm target disk and prerequisites |
+| Task status | View stages, timings, failures and readiness; request approved retry |
+| Maintenance records | Promote images, verify backup manifest, record restore test |
+| Implementation | Existing FOG UI plus approved companion scripts/checklists; no mobile app requirement |
+
+### 10.2 Requirement Details
+
+#### Image catalog and capture
+
+Process: prepare clean reference → patch/configure → generalize → capture → test → approve → publish.
+
+| Image family | Office 2016 variant | Microsoft 365 variant |
+| --- | --- | --- |
+| DC15250 | DC15250-O2016 | DC15250-M365 |
+| DC16250 | DC16250-O2016 | DC16250-M365 |
+| ECS1250 | ECS1250-O2016 | ECS1250-M365 |
+
+Version suffix proposal: YYYY-MM plus revision. Track Windows build, drivers, application versions, capture date, checksum, approval and test results.
+
+- **IMG-01 (constraint):** Technician selects only an approved compatible model/Office image. Detect mismatches before destructive work.
+- **IMG-02 (constraint):** Reference images must be generalized and unjoined; exclude employee data, tenant enrollment tokens, device recovery keys and copied registered-agent identities.
+- **IMG-03 (constraint):** Windows/Office activation and Webroot/Resolve preparation must follow verified licensing and vendor deployment methods. Preinstalled software is not proof of a unique valid activation.
+- **IMG-04 (trigger):** Refresh all six images monthly; test both variants per model before promotion. Do not automatically publish an untested candidate.
+- **IMG-05 (constraint):** Standard software includes correct Office variant, Chrome, Acrobat Reader, Zoom Workplace, Teams, Webroot, Resolve and applicable StarTech drivers. Install/stage location is determined by supported imaging practice. Remove conflicting Office packages.
+
+#### Boot, target identification and deployment
+
+Process: identify hardware → authorize task → network boot → image → verify startup.
+
+Operator fields: Service Tag, detected model, target disk, adapter identifier, selected image version, proposed name, employee assignment reference, backup/erasure status and initiating technician.
+
+- **DEP-01:** Preserve Secure Boot throughout. Validate signed boot chain and certificate-enrollment procedure on each model and adapter.
+- **DEP-02:** Prove exact FOG release compatibility with Ubuntu 26.04.1 and firmware before rollout. A version change requires a documented decision.
+- **DEP-03:** Use approved DHCP/boot configuration. Do not introduce competing office DHCP service or automatic destructive default boot.
+- **DEP-04:** Group multicast tasks only for compatible devices receiving the same image. Pilot same-image and mixed-image scheduling; do not promise 14 arbitrary images at unlimited speed.
+- **DEP-05:** Associate tasks with Service Tags and verify actual hardware when adapters move between laptops.
+- **DEP-06:** For returned equipment, verify the preserved backup and authorize the appropriate erasure/reprovisioning method before writing. Reimaging alone is not proof that all recoverable old disk data has been sanitized.
+
+#### Naming
+
+Process: enter employee and type → propose name → validate → check/reserve → technician approves changes → apply before enrollment.
+
+- **NAM-01:** Format LPT-{employee token}-LPT or LPT-{employee token}-PC, uppercase, maximum 15 characters.
+- **NAM-02 (proposed):** Start with first initial plus surname. Laptop token budget is 7 characters; desktop token budget is 8. Strip unsupported characters under a documented normalization rule. Preserve the user's original input in the review record.
+- **NAM-03 (proposed):** For long names, propose initial plus truncated surname; always request technician approval. For collisions, propose a truncated token plus a numeric suffix within the same budget; never silently rename.
+- **NAM-04 (proposed):** If retaining the existing NEW replacement convention, reserve three token characters for NEW, truncate the employee token as necessary and request approval. A collision suffix must also fit the budget. Previous approved device records remain intact until reviewed.
+- **NAM-05:** Check active FOG names and current deployment reservations case-insensitively. Serialize reservation creation so concurrent tasks cannot claim one name.
+- **NAM-06:** Authorized Entra lookup is preferred for existing fleet conflicts. Device display names are not unique identifiers; associate matches with device IDs. Do not delete stale objects automatically or treat lookup failure as “available.”
+- **NAM-07:** If directory lookup cannot be authorized, show “directory duplicate check unavailable” and require technician verification. Do not claim fleet-wide uniqueness from local records alone.
+
+#### Entra joining and Windows setup
+
+Process: apply name → provision unique join → confirm tenant/device identity → perform dependent configuration → report.
+
+- **AUT-01:** Investigate PowerShell-triggered provisioning using a supported method. Applying a package is an orchestration step, not a replacement for entitlement, token, tenant or role prerequisites.
+- **AUT-02:** Demonstrate unattended join on a freshly imaged pilot and after reimaging that same hardware; verify that other devices are unaffected.
+- **AUT-03:** Keep reusable enrollment material out of base images and ordinary logs; define secure distribution, expiry/renewal and revocation if the selected method uses it.
+- **AUT-04:** If existing-license automation fails feasibility, stop architectural commitment and obtain a stakeholder decision. Manual joining is not silently accepted.
+- **AUT-05:** Employee accounts remain standard. Technician/service privileges must not become employee privileges.
+- **AUT-06:** Install/register Teams, Resolve, Webroot and other required software using validated methods; verify unique records and correct versions.
+- **AUT-07:** Run approved cleanup and Windows/driver/Microsoft-product update workflow, with bounded retries and restart checkpoints. Do not call a device ready while approved required updates or reboots remain unresolved. The approved update set and firmware scope are O4.
+- **AUT-08:** Scripts must resume safely after reboot and report partial failure. Verification must distinguish software installed from activation/registration successful. Microsoft 365 user sign-in is separately handled.
+
+#### BitLocker readiness
+
+Process: establish unique device identity → configure approved encryption/protectors → escrow recovery material → wait for completion → verify association.
+
+- **SEC-01:** The OS volume and any approved employee-data volumes must finish encryption; 100% conversion alone must not conceal protection being suspended or disabled.
+- **SEC-02:** Require active protection and a device-specific recovery protector correctly associated with that device in Entra before Ready for validation.
+- **SEC-03:** Log status, protector/key identifier and verification outcome, never the recovery password. Scope any directory/recovery read permissions to approved roles.
+- **SEC-04:** Proposed baseline is full-volume encryption, including free space, particularly for reused devices. Stakeholder explicitly requires completion; precise cipher, protector and full-volume/used-space policy remains O5. Never choose used-space-only just to meet timing without approval.
+- **SEC-05:** Pilot recovery-key retrieval and recovery on authorized test equipment; do not force a recovery event on every production deployment.
+
+#### Backup and image lifecycle
+
+Process: build candidate → validate → promote → copy and verify → retain preceding approved generation → retire older generation.
+
+- **BKP-01:** Separate external drive, believed 8 TB; verify actual available capacity. At steady state retain six current and six previous-month image versions, plus matching configuration/metadata.
+- **BKP-02:** Back up database/configuration, image definitions, automation, version manifests and necessary boot trust material with appropriate access protection. Image files alone are insufficient.
+- **BKP-03:** Verify copy integrity and a usable restore procedure. During rotation, temporary staging may require more than 12 files; do not remove the last verified fallback before the replacement is valid.
+- **BKP-04:** Previous-generation recovery must preserve matching image metadata and avoid unintentionally restoring stale deployment/identity records.
+- **BKP-05:** Monthly backup implies up to approximately a month of unbacked configuration change. Proposed additional configuration backup after material changes; Director to decide in O6.
+
+### 10.3 Exception Handling
+
+| Scenario | Required response |
+| --- | --- |
+| Transfer/network interruption | Mark failed; retain evidence; technician authorizes safe restart/reimage |
+| Enrollment/token expired | Block readiness; owner renews or repairs supported mechanism; prevent duplicate identity creation |
+| Name collision / concurrent reservation | Reject conflicting reservation and request technician-approved alternative |
+| Directory lookup unavailable | Report unknown; bounded retry or explicit manual verification |
+| Wrong image / disk selection | Prevent start when detected; require preflight again after cancellation |
+| Missing/corrupt employee backup | Block erasure and deployment |
+| Activation/agent failure | Block corresponding completion gate; do not overwrite another device record |
+| Encryption slow or escrow mismatch | Continue measuring elapsed time, flag target breach; never mark ready early |
+| Update reboot loop | Stop after validated retry limit; surface logs and unresolved update |
+| Corrupt new image / backup full | Retain previous verified generation; investigate; do not rotate blindly |
+| Staff approval delayed | Keep pending and escalate to owner; no automatic destructive approval |
+
+## 11. Data Tracking
+
+Use local deployment logs and an approved summary record; external analytics are not required. Record operator, device Service Tag, deployment ID, image version, stage, timestamp, result and error code. Never record passwords, license keys, recovery secrets or enrollment tokens.
+
+| Event | Evidence / purpose |
+| --- | --- |
+| Catalog/task/status accessed | Operational audit if supported; do not build an analytics subsystem just for page views |
+| Task approved / started | Who authorized which hardware, image and name |
+| Stage started / finished / failed | Transfer, setup, join, apps, updates, encryption and readiness timings |
+| Name reserved / adjusted | Original proposal, approved result and approving technician |
+| Ready for validation | Complete machine-side acceptance evidence |
+| Validation started / finished | Separate technician effort, elapsed time and pass/fail checklist |
+| Image promoted / backup verified | Version, checksum, approval and restore evidence |
+
+Report single-device and batch elapsed time, first-pass success, failure/retry count, hands-on effort and identity incidents. Compare image-transfer performance to the 3–4-hour transfer baseline; do not compare total new deployment time to old transfer time as a like-for-like percentage. Show sample counts and failures. [TODO O9: log retention and reporting interval.]
+
+## 12. Roles and Permissions
+
+| Role | Authorized responsibilities |
+| --- | --- |
+| IT Support operator | Select approved image, approve name adjustment, authorize assigned-device task after preflight, validate and record handoff |
+| Maintenance owner | Maintain service/scripts, prepare/test/promote images, backup/restore, investigate failures |
+| Director of IT | Approve network production rollout, unresolved policy choices, changed scope/budget and release disposition |
+| Network administrator | Approve/configure DHCP, VLAN, routing and multicast settings |
+| Tenant administrator | Approve tenant method/permissions and manage enrollment/recovery access |
+| Employee | Standard Windows user; no FOG or deployment administrative access |
+
+Use named authorized access where supported. Match logical roles to actual FOG capabilities; do not assume fine-grained native RBAC exists. Limit server/console access and approved scripts where native controls are insufficient.
+
+Read-only name lookup should use least-privilege authorized directory access. Name lookup does not authorize deletion of device records or retrieval of recovery secrets. Protect backup access and signing material. Keep tenant credentials and product keys outside shared images and ordinary logs. [TODO O2/O6: assign tenant permissions, backup protection and secret-storage mechanism.]
+
+## 13. Operations Plan
+
+Proposed schedule, subject to pilot findings and staff availability:
+
+| Phase | Target window | Exit evidence |
+| --- | --- | --- |
+| Discovery and feasibility | Early October 2026 | Network inventory; exact boot compatibility; enrollment method proof |
+| Six images and automation | First half of October | Generalized references; validated applications and restart handling |
+| Model and batch pilot | Mid-October | Six variant tests, representative batch timings and security checks |
+| Backup recovery / staff training | Late October | Verified restore exercise; operator competency |
+| Production decision | Before November 1 | Director accepts evidence and outstanding dispositions |
+
+Review network placement before production connection changes. Prefer a controlled deployment segment if existing infrastructure permits; topology is not yet approved.
+
+Monthly procedure: refresh six candidates, test both Office variants on each model, approve/publish, update current/previous external backup, verify integrity and review deployment failures. Record actual maintenance effort. Employee archival backups remain separate; retention policy is O6.
+
+Clonezilla is intended to be phased out. Proposed retirement gate: successful pilot, demonstrated recovery from the FOG backup and Director approval. Until then retain the existing recovery option; do not destroy its media as part of this documentation task.
+
+Deliverables:
+1. This PRD and decision log.
+2. Version-specific technician runbook, currently a pilot draft.
+3. Training guide and hands-on competency checklist.
+4. During implementation: tested scripts/configuration, six approved images, deployment evidence and backup/restore evidence.
+
+No training session or implementation has yet been performed. The supplied runbook and training guide must be finalized against the selected FOG release and demonstrated workflow.
+
+Post-launch review proposal: review the first month of deployments for adoption, timing, failures, identity correctness and maintenance load; adjust only through recorded decisions.
+
+## 14. Open Items
+
+Draft requirements are reviewable; production readiness is not established.
+
+| ID | Missing information / decision | Owner | Needed by |
+| --- | --- | --- | --- |
+| O1 | Switch/port models and speeds, server NIC, USB adapters, DHCP owner, topology, multicast configuration and representative pilot availability | Maintenance owner + network admin | Feasibility |
+| O2 | Actual tenant licenses/roles/policies; supported automated Entra join; authorized duplicate/recovery verification; protected provisioning material | Tenant admin + Director | Before automation commitment |
+| O3 | Exact FOG release and Ubuntu compatibility; Secure Boot trust procedure on all models/adapters; handling if no compatible supported combination | Maintenance owner | Before image deployment pilot |
+| O4 | Windows build/edition and activation types; vendor agent cloning procedures; approved cleanup/update script, driver/firmware scope and complete app manifest | Maintenance owner | Before capture |
+| O5 | Full-volume/used-space policy, cipher/protectors, covered volumes, reused-drive erasure standard and recovery verification method | Director + maintenance owner | Before security pilot |
+| O6 | External drive capacity/protection, former-employee retention, configuration backup frequency and tested restore/retirement procedure | Maintenance owner + Director | Before backup approval |
+| O7 | Approve shortening, collision and NEW suffix rules; directory-check fallback and stale-record handling | Maintenance owner | Before naming implementation |
+| O8 | Pilot performance commitment and release decision if target or required automation cannot be met; Office 2016 risk disposition | Director | Before production approval |
+| O9 | Separate technician-validation time goal, baseline hands-on effort, implementation/maintenance estimate and log retention | Maintenance owner + Director | Before performance sign-off |
+
+## Appendix A: Acceptance Checklist
+
+| Test | Pass condition |
+| --- | --- |
+| Six-image coverage | Each model × Office combination boots and passes app/driver checks |
+| Secure Boot | Remains enabled through network boot, deployment and normal startup |
+| Name validation | Long names blocked/reviewed; duplicate reservation rejected; NEW fits limit; lookup outage never reports false availability |
+| Entra / agents | Correct tenant and distinct identities; redeploy does not overwrite another endpoint |
+| Permissions | Employee is standard; deployment secrets absent from employee-accessible artifacts/logs |
+| BitLocker | Approved encryption complete; protection active; correct key association verified; pilot recovery test succeeds |
+| Updates / cleanup | Approved scripts complete; required updates/reboots resolved; approved app/startup baseline met |
+| Timing | Separate preflight, deployment, batch and technician clocks; full encryption inside deployment; failures retained |
+| Interrupted tasks | Transfer, network, reboot and enrollment failures visible with safe recovery |
+| Reuse | Employee backup verified; approved erasure documented; no former employee profile/data in deployed environment |
+| Backup | Six current and six previous images with matching configuration; checksums and restore exercise pass |
+| Release | Runbook finalized, training passed, open release decisions resolved, Director approval recorded |
+
+## Appendix B: Self-Check and To-Be-Completed List
+
+| Review dimension | Assessment |
+| --- | --- |
+| Business analysis / positioning | Concrete workload and constraints; labor baseline remains O9 |
+| Product adaptation | Internal service; no sales/market-size or SaaS requirements |
+| Scenarios and structure | New device, reuse and monthly refresh; all 14 chapters present |
+| Architecture and data | Logical diagrams provided; implementation remains pilot work |
+| Process, roles and interactions | Explicit operator fields, ownership, gates and failure handling |
+| Cost-benefit | Existing assets documented; ROI not fabricated |
+| MVP and evolution | Six-image workflow in scope; integrations deferred |
+| Robustness | Identity, network, data-loss and backup exceptions addressed |
+| AI features / multi-tenancy | Not applicable |
+| Operations and tracking | Training, maintenance, retirement and stage timing defined |
+| Main unresolved risk | Supported automated joining within current entitlements, secure boot compatibility and measured performance |
+
+**Must resolve before production:** O1–O5 and O8, plus backup recoverability in O6. These establish that deployment can work, preserves identity/security, and has a credible performance commitment.
+
+**Must resolve before operational sign-off:** naming policy O7, complete backup/retention choices O6, and technician timing/maintenance/log choices O9.
+
+**Optional future refinement:** SharePoint assignment lookup/writeback, CSV-assisted batch input, additional hardware families and expanded reporting. None is a release-one dependency.
+
+A full PRD review can follow once the critical evidence is supplied; this draft's self-check is not a production approval.
+
