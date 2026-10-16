@@ -22,9 +22,9 @@
   },
   "homepage": "https://github.com/Code-With-Cisco/LifeDashboard#readme",
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.8",
-    "jest": "^30.5.1",
-    "jest-environment-jsdom": "^30.5.1"
+    "@electric-sql/pglite": "0.5.9",
+    "jest": "^30.5.2",
+    "jest-environment-jsdom": "^30.5.2"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.115.0",
